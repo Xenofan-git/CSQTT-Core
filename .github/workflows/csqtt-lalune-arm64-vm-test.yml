@@ -446,8 +446,10 @@ jobs:
           command -v nft >/dev/null
           command -v dnsmasq >/dev/null
           DNSMASQ_PID=""
+          DNS_UPSTREAM_PID=""
           cleanup() {
             if [ -n "$DNSMASQ_PID" ]; then kill "$DNSMASQ_PID" 2>/dev/null || true; wait "$DNSMASQ_PID" 2>/dev/null || true; fi
+            if [ -n "$DNS_UPSTREAM_PID" ]; then kill "$DNS_UPSTREAM_PID" 2>/dev/null || true; wait "$DNS_UPSTREAM_PID" 2>/dev/null || true; fi
             ip rule del pref 22010 fwmark 0x4d53/0xffff lookup main 2>/dev/null || true
             ip rule del pref 22010 fwmark 0x7777/0xffff lookup main 2>/dev/null || true
             ip -6 rule del pref 22010 fwmark 0x4d53/0xffff lookup main 2>/dev/null || true
@@ -490,6 +492,43 @@ jobs:
           NFT
           nft -c -f /tmp/lalune-direct-generated.nft
           nft -f /tmp/lalune-direct-generated.nft
+
+          # dnsmasq nftset integration is exercised with forwarded answers.
+          # Locally synthesized "address=" records do not traverse the same
+          # upstream-reply path, so use a deterministic loopback DNS upstream.
+          cat >/tmp/lalune-direct-dns-upstream.py <<'PYDNSUP'
+          import socket, struct
+          sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+          sock.bind(("127.0.0.1", 53536))
+          while True:
+              query, peer = sock.recvfrom(2048)
+              try:
+                  pos = 12
+                  labels = []
+                  while query[pos]:
+                      size = query[pos]
+                      pos += 1
+                      labels.append(query[pos:pos + size].decode("ascii").lower())
+                      pos += size
+                  pos += 1
+                  qtype, qclass = struct.unpack("!HH", query[pos:pos + 4])
+                  question = query[12:pos + 4]
+                  name = ".".join(labels)
+                  rdata = None
+                  if name == "example.com" and qclass == 1 and qtype == 1:
+                      rdata = socket.inet_aton("203.0.113.10")
+                  elif name == "example.com" and qclass == 1 and qtype == 28:
+                      rdata = socket.inet_pton(socket.AF_INET6, "2001:db8::10")
+                  answer = b""
+                  if rdata is not None:
+                      answer = b"\xc0\x0c" + struct.pack("!HHIH", qtype, 1, 60, len(rdata)) + rdata
+                  header = query[:2] + struct.pack("!HHHHH", 0x8180, 1, 1 if answer else 0, 0, 0)
+                  sock.sendto(header + question + answer, peer)
+              except Exception as exc:
+                  print("UPSTREAM_DNS_ERROR", repr(exc), flush=True)
+          PYDNSUP
+          nohup python3 -u /tmp/lalune-direct-dns-upstream.py >/tmp/lalune-direct-dns-upstream.log 2>&1 </dev/null &
+          DNS_UPSTREAM_PID=$!
           cat >/tmp/lalune-direct-dnsmasq.conf <<'DNS'
           port=53535
           listen-address=127.0.0.1
@@ -497,8 +536,7 @@ jobs:
           bind-interfaces
           no-resolv
           no-hosts
-          address=/example.com/203.0.113.10
-          address=/example.com/2001:db8::10
+          server=127.0.0.1#53536
           nftset=/example.com/4#inet#lalune_direct#direct4
           nftset=/example.com/6#inet#lalune_direct#direct6
           DNS
@@ -532,7 +570,11 @@ jobs:
                   break
               time.sleep(0.1)
           else:
-              raise SystemExit("DNS answers did not populate both nftsets: " + repr(outputs))
+              print("DNSMASQ_LOG_BEGIN")
+              subprocess.run(["cat", "/tmp/lalune-direct-dnsmasq.log"], check=False)
+              print("DNS_UPSTREAM_LOG_BEGIN")
+              subprocess.run(["cat", "/tmp/lalune-direct-dns-upstream.log"], check=False)
+              raise SystemExit("forwarded DNS answers did not populate both nftsets: " + repr(outputs))
           print("REAL_DNS_QUERY_POPULATED_IPV4_IPV6_NFTSETS_PASS")
           PY
           ip rule add pref 22010 fwmark 0x7777/0xffff lookup main
