@@ -519,6 +519,7 @@ jobs:
                       rdata = socket.inet_aton("203.0.113.10")
                   elif name == "example.com" and qclass == 1 and qtype == 28:
                       rdata = socket.inet_pton(socket.AF_INET6, "2001:db8::10")
+                  print("UPSTREAM_QUERY name=%s qtype=%d qclass=%d answer=%s" % (name, qtype, qclass, rdata.hex() if rdata else "none"), flush=True)
                   answer = b""
                   if rdata is not None:
                       answer = b"\xc0\x0c" + struct.pack("!HHIH", qtype, 1, 60, len(rdata)) + rdata
@@ -531,6 +532,8 @@ jobs:
           DNS_UPSTREAM_PID=$!
           cat >/tmp/lalune-direct-dnsmasq.conf <<'DNS'
           port=53535
+          log-queries=extra
+          log-debug
           listen-address=127.0.0.1
           interface=lo
           bind-interfaces
@@ -556,7 +559,9 @@ jobs:
               response, _ = sock.recvfrom(4096)
               sock.close()
               _, flags, _, answers, _, _ = struct.unpack("!HHHHHH", response[:12])
-              assert flags & 0x8000 and (flags & 0x000f) == 0 and answers > 0, (qtype, flags, answers)
+              expected_rdata = socket.inet_aton("203.0.113.10") if qtype == 1 else socket.inet_pton(socket.AF_INET6, "2001:db8::10")
+              print("DNS_CLIENT_RESPONSE qtype=%d flags=0x%04x answers=%d contains_expected=%s" % (qtype, flags, answers, expected_rdata in response), flush=True)
+              assert flags & 0x8000 and (flags & 0x000f) == 0 and answers > 0 and expected_rdata in response, (qtype, flags, answers, response.hex())
           PY
             then break; fi
             sleep 0.2
