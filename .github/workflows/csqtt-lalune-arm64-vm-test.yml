@@ -510,7 +510,7 @@ jobs:
           import socket, struct
           for qtype in (1, 28):
               ident = 0x4c44 + qtype
-              name = b"".join(bytes([len(x)]) + x.encode() for x in "example.com".split(".")) + b"\\0"
+              name = b"".join(bytes([len(x)]) + x.encode() for x in "example.com".split(".")) + b"\0"
               packet = struct.pack("!HHHHHH", ident, 0x0100, 1, 0, 0, 0) + name + struct.pack("!HH", qtype, 1)
               sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
               sock.settimeout(1)
