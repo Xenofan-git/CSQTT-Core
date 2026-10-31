@@ -445,8 +445,11 @@ jobs:
           cloud-init status --wait || true
           command -v nft >/dev/null
           command -v dnsmasq >/dev/null
+          DNSMASQ_PID=""
           cleanup() {
+            if [ -n "$DNSMASQ_PID" ]; then kill "$DNSMASQ_PID" 2>/dev/null || true; wait "$DNSMASQ_PID" 2>/dev/null || true; fi
             ip rule del pref 22010 fwmark 0x4d53/0xffff lookup main 2>/dev/null || true
+            ip rule del pref 22010 fwmark 0x7777/0xffff lookup main 2>/dev/null || true
             ip -6 rule del pref 22010 fwmark 0x4d53/0xffff lookup main 2>/dev/null || true
             ip rule del pref 22020 from 192.168.5.0/24 lookup 202 2>/dev/null || true
             ip -6 rule del pref 22020 from fd00:5::/64 lookup 202 2>/dev/null || true
@@ -476,8 +479,8 @@ jobs:
           ip -6 rule add pref 22020 from fd00:5::/64 lookup 202
           cat >/tmp/lalune-direct-generated.nft <<'NFT'
           table inet lalune_direct {
-            set direct4 { type ipv4_addr; flags interval; elements = { 203.0.113.10 } }
-            set direct6 { type ipv6_addr; flags interval; elements = { 2001:db8::10 } }
+            set direct4 { type ipv4_addr; flags interval; }
+            set direct6 { type ipv6_addr; flags interval; }
             chain prerouting {
               type filter hook prerouting priority -150; policy accept;
               ip saddr 192.168.5.0/24 ip daddr @direct4 meta mark set 0x4d53
@@ -488,13 +491,51 @@ jobs:
           nft -c -f /tmp/lalune-direct-generated.nft
           nft -f /tmp/lalune-direct-generated.nft
           cat >/tmp/lalune-direct-dnsmasq.conf <<'DNS'
-          port=0
+          port=53535
+          listen-address=127.0.0.1
           interface=lo
           bind-interfaces
+          no-resolv
+          no-hosts
+          address=/example.com/203.0.113.10
+          address=/example.com/2001:db8::10
           nftset=/example.com/4#inet#lalune_direct#direct4
           nftset=/example.com/6#inet#lalune_direct#direct6
           DNS
           dnsmasq --test --conf-file=/tmp/lalune-direct-dnsmasq.conf
+          dnsmasq --no-daemon --conf-file=/tmp/lalune-direct-dnsmasq.conf >/tmp/lalune-direct-dnsmasq.log 2>&1 &
+          DNSMASQ_PID=$!
+          for _ in $(seq 1 30); do
+            if python3 - <<'PY'
+          import socket, struct
+          for qtype in (1, 28):
+              ident = 0x4c44 + qtype
+              name = b"".join(bytes([len(x)]) + x.encode() for x in "example.com".split(".")) + b"\\0"
+              packet = struct.pack("!HHHHHH", ident, 0x0100, 1, 0, 0, 0) + name + struct.pack("!HH", qtype, 1)
+              sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+              sock.settimeout(1)
+              sock.sendto(packet, ("127.0.0.1", 53535))
+              response, _ = sock.recvfrom(4096)
+              sock.close()
+              _, flags, _, answers, _, _ = struct.unpack("!HHHHHH", response[:12])
+              assert flags & 0x8000 and (flags & 0x000f) == 0 and answers > 0, (qtype, flags, answers)
+          PY
+            then break; fi
+            sleep 0.2
+          done
+          python3 - <<'PY'
+          import subprocess, time
+          expected = (("direct4", "203.0.113.10"), ("direct6", "2001:db8::10"))
+          for _ in range(30):
+              outputs = [subprocess.run(["nft", "list", "set", "inet", "lalune_direct", name], text=True, capture_output=True).stdout for name, _ in expected]
+              if all(address in output for output, (_, address) in zip(outputs, expected)):
+                  break
+              time.sleep(0.1)
+          else:
+              raise SystemExit("DNS answers did not populate both nftsets: " + repr(outputs))
+          print("REAL_DNS_QUERY_POPULATED_IPV4_IPV6_NFTSETS_PASS")
+          PY
+          ip rule add pref 22010 fwmark 0x7777/0xffff lookup main
           ip rule add pref 22010 fwmark 0x4d53/0xffff lookup main
           ip -6 rule add pref 22010 fwmark 0x4d53/0xffff lookup main
           direct4="$(ip -4 route get 203.0.113.10 from 192.168.5.2 iif eth1 mark 0x4d53)"
@@ -507,7 +548,10 @@ jobs:
           grep -q 'dev direct-test0' <<<"$direct6"
           grep -q 'dev eth1 table 202' <<<"$tunnel6"
           nft list table inet lalune_direct | grep -q '2001:db8::10'
-          echo DIRECT_GENERATED_NFT_DNSMASQ_IPV4_IPV6_E2E_PASS
+          foreign_rule="$(ip -o rule show pref 22010)"
+          grep -q 'fwmark 0x7777/0xffff' <<<"$foreign_rule"
+          echo DIRECT_FOREIGN_PRIORITY_22010_PRESERVED_PASS
+          echo DIRECT_REAL_DNS_NFTSET_IPV4_IPV6_ROUTING_E2E_PASS
           DIRECT_TEST
 
       - name: Prepare standalone CSQTT VM protocol probe
