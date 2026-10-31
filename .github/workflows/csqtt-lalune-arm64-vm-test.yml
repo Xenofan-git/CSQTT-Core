@@ -540,8 +540,7 @@ jobs:
           no-resolv
           no-hosts
           server=127.0.0.1#53536
-          nftset=/example.com/4#inet#lalune_direct#direct4
-          nftset=/example.com/6#inet#lalune_direct#direct6
+          nftset=/example.com/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6
           DNS
           dnsmasq --test --conf-file=/tmp/lalune-direct-dnsmasq.conf
           dnsmasq --no-daemon --conf-file=/tmp/lalune-direct-dnsmasq.conf >/tmp/lalune-direct-dnsmasq.log 2>&1 &
