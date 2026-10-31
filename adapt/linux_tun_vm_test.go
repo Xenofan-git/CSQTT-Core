@@ -485,3 +485,76 @@ func TestDirectCleanupUsesExactIPv4AndIPv6RuleSignature(t *testing.T) {
         if !strings.Contains(log, required) { t.Fatalf("exact Direct cleanup missing %q:\n%s", required, log) }
     }
 }
+
+
+func TestDirectPartialApplyRollsBackEveryMutatingStage(t *testing.T) {
+	stages := []struct {
+		name string
+		fail string
+	}{
+		{name: "nft validation", fail: "nft -c -f"},
+		{name: "nft apply", fail: "nft -f"},
+		{name: "dnsmasq restart", fail: "systemctl restart dnsmasq"},
+		{name: "IPv4 policy rule", fail: "ip rule add pref 22010"},
+		{name: "IPv6 policy rule", fail: "ip -6 rule add pref 22010"},
+	}
+	for _, stage := range stages {
+		t.Run(stage.name, func(t *testing.T) {
+			logPath := installTunCommandShims(t, stage.fail)
+			isolateDirectFilesystem(t)
+			app := tunTestApp()
+			if !app.SaveSettings(`{"directDomains":"example.com","directIPs":"192.0.2.44,2001:db8::44"}`) {
+				t.Fatal("could not persist Direct rollback settings")
+			}
+			if err := app.tun.ApplyDirectRouting(); err == nil {
+				t.Fatalf("injected %s failure unexpectedly succeeded", stage.name)
+			}
+			for _, path := range []string{directNftPath, directDnsmasqPath} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("rollback left Direct artifact %s: err=%v", path, err)
+				}
+			}
+			mainConfig, err := os.ReadFile(directDnsmasqMain)
+			if err != nil { t.Fatal(err) }
+			if strings.Contains(string(mainConfig), directDnsmasqInclude) {
+				t.Fatalf("rollback left Direct dnsmasq include: %s", mainConfig)
+			}
+			log := readTunCommandLog(t, logPath)
+			for _, required := range []string{
+				"SUDO ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main",
+				"SUDO ip -6 rule del pref 22010 fwmark 0x4c4c/0xffff lookup main",
+				"SUDO nft delete table inet lalune_direct",
+			} {
+				if !strings.Contains(log, required) {
+					t.Fatalf("%s rollback omitted %q:\\n%s", stage.name, required, log)
+				}
+			}
+			if strings.Contains(log, "ip rule del pref 22010 2>/dev/null") ||
+				strings.Contains(log, "ip -6 rule del pref 22010 2>/dev/null") {
+				t.Fatalf("rollback used priority-only deletion and could remove foreign rules:\\n%s", log)
+			}
+		})
+	}
+}
+
+func TestDirectRollbackPreservesForeignPriority22010Rule(t *testing.T) {
+	logPath := installTunCommandShims(t, "ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main")
+	isolateDirectFilesystem(t)
+	app := tunTestApp()
+	if !app.SaveSettings(`{"directDomains":"example.com"}`) {
+		t.Fatal("could not persist Direct conflict settings")
+	}
+	if err := app.tun.ApplyDirectRouting(); err == nil {
+		t.Fatal("injected Direct rule conflict unexpectedly succeeded")
+	}
+	log := readTunCommandLog(t, logPath)
+	if !strings.Contains(log, "SUDO ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main") {
+		t.Fatalf("rollback did not target the exact CSQTT rule signature:\\n%s", log)
+	}
+	if strings.Contains(log, "ip rule del pref 22010 2>/dev/null") {
+		t.Fatalf("rollback could delete an unrelated rule sharing priority 22010:\\n%s", log)
+	}
+	if !strings.Contains(log, "SUDO ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main") {
+		t.Fatalf("test did not reach the injected foreign-priority collision:\\n%s", log)
+	}
+}
