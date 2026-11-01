@@ -374,6 +374,34 @@ func TestBridgeStartTunnelReconnectLifecycle(t *testing.T) {
 }
 
 
+func TestLinuxTunInterfaceCreationFailureRollsBackPartialDevice(t *testing.T) {
+	stages := []struct {
+		name string
+		fail string
+	}{
+		{name: "address assignment", fail: "ip addr add"},
+		{name: "link up", fail: "ip link set csqtt0 up"},
+		{name: "MTU configuration", fail: "ip link set csqtt0 mtu 1300"},
+	}
+	for _, stage := range stages {
+		t.Run(stage.name, func(t *testing.T) {
+			logPath := installTunCommandShims(t, stage.fail)
+			app := tunTestApp()
+			err := app.tun.SetupRoutes("192.0.2.10", "8.8.8.8")
+			if err == nil {
+				t.Fatalf("expected injected %s failure", stage.name)
+			}
+			log := readTunCommandLog(t, logPath)
+			if !strings.Contains(log, "SUDO ip tuntap del dev csqtt0 mode tun") {
+				t.Fatalf("partially created TUN interface was not rolled back:\\n%s", log)
+			}
+			if strings.Contains(log, "SUDO ip route add ") || strings.Contains(log, "SUDO ip rule add pref 22020") {
+				t.Fatalf("routing was mutated after interface creation failed:\\n%s", log)
+			}
+		})
+	}
+}
+
 // These lifecycle tests use injected file/ioctl operations; they never require
 // /dev/net/tun or mutate host networking.
 func TestLinuxTunOpenFailureIsReturned(t *testing.T) {
