@@ -533,7 +533,7 @@ func validDirectDomain(s string) bool {
 	if net.ParseIP(s) != nil {
 		return true
 	}
-	if strings.ContainsAny(s, "/#:=<>\\\"'\\\\\\\\\\\\\\\\") {
+	if strings.ContainsAny(s, "/#:=<>\"'\\\\") {
 		return false
 	}
 	return regexp.MustCompile("(?i)^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$").MatchString(s)
