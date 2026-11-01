@@ -521,6 +521,23 @@ func TestDirectCleanupUsesExactIPv4AndIPv6RuleSignature(t *testing.T) {
 }
 
 
+func TestDirectApplyPreservesUnownedDnsmasqFile(t *testing.T) {
+\tlogPath := installTunCommandShims(t, "")
+\tisolateDirectFilesystem(t)
+\tforeign := []byte("# managed by another service\\nnftset=/foreign.example/4#inet#other#v4\\n")
+\tif err := os.WriteFile(directDnsmasqPath, foreign, 0644); err != nil { t.Fatal(err) }
+\tapp := tunTestApp()
+\tif !app.SaveSettings(`{"directDomains":"example.com"}`) { t.Fatal("could not persist Direct settings") }
+\tif err := app.tun.ApplyDirectRouting(); err == nil { t.Fatal("unowned dnsmasq file unexpectedly accepted") }
+\tgot, err := os.ReadFile(directDnsmasqPath)
+\tif err != nil { t.Fatalf("foreign dnsmasq file was removed: %v", err) }
+\tif string(got) != string(foreign) { t.Fatalf("foreign dnsmasq file changed: %q", got) }
+\tlog := readTunCommandLog(t, logPath)
+\tif strings.Contains(log, "nft -f "+directNftPath) || strings.Contains(log, "ip rule add pref 22010") {
+\t\tt.Fatalf("foreign dnsmasq file was detected after kernel mutation: %s", log)
+\t}
+}
+
 func TestDirectPartialApplyRollsBackEveryMutatingStage(t *testing.T) {
 	stages := []struct {
 		name string
