@@ -519,188 +519,188 @@ func removeDirectDnsmasqInclude() (bool, error) {
 }
 
 func splitDirectList(raw string) []string {
-\treturn strings.FieldsFunc(raw, func(r rune) bool {
-\t\treturn r == ',' || r == ';' || r == '\\n' || r == '\\r' || r == '\\t' || r == ' '
-\t})
+	return strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\	' || r == ' '
+	})
 }
 
 func validDirectDomain(s string) bool {
-\tif s == "" {
-\t\treturn false
-\t}
-\t// Parse IP literals before rejecting domain delimiters: IPv6 uses colons.
-\t// CIDR and URL forms remain rejected by the delimiter filter below.
-\tif net.ParseIP(s) != nil {
-\t\treturn true
-\t}
-\tif strings.ContainsAny(s, "/#:=<>\\"'\\\") {
-\t\treturn false
-\t}
-\treturn regexp.MustCompile("(?i)^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$").MatchString(s)
+	if s == "" {
+		return false
+	}
+	// Parse IP literals before rejecting domain delimiters: IPv6 uses colons.
+	// CIDR and URL forms remain rejected by the delimiter filter below.
+	if net.ParseIP(s) != nil {
+		return true
+	}
+	if strings.ContainsAny(s, "/#:=<>\"'\\") {
+		return false
+	}
+	return regexp.MustCompile("(?i)^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$").MatchString(s)
 }
 func prepareDirectPlan(domainsRaw string) ([]string, bool, error) {
-\tdomains := splitDirectList(domainsRaw)
-\tfor _, domain := range domains {
-\t\tif !validDirectDomain(domain) {
-\t\t\treturn nil, false, fmt.Errorf("некорректный домен Direct: %s", domain)
-\t\t}
-\t}
-\tneedsDNS := false
-\tfor _, entry := range domains {
-\t\tif net.ParseIP(entry) == nil { needsDNS = true; break }
-\t}
-\treturn domains, needsDNS, nil
+	domains := splitDirectList(domainsRaw)
+	for _, domain := range domains {
+		if !validDirectDomain(domain) {
+			return nil, false, fmt.Errorf("некорректный домен Direct: %s", domain)
+		}
+	}
+	needsDNS := false
+	for _, entry := range domains {
+		if net.ParseIP(entry) == nil { needsDNS = true; break }
+	}
+	return domains, needsDNS, nil
 }
 
 func directFileOwnershipError(path string) error {
-\tdata, err := os.ReadFile(path)
-\tif os.IsNotExist(err) { return nil }
-\tif err != nil { return err }
-\tif strings.SplitN(string(data), "\\n", 2)[0] != "# LALUNE_DIRECT_V1" {
-\t\treturn fmt.Errorf("Direct file %s exists without LaLune ownership marker", path)
-\t}
-\treturn nil
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) { return nil }
+	if err != nil { return err }
+	if strings.SplitN(string(data), "\n", 2)[0] != "# LALUNE_DIRECT_V1" {
+		return fmt.Errorf("Direct file %s exists without LaLune ownership marker", path)
+	}
+	return nil
 }
 
 func (t *LinuxTun) cleanupDirectRoutingLocked() error {
-\t// Fail closed: every rule at the reserved preference must carry our
-\t// exact selector and reserved protocol; an untagged collision blocks cleanup.
-\tpreflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
-\t\t"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
-\t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\"LALUNE_DIRECT_V1\\"'; fi"
-\tif err := t.app.runSudo(preflight); err != nil {
-\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: владение ресурсами не подтверждено: %v", err))
-\t\treturn fmt.Errorf("Direct ownership preflight: владение ресурсами не подтверждено")
-\t}
-\tif err := directFileOwnershipError(directDnsmasqPath); err != nil {
-\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: %v", err))
-\t\treturn err
-\t}
-\tif err := directFileOwnershipError(directNftPath); err != nil {
-\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: %v", err))
-\t\treturn err
-\t}
-\tif err := t.app.runSudo("if ip -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { return fmt.Errorf("IPv4 Direct rule cleanup: %w", err) }
-\tif err := t.app.runSudo("if ip -6 -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip -6 rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { return fmt.Errorf("IPv6 Direct rule cleanup: %w", err) }
-\tif err := t.app.runSudo("if nft list table inet lalune_direct >/dev/null 2>&1; then nft delete table inet lalune_direct; fi"); err != nil { return fmt.Errorf("nft Direct cleanup: %w", err) }
-\tincludeRemoved, includeErr := removeDirectDnsmasqInclude()
-\tif includeErr != nil { return includeErr }
-\tconfigRemoved := false
-\tif _, err := os.Stat(directDnsmasqPath); err == nil {
-\t\tif err := os.Remove(directDnsmasqPath); err != nil { return fmt.Errorf("remove owned Direct dnsmasq config: %w", err) }
-\t\tconfigRemoved = true
-\t} else if !os.IsNotExist(err) { return fmt.Errorf("stat Direct dnsmasq config: %w", err) }
-\tif includeRemoved || configRemoved {
-\t\tif err := t.app.runSudo("systemctl restart dnsmasq"); err != nil { return fmt.Errorf("dnsmasq restart after Direct cleanup: %w", err) }
-\t}
-\tif err := os.Remove(directNftPath); err != nil && !os.IsNotExist(err) { return err }
-\treturn nil
+	// Fail closed: every rule at the reserved preference must carry our
+	// exact selector and reserved protocol; an untagged collision blocks cleanup.
+	preflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \"fwmark 0x4c4c/0xffff lookup main\") == 0 || index($0, \"proto 186\") == 0 { bad=1 } END { exit bad }' && " +
+		"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \"fwmark 0x4c4c/0xffff lookup main\") == 0 || index($0, \"proto 186\") == 0 { bad=1 } END { exit bad }' && " +
+		"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \"LALUNE_DIRECT_V1\"'; fi"
+	if err := t.app.runSudo(preflight); err != nil {
+		t.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: владение ресурсами не подтверждено: %v", err))
+		return fmt.Errorf("Direct ownership preflight: владение ресурсами не подтверждено")
+	}
+	if err := directFileOwnershipError(directDnsmasqPath); err != nil {
+		t.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: %v", err))
+		return err
+	}
+	if err := directFileOwnershipError(directNftPath); err != nil {
+		t.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: %v", err))
+		return err
+	}
+	if err := t.app.runSudo("if ip -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { return fmt.Errorf("IPv4 Direct rule cleanup: %w", err) }
+	if err := t.app.runSudo("if ip -6 -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip -6 rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { return fmt.Errorf("IPv6 Direct rule cleanup: %w", err) }
+	if err := t.app.runSudo("if nft list table inet lalune_direct >/dev/null 2>&1; then nft delete table inet lalune_direct; fi"); err != nil { return fmt.Errorf("nft Direct cleanup: %w", err) }
+	includeRemoved, includeErr := removeDirectDnsmasqInclude()
+	if includeErr != nil { return includeErr }
+	configRemoved := false
+	if _, err := os.Stat(directDnsmasqPath); err == nil {
+		if err := os.Remove(directDnsmasqPath); err != nil { return fmt.Errorf("remove owned Direct dnsmasq config: %w", err) }
+		configRemoved = true
+	} else if !os.IsNotExist(err) { return fmt.Errorf("stat Direct dnsmasq config: %w", err) }
+	if includeRemoved || configRemoved {
+		if err := t.app.runSudo("systemctl restart dnsmasq"); err != nil { return fmt.Errorf("dnsmasq restart after Direct cleanup: %w", err) }
+	}
+	if err := os.Remove(directNftPath); err != nil && !os.IsNotExist(err) { return err }
+	return nil
 }
 
 func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
-\t// Once live state starts changing, any subsequent error must leave Direct
-\t// fully disabled rather than partially applied. TUN/CSQTT itself is untouched.
-\tmutating := false
-\tdefer func() {
-\t\tif retErr != nil && mutating {
-\t\t\tif cleanupErr := t.cleanupDirectRoutingLocked(); cleanupErr != nil {
-\t\t\t\tretErr = fmt.Errorf("%w; Direct rollback failed: %v", retErr, cleanupErr)
-\t\t\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Rollback Direct не завершён: %v", cleanupErr))
-\t\t\t} else {
-\t\t\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Частичное применение отменено; Direct очищен: %v", retErr))
-\t\t\t}
-\t\t}
-\t}()
-\tsettings := t.app.core.GetSettings()
-\tdomains, _, err := prepareDirectPlan(settings.DirectDomains + "," + settings.DirectIPs)
-\tif err != nil { return err }
+	// Once live state starts changing, any subsequent error must leave Direct
+	// fully disabled rather than partially applied. TUN/CSQTT itself is untouched.
+	mutating := false
+	defer func() {
+		if retErr != nil && mutating {
+			if cleanupErr := t.cleanupDirectRoutingLocked(); cleanupErr != nil {
+				retErr = fmt.Errorf("%w; Direct rollback failed: %v", retErr, cleanupErr)
+				t.app.core.AddLog(fmt.Sprintf("[DIRECT] Rollback Direct не завершён: %v", cleanupErr))
+			} else {
+				t.app.core.AddLog(fmt.Sprintf("[DIRECT] Частичное применение отменено; Direct очищен: %v", retErr))
+			}
+		}
+	}()
+	settings := t.app.core.GetSettings()
+	domains, _, err := prepareDirectPlan(settings.DirectDomains + "," + settings.DirectIPs)
+	if err != nil { return err }
 
-\t// Preflight before changing any Direct state. Refuse foreign/ambiguous occupants.
-\tpreflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
-\t\t"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
-\t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\"LALUNE_DIRECT_V1\\"'; fi"
-\tif err := t.app.runSudo(preflight); err != nil { return fmt.Errorf("Direct ownership preflight: %w", err) }
-\tif err := directFileOwnershipError(directDnsmasqPath); err != nil { return err }
-\tif err := directFileOwnershipError(directNftPath); err != nil { return err }
-\tmutating = true
-\tif err := t.cleanupDirectRoutingLocked(); err != nil { return err }
-\tdnsmasqChanged := false
-\tif len(domains) == 0 { return nil }
+	// Preflight before changing any Direct state. Refuse foreign/ambiguous occupants.
+	preflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \"fwmark 0x4c4c/0xffff lookup main\") == 0 || index($0, \"proto 186\") == 0 { bad=1 } END { exit bad }' && " +
+		"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \"fwmark 0x4c4c/0xffff lookup main\") == 0 || index($0, \"proto 186\") == 0 { bad=1 } END { exit bad }' && " +
+		"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \"LALUNE_DIRECT_V1\"'; fi"
+	if err := t.app.runSudo(preflight); err != nil { return fmt.Errorf("Direct ownership preflight: %w", err) }
+	if err := directFileOwnershipError(directDnsmasqPath); err != nil { return err }
+	if err := directFileOwnershipError(directNftPath); err != nil { return err }
+	mutating = true
+	if err := t.cleanupDirectRoutingLocked(); err != nil { return err }
+	dnsmasqChanged := false
+	if len(domains) == 0 { return nil }
 
-\tvar domainsOnly, ipv4s, ipv6s []string
-\tfor _, entry := range domains {
-\t\tif ip := net.ParseIP(entry); ip != nil {
-\t\t\tif v4 := ip.To4(); v4 != nil { ipv4s = append(ipv4s, v4.String()) } else { ipv6s = append(ipv6s, ip.String()) }
-\t\t} else { domainsOnly = append(domainsOnly, entry) }
-\t}
-\tvar nft strings.Builder
-\tnft.WriteString("# LALUNE_DIRECT_V1\\n")
-\tnft.WriteString("table inet lalune_direct {\\n  " + directNftOwnerComment + ";\\n")
-\tnft.WriteString("  set direct4 { type ipv4_addr; flags interval;")
-\tif len(ipv4s) > 0 { nft.WriteString(" elements = { " + strings.Join(ipv4s, ", ") + " };") }
-\tnft.WriteString(" }\\n")
-\tnft.WriteString("  set direct6 { type ipv6_addr; flags interval;")
-\tif len(ipv6s) > 0 { nft.WriteString(" elements = { " + strings.Join(ipv6s, ", ") + " };") }
-\tnft.WriteString(" }\\n")
-\tnft.WriteString("  chain prerouting { type filter hook prerouting priority -150; policy accept;\\n")
-\tnft.WriteString("    ip saddr 192.168.5.0/24 ip daddr @direct4 meta mark set " + directMark + "\\n")
-\tnft.WriteString("    iifname \\"eth1\\" ip6 daddr @direct6 meta mark set " + directMark + "\\n")
-\tnft.WriteString("  }\\n")
-\tnft.WriteString("}\\n")
+	var domainsOnly, ipv4s, ipv6s []string
+	for _, entry := range domains {
+		if ip := net.ParseIP(entry); ip != nil {
+			if v4 := ip.To4(); v4 != nil { ipv4s = append(ipv4s, v4.String()) } else { ipv6s = append(ipv6s, ip.String()) }
+		} else { domainsOnly = append(domainsOnly, entry) }
+	}
+	var nft strings.Builder
+	nft.WriteString("# LALUNE_DIRECT_V1\n")
+	nft.WriteString("table inet lalune_direct {\n  " + directNftOwnerComment + ";\n")
+	nft.WriteString("  set direct4 { type ipv4_addr; flags interval;")
+	if len(ipv4s) > 0 { nft.WriteString(" elements = { " + strings.Join(ipv4s, ", ") + " };") }
+	nft.WriteString(" }\n")
+	nft.WriteString("  set direct6 { type ipv6_addr; flags interval;")
+	if len(ipv6s) > 0 { nft.WriteString(" elements = { " + strings.Join(ipv6s, ", ") + " };") }
+	nft.WriteString(" }\n")
+	nft.WriteString("  chain prerouting { type filter hook prerouting priority -150; policy accept;\n")
+	nft.WriteString("    ip saddr 192.168.5.0/24 ip daddr @direct4 meta mark set " + directMark + "\n")
+	nft.WriteString("    iifname \"eth1\" ip6 daddr @direct6 meta mark set " + directMark + "\n")
+	nft.WriteString("  }\n")
+	nft.WriteString("}\n")
 
-\tif err := writeDirectFileAtomic(directNftPath, []byte(nft.String()), 0600); err != nil {
-\t\treturn fmt.Errorf("атомарная запись nft-конфига: %w", err)
-\t}
-\tif err := t.app.runSudo("nft -c -f " + directNftPath); err != nil {
-\t\treturn fmt.Errorf("проверка nft direct policy: %w", err)
-\t}
-\tif err := t.app.runSudo("nft -f " + directNftPath); err != nil {
-\t\treturn fmt.Errorf("nft direct policy: %w", err)
-\t}
+	if err := writeDirectFileAtomic(directNftPath, []byte(nft.String()), 0600); err != nil {
+		return fmt.Errorf("атомарная запись nft-конфига: %w", err)
+	}
+	if err := t.app.runSudo("nft -c -f " + directNftPath); err != nil {
+		return fmt.Errorf("проверка nft direct policy: %w", err)
+	}
+	if err := t.app.runSudo("nft -f " + directNftPath); err != nil {
+		return fmt.Errorf("nft direct policy: %w", err)
+	}
 
-\tif len(domainsOnly) > 0 {
-\t\t// Keep A and AAAA nftset mappings in one directive. dnsmasq processes
-\t\t// both address families for the same domain using this combined form.
-\t\tvar dnsmasq strings.Builder
-\t\tdnsmasq.WriteString("# LALUNE_DIRECT_V1\\n")
-\t\tdnsmasq.WriteString("nftset=/")
-\t\tdnsmasq.WriteString(strings.Join(domainsOnly, "/"))
-\t\tdnsmasq.WriteString("/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6\\n")
-\t\tif err := writeDirectFileAtomic(directDnsmasqPath, []byte(dnsmasq.String()), 0644); err != nil {
-\t\t\treturn fmt.Errorf("атомарная запись dnsmasq direct-конфига: %w", err)
-\t\t}
-\t\tif err := ensureDirectDnsmasqInclude(); err != nil {
-\t\t\treturn fmt.Errorf("подключение Direct dnsmasq-конфига: %w", err)
-\t\t}
-\t\tdnsmasqChanged = true
-\t}
-\tif dnsmasqChanged {
-\t\tif err := t.app.runSudo("systemctl restart dnsmasq"); err != nil {
-\t\t\treturn fmt.Errorf("перезапуск dnsmasq после изменения Direct: %w", err)
-\t\t}
-\t}
+	if len(domainsOnly) > 0 {
+		// Keep A and AAAA nftset mappings in one directive. dnsmasq processes
+		// both address families for the same domain using this combined form.
+		var dnsmasq strings.Builder
+		dnsmasq.WriteString("# LALUNE_DIRECT_V1\n")
+		dnsmasq.WriteString("nftset=/")
+		dnsmasq.WriteString(strings.Join(domainsOnly, "/"))
+		dnsmasq.WriteString("/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6\n")
+		if err := writeDirectFileAtomic(directDnsmasqPath, []byte(dnsmasq.String()), 0644); err != nil {
+			return fmt.Errorf("атомарная запись dnsmasq direct-конфига: %w", err)
+		}
+		if err := ensureDirectDnsmasqInclude(); err != nil {
+			return fmt.Errorf("подключение Direct dnsmasq-конфига: %w", err)
+		}
+		dnsmasqChanged = true
+	}
+	if dnsmasqChanged {
+		if err := t.app.runSudo("systemctl restart dnsmasq"); err != nil {
+			return fmt.Errorf("перезапуск dnsmasq после изменения Direct: %w", err)
+		}
+	}
 
-\tif err := t.app.runSudo("ip rule add pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol); err != nil {
-\t\treturn fmt.Errorf("IPv4 ip rule Direct: %w", err)
-\t}
-\tif err := t.app.runSudo("ip -6 rule add pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol); err != nil {
-\t\treturn fmt.Errorf("IPv6 ip rule Direct: %w", err)
-\t}
+	if err := t.app.runSudo("ip rule add pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol); err != nil {
+		return fmt.Errorf("IPv4 ip rule Direct: %w", err)
+	}
+	if err := t.app.runSudo("ip -6 rule add pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol); err != nil {
+		return fmt.Errorf("IPv6 ip rule Direct: %w", err)
+	}
 
-\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Активно: доменов=%d; mark=%s; LTE=main", len(domains), directMark))
-\treturn nil
+	t.app.core.AddLog(fmt.Sprintf("[DIRECT] Активно: доменов=%d; mark=%s; LTE=main", len(domains), directMark))
+	return nil
 }
 
 func (t *LinuxTun) ApplyDirectRouting() error {
-\tt.mu.Lock()
-\tdefer t.mu.Unlock()
-\treturn t.applyDirectRoutingLocked()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.applyDirectRoutingLocked()
 }
 
 func (t *LinuxTun) CleanupDirectRouting() {
-\tt.mu.Lock()
-\tdefer t.mu.Unlock()
-\tif err := t.cleanupDirectRoutingLocked(); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] Cleanup failed safely: %v", err)) }
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if err := t.cleanupDirectRoutingLocked(); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] Cleanup failed safely: %v", err)) }
 }
 
 '''
