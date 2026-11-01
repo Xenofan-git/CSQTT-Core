@@ -324,18 +324,33 @@ setup = '''func (t *LinuxTun) SetupRoutes(tunIP, tunDNS string) error {
 		t.app.core.AddLog(fmt.Sprintf("[TUN] ОШИБКА: table 202 или priority 22020/22015 уже заняты; чужие записи сохранены: %v", err))
 		return fmt.Errorf("TUN routing table 202 or rule priority 22020/22015 is already occupied: %w", err)
 	}
-	cmd := fmt.Sprintf("ip tuntap add dev csqtt0 mode tun && ip addr add %s/32 dev csqtt0 && ip link set csqtt0 up && ip link set csqtt0 mtu 1300", ip.To4().String())
-	if err := t.app.runSudo(cmd); err != nil {
-		t.app.core.AddLog(fmt.Sprintf("[TUN] ОШИБКА создания интерфейса: %v", err))
-		return fmt.Errorf("create csqtt0: %w", err)
-	}
 	createdRoutes := []string{}
 	createdRule := false
+	tunCreated := false
 	rollback := func() {
 		if createdRule { _ = t.app.runSudo("ip rule del pref 22020 from 192.168.5.0/24 lookup 202") }
 		for i := len(createdRoutes)-1; i >= 0; i-- { _ = t.app.runSudo(createdRoutes[i]) }
-		if err := t.app.runSudo("resolvectl revert csqtt0"); err != nil { t.app.core.AddLog(fmt.Sprintf("[TUN] rollback DNS: %v", err)) }
-		if err := t.app.runSudo("ip tuntap del dev csqtt0 mode tun"); err != nil { t.app.core.AddLog(fmt.Sprintf("[TUN] rollback interface: %v", err)) }
+		if tunCreated {
+			if err := t.app.runSudo("resolvectl revert csqtt0"); err != nil { t.app.core.AddLog(fmt.Sprintf("[TUN] rollback DNS: %v", err)) }
+			if err := t.app.runSudo("ip tuntap del dev csqtt0 mode tun"); err != nil { t.app.core.AddLog(fmt.Sprintf("[TUN] rollback interface: %v", err)) }
+		}
+	}
+	// Create the interface one operation at a time. A chained shell command can
+	// leave csqtt0 behind when a later operation fails, making every retry fail.
+	createSteps := []string{
+		"ip tuntap add dev csqtt0 mode tun",
+		fmt.Sprintf("ip addr add %s/32 dev csqtt0", ip.To4().String()),
+		"ip link set csqtt0 up",
+		"ip link set csqtt0 mtu 1300",
+	}
+	for i, command := range createSteps {
+		if err := t.app.runSudo(command); err != nil {
+			if i > 0 { tunCreated = true }
+			t.app.core.AddLog(fmt.Sprintf("[TUN] ОШИБКА создания интерфейса на шаге %q: %v; откат", command, err))
+			rollback()
+			return fmt.Errorf("create csqtt0 step %q: %w", command, err)
+		}
+		if i == 0 { tunCreated = true }
 	}
 	for _, pair := range []struct{ add, del string }{
 		{"ip route add 192.168.4.0/24 dev eth0 table 202", "ip route del 192.168.4.0/24 dev eth0 table 202"},
