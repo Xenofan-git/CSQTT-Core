@@ -464,6 +464,7 @@ func TestDirectGeneratesDualStackNftDnsAndPolicyRules(t *testing.T) {
     nft := string(nftConfig)
     for _, required := range []string{
         "table inet lalune_direct",
+        "comment \\"LALUNE_DIRECT_V1\\";",
         "set direct4 { type ipv4_addr; flags interval; elements = { 192.0.2.44 }; }",
         "set direct6 { type ipv6_addr; flags interval; elements = { 2001:db8::44 }; }",
         "ip daddr @direct4 meta mark set 0x4c4c",
@@ -476,7 +477,7 @@ func TestDirectGeneratesDualStackNftDnsAndPolicyRules(t *testing.T) {
     dnsConfig, err := os.ReadFile(directDnsmasqPath)
     if err != nil { t.Fatalf("read production dnsmasq Direct config: %v", err) }
     dns := string(dnsConfig)
-    combinedNFTSet := "nftset=/example.com/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6"
+    combinedNFTSet := "# LALUNE_DIRECT_V1\\nnftset=/example.com/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6"
     if strings.TrimSpace(string(dns)) != combinedNFTSet {
         t.Fatalf("production dnsmasq config must use the combined A/AAAA nftset directive; got:\\n%s", dns)
     }
@@ -495,8 +496,8 @@ func TestDirectGeneratesDualStackNftDnsAndPolicyRules(t *testing.T) {
     for _, required := range []string{
         "SUDO nft -c -f " + directNftPath,
         "SUDO nft -f " + directNftPath,
-        "SUDO ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main",
-        "SUDO ip -6 rule add pref 22010 fwmark 0x4c4c/0xffff lookup main",
+        "SUDO ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186",
+        "SUDO ip -6 rule add pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186",
     } {
         if !strings.Contains(log, required) { t.Fatalf("Direct command trace missing %q:\n%s", required, log) }
     }
@@ -512,8 +513,8 @@ func TestDirectCleanupUsesExactIPv4AndIPv6RuleSignature(t *testing.T) {
     app.tun.CleanupDirectRouting()
     log := readTunCommandLog(t, logPath)
     for _, required := range []string{
-        "SUDO ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main",
-        "SUDO ip -6 rule del pref 22010 fwmark 0x4c4c/0xffff lookup main",
+        "SUDO ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186",
+        "SUDO ip -6 rule del pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186",
     } {
         if !strings.Contains(log, required) { t.Fatalf("exact Direct cleanup missing %q:\n%s", required, log) }
     }
