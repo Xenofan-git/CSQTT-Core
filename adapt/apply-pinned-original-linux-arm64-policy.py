@@ -625,12 +625,12 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \t}
 
 \tif len(domainsOnly) > 0 {
+\t\t// Keep A and AAAA nftset mappings in one directive. dnsmasq processes
+\t\t// both address families for the same domain using this combined form.
 \t\tvar dnsmasq strings.Builder
-\t\tfor _, family := range []string{"4", "6"} {
-\t\t\tdnsmasq.WriteString("nftset=/")
-\t\t\tdnsmasq.WriteString(strings.Join(domainsOnly, "/"))
-\t\t\tdnsmasq.WriteString("/" + family + "#inet#lalune_direct#direct" + family + "\\n")
-\t\t}
+\t\tdnsmasq.WriteString("nftset=/")
+\t\tdnsmasq.WriteString(strings.Join(domainsOnly, "/"))
+\t\tdnsmasq.WriteString("/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6\\n")
 \t\tif err := writeDirectFileAtomic(directDnsmasqPath, []byte(dnsmasq.String()), 0644); err != nil {
 \t\t\treturn fmt.Errorf("атомарная запись dnsmasq direct-конфига: %w", err)
 \t\t}
