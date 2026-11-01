@@ -584,12 +584,12 @@ func (t *LinuxTun) cleanupDirectRoutingLocked() error {
 \tif err := t.app.runSudo("if ip -6 -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip -6 rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { return fmt.Errorf("IPv6 Direct rule cleanup: %w", err) }
 \tif err := t.app.runSudo("if nft list table inet lalune_direct >/dev/null 2>&1; then nft delete table inet lalune_direct; fi"); err != nil { return fmt.Errorf("nft Direct cleanup: %w", err) }
 \tincludeRemoved, includeErr := removeDirectDnsmasqInclude()
+\tif includeErr != nil { return includeErr }
 \tconfigRemoved := false
 \tif _, err := os.Stat(directDnsmasqPath); err == nil {
-\t\t_ = os.Remove(directDnsmasqPath)
+\t\tif err := os.Remove(directDnsmasqPath); err != nil { return fmt.Errorf("remove owned Direct dnsmasq config: %w", err) }
 \t\tconfigRemoved = true
-\t}
-\tif includeErr != nil { return includeErr }
+\t} else if !os.IsNotExist(err) { return fmt.Errorf("stat Direct dnsmasq config: %w", err) }
 \tif includeRemoved || configRemoved {
 \t\tif err := t.app.runSudo("systemctl restart dnsmasq"); err != nil { return fmt.Errorf("dnsmasq restart after Direct cleanup: %w", err) }
 \t}
@@ -624,24 +624,8 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \tif err := directFileOwnershipError(directNftPath); err != nil { return err }
 \tmutating = true
 \tif err := t.cleanupDirectRoutingLocked(); err != nil { return err }
-\tincludeRemoved, includeErr := removeDirectDnsmasqInclude()
-\tif includeErr != nil { return includeErr }
-\thadDnsmasq := false
-\tif _, err := os.Stat(directDnsmasqPath); err == nil {
-\t\thadDnsmasq = true
-\t\tif err := os.Remove(directDnsmasqPath); err != nil {
-\t\t\treturn fmt.Errorf("удаление Direct dnsmasq-конфига: %w", err)
-\t\t}
-\t}
-\tdnsmasqChanged := includeRemoved || hadDnsmasq
-\t_ = os.Remove(directNftPath)
-
-\tif len(domains) == 0 {
-\t\tif dnsmasqChanged {
-\t\t\tif err := t.app.runSudo("systemctl restart dnsmasq"); err != nil { return fmt.Errorf("перезапуск dnsmasq после очистки Direct: %w", err) }
-\t\t}
-\t\treturn nil
-\t}
+\tdnsmasqChanged := false
+\tif len(domains) == 0 { return nil }
 
 \tvar domainsOnly, ipv4s, ipv6s []string
 \tfor _, entry := range domains {
