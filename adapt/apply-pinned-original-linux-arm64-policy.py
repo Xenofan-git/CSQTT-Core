@@ -562,7 +562,7 @@ func directFileOwnershipError(path string) error {
 \treturn nil
 }
 
-func (t *LinuxTun) cleanupDirectRoutingLocked() {
+func (t *LinuxTun) cleanupDirectRoutingLocked() error {
 \t// Fail closed: every rule at the reserved preference must carry our
 \t// exact selector and reserved protocol; an untagged collision blocks cleanup.
 \tpreflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
@@ -570,33 +570,31 @@ func (t *LinuxTun) cleanupDirectRoutingLocked() {
 \t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\\"LALUNE_DIRECT_V1\\\"'; fi"
 \tif err := t.app.runSudo(preflight); err != nil {
 \t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: владение ресурсами не подтверждено: %v", err))
-\t\treturn
+\t\treturn fmt.Errorf("Direct ownership preflight: владение ресурсами не подтверждено")
 \t}
 \tif err := directFileOwnershipError(directDnsmasqPath); err != nil {
 \t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: %v", err))
-\t\treturn
+\t\treturn err
 \t}
 \tif err := directFileOwnershipError(directNftPath); err != nil {
 \t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: %v", err))
-\t\treturn
+\t\treturn err
 \t}
-\tif err := t.app.runSudo("if ip -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] IPv4 rule cleanup: %v", err)) }
-\tif err := t.app.runSudo("if ip -6 -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip -6 rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] IPv6 rule cleanup: %v", err)) }
-\tif err := t.app.runSudo("if nft list table inet lalune_direct >/dev/null 2>&1; then nft delete table inet lalune_direct; fi"); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] nft cleanup: %v", err)) }
+\tif err := t.app.runSudo("if ip -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { return fmt.Errorf("IPv4 Direct rule cleanup: %w", err) }
+\tif err := t.app.runSudo("if ip -6 -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip -6 rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { return fmt.Errorf("IPv6 Direct rule cleanup: %w", err) }
+\tif err := t.app.runSudo("if nft list table inet lalune_direct >/dev/null 2>&1; then nft delete table inet lalune_direct; fi"); err != nil { return fmt.Errorf("nft Direct cleanup: %w", err) }
 \tincludeRemoved, includeErr := removeDirectDnsmasqInclude()
 \tconfigRemoved := false
 \tif _, err := os.Stat(directDnsmasqPath); err == nil {
 \t\t_ = os.Remove(directDnsmasqPath)
 \t\tconfigRemoved = true
 \t}
-\tif includeErr != nil {
-\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Не удалось убрать dnsmasq include: %v", includeErr))
-\t} else if includeRemoved || configRemoved {
-\t\tif err := t.app.runSudo("systemctl restart dnsmasq"); err != nil {
-\t\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Не удалось перезапустить dnsmasq после очистки: %v", err))
-\t\t}
+\tif includeErr != nil { return includeErr }
+\tif includeRemoved || configRemoved {
+\t\tif err := t.app.runSudo("systemctl restart dnsmasq"); err != nil { return fmt.Errorf("dnsmasq restart after Direct cleanup: %w", err) }
 \t}
-\t_ = os.Remove(directNftPath)
+\tif err := os.Remove(directNftPath); err != nil && !os.IsNotExist(err) { return err }
+\treturn nil
 }
 
 func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
@@ -605,8 +603,12 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \tmutating := false
 \tdefer func() {
 \t\tif retErr != nil && mutating {
-\t\t\tt.cleanupDirectRoutingLocked()
-\t\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Частичное применение отменено; rollback запрошен: %v", retErr))
+\t\t\tif cleanupErr := t.cleanupDirectRoutingLocked(); cleanupErr != nil {
+\t\t\t\tretErr = fmt.Errorf("%w; Direct rollback failed: %v", retErr, cleanupErr)
+\t\t\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Rollback Direct не завершён: %v", cleanupErr))
+\t\t\t} else {
+\t\t\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Частичное применение отменено; Direct очищен: %v", retErr))
+\t\t\t}
 \t\t}
 \t}()
 \tsettings := t.app.core.GetSettings()
@@ -621,7 +623,7 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \tif err := directFileOwnershipError(directDnsmasqPath); err != nil { return err }
 \tif err := directFileOwnershipError(directNftPath); err != nil { return err }
 \tmutating = true
-\tt.cleanupDirectRoutingLocked()
+\tif err := t.cleanupDirectRoutingLocked(); err != nil { return err }
 \tincludeRemoved, includeErr := removeDirectDnsmasqInclude()
 \tif includeErr != nil { return includeErr }
 \thadDnsmasq := false
@@ -714,7 +716,7 @@ func (t *LinuxTun) ApplyDirectRouting() error {
 func (t *LinuxTun) CleanupDirectRouting() {
 \tt.mu.Lock()
 \tdefer t.mu.Unlock()
-\tt.cleanupDirectRoutingLocked()
+\tif err := t.cleanupDirectRoutingLocked(); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] Cleanup failed safely: %v", err)) }
 }
 
 '''
