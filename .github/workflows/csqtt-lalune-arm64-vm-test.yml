@@ -450,9 +450,9 @@ jobs:
           cleanup() {
             if [ -n "$DNSMASQ_PID" ]; then kill "$DNSMASQ_PID" 2>/dev/null || true; wait "$DNSMASQ_PID" 2>/dev/null || true; fi
             if [ -n "$DNS_UPSTREAM_PID" ]; then kill "$DNS_UPSTREAM_PID" 2>/dev/null || true; wait "$DNS_UPSTREAM_PID" 2>/dev/null || true; fi
-            ip rule del pref 22010 fwmark 0x4d53/0xffff lookup main 2>/dev/null || true
+            ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main 2>/dev/null || true
             ip rule del pref 22010 fwmark 0x7777/0xffff lookup main 2>/dev/null || true
-            ip -6 rule del pref 22010 fwmark 0x4d53/0xffff lookup main 2>/dev/null || true
+            ip -6 rule del pref 22010 fwmark 0x4c4c/0xffff lookup main 2>/dev/null || true
             ip rule del pref 22020 from 192.168.5.0/24 lookup 202 2>/dev/null || true
             ip -6 rule del pref 22020 from fd00:5::/64 lookup 202 2>/dev/null || true
             ip route del default dev eth1 table 202 2>/dev/null || true
@@ -485,8 +485,8 @@ jobs:
             set direct6 { type ipv6_addr; flags interval; }
             chain prerouting {
               type filter hook prerouting priority -150; policy accept;
-              ip saddr 192.168.5.0/24 ip daddr @direct4 meta mark set 0x4d53
-              iifname "eth1" ip6 daddr @direct6 meta mark set 0x4d53
+              ip saddr 192.168.5.0/24 ip daddr @direct4 meta mark set 0x4c4c
+              iifname "eth1" ip6 daddr @direct6 meta mark set 0x4c4c
             }
           }
           NFT
@@ -582,11 +582,11 @@ jobs:
           print("REAL_DNS_QUERY_POPULATED_IPV4_IPV6_NFTSETS_PASS")
           PY
           ip rule add pref 22010 fwmark 0x7777/0xffff lookup main
-          ip rule add pref 22010 fwmark 0x4d53/0xffff lookup main
-          ip -6 rule add pref 22010 fwmark 0x4d53/0xffff lookup main
-          direct4="$(ip -4 route get 203.0.113.10 from 192.168.5.2 iif eth1 mark 0x4d53)"
+          ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main
+          ip -6 rule add pref 22010 fwmark 0x4c4c/0xffff lookup main
+          direct4="$(ip -4 route get 203.0.113.10 from 192.168.5.2 iif eth1 mark 0x4c4c)"
           tunnel4="$(ip -4 route get 203.0.113.10 from 192.168.5.2 iif eth1)"
-          direct6="$(ip -6 route get 2001:db8::10 from fd00:5::2 iif eth1 mark 0x4d53)"
+          direct6="$(ip -6 route get 2001:db8::10 from fd00:5::2 iif eth1 mark 0x4c4c)"
           tunnel6="$(ip -6 route get 2001:db8::10 from fd00:5::2 iif eth1)"
           printf 'DIRECT_IPV4_ROUTE %s\nTUNNEL_IPV4_ROUTE %s\nDIRECT_IPV6_ROUTE %s\nTUNNEL_IPV6_ROUTE %s\n' "$direct4" "$tunnel4" "$direct6" "$tunnel6"
           grep -q 'dev direct-test0' <<<"$direct4"
