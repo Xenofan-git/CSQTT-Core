@@ -571,24 +571,24 @@ func TestDirectPartialApplyRollsBackEveryMutatingStage(t *testing.T) {
 	}
 }
 
-func TestDirectRollbackPreservesForeignPriority22010Rule(t *testing.T) {
-	logPath := installTunCommandShims(t, "ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186")
-	isolateDirectFilesystem(t)
-	app := tunTestApp()
-	if !app.SaveSettings(`{"directDomains":"example.com"}`) {
-		t.Fatal("could not persist Direct conflict settings")
-	}
-	if err := app.tun.ApplyDirectRouting(); err == nil {
-		t.Fatal("injected Direct rule conflict unexpectedly succeeded")
-	}
-	log := readTunCommandLog(t, logPath)
-	if !strings.Contains(log, "ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186") {
-		t.Fatalf("rollback did not target the exact CSQTT rule signature:\\n%s", log)
-	}
-	if strings.Contains(log, "ip rule del pref 22010 2>/dev/null") {
-		t.Fatalf("rollback could delete an unrelated rule sharing priority 22010:\\n%s", log)
-	}
-	if !strings.Contains(log, "SUDO ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186") {
-		t.Fatalf("test did not reach the injected foreign-priority collision:\\n%s", log)
-	}
+func TestDirectOwnershipPreflightRejectsUnownedPriorityCollision(t *testing.T) {
+\tlogPath := installTunCommandShims(t, "awk")
+\tisolateDirectFilesystem(t)
+\tapp := tunTestApp()
+\tif !app.SaveSettings(`{"directDomains":"example.com"}`) {
+\t\tt.Fatal("could not persist Direct conflict settings")
+\t}
+\tif err := app.tun.ApplyDirectRouting(); err == nil {
+\t\tt.Fatal("unowned Direct priority collision unexpectedly passed preflight")
+\t}
+\tlog := readTunCommandLog(t, logPath)
+\tif !strings.Contains(log, "SUDO") || !strings.Contains(log, "awk") {
+\t\tt.Fatalf("ownership preflight was not executed: %s", log)
+\t}
+\tfor _, forbidden := range []string{"nft -f " + directNftPath, "ip rule add pref 22010", "ip -6 rule add pref 22010"} {
+\t\tif strings.Contains(log, forbidden) { t.Fatalf("preflight collision allowed mutation %q: %s", forbidden, log) }
+\t}
+\tfor _, path := range []string{directNftPath, directDnsmasqPath} {
+\t\tif _, err := os.Stat(path); !os.IsNotExist(err) { t.Fatalf("preflight collision created artifact %s", path) }
+\t}
 }
