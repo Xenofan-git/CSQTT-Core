@@ -555,8 +555,8 @@ func TestDirectPartialApplyRollsBackEveryMutatingStage(t *testing.T) {
 			}
 			log := readTunCommandLog(t, logPath)
 			for _, required := range []string{
-				"SUDO ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main",
-				"SUDO ip -6 rule del pref 22010 fwmark 0x4c4c/0xffff lookup main",
+				"ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186",
+				"ip -6 rule del pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186",
 				"nft delete table inet lalune_direct",
 			} {
 				if !strings.Contains(log, required) {
@@ -572,7 +572,7 @@ func TestDirectPartialApplyRollsBackEveryMutatingStage(t *testing.T) {
 }
 
 func TestDirectRollbackPreservesForeignPriority22010Rule(t *testing.T) {
-	logPath := installTunCommandShims(t, "ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main")
+	logPath := installTunCommandShims(t, "ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186")
 	isolateDirectFilesystem(t)
 	app := tunTestApp()
 	if !app.SaveSettings(`{"directDomains":"example.com"}`) {
@@ -582,13 +582,13 @@ func TestDirectRollbackPreservesForeignPriority22010Rule(t *testing.T) {
 		t.Fatal("injected Direct rule conflict unexpectedly succeeded")
 	}
 	log := readTunCommandLog(t, logPath)
-	if !strings.Contains(log, "SUDO ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main") {
+	if !strings.Contains(log, "ip rule del pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186") {
 		t.Fatalf("rollback did not target the exact CSQTT rule signature:\\n%s", log)
 	}
 	if strings.Contains(log, "ip rule del pref 22010 2>/dev/null") {
 		t.Fatalf("rollback could delete an unrelated rule sharing priority 22010:\\n%s", log)
 	}
-	if !strings.Contains(log, "SUDO ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main") {
+	if !strings.Contains(log, "SUDO ip rule add pref 22010 fwmark 0x4c4c/0xffff lookup main protocol 186") {
 		t.Fatalf("test did not reach the injected foreign-priority collision:\\n%s", log)
 	}
 }
