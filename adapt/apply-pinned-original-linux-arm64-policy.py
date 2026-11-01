@@ -552,6 +552,16 @@ func prepareDirectPlan(domainsRaw string) ([]string, bool, error) {
 \treturn domains, needsDNS, nil
 }
 
+func directFileOwnershipError(path string) error {
+\tdata, err := os.ReadFile(path)
+\tif os.IsNotExist(err) { return nil }
+\tif err != nil { return err }
+\tif strings.SplitN(string(data), "\\\\n", 2)[0] != "# LALUNE_DIRECT_V1" {
+\t\treturn fmt.Errorf("Direct file %s exists without LaLune ownership marker", path)
+\t}
+\treturn nil
+}
+
 func (t *LinuxTun) cleanupDirectRoutingLocked() {
 \t// Fail closed: every rule at the reserved preference must carry our
 \t// exact selector and reserved protocol; an untagged collision blocks cleanup.
@@ -560,6 +570,14 @@ func (t *LinuxTun) cleanupDirectRoutingLocked() {
 \t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\\"LALUNE_DIRECT_V1\\\"'; fi"
 \tif err := t.app.runSudo(preflight); err != nil {
 \t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: владение ресурсами не подтверждено: %v", err))
+\t\treturn
+\t}
+\tif err := directFileOwnershipError(directDnsmasqPath); err != nil {
+\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: %v", err))
+\t\treturn
+\t}
+\tif err := directFileOwnershipError(directNftPath); err != nil {
+\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: %v", err))
 \t\treturn
 \t}
 \tif err := t.app.runSudo("if ip -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] IPv4 rule cleanup: %v", err)) }
@@ -600,6 +618,8 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \t\t"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
 \t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\\"LALUNE_DIRECT_V1\\\"'; fi"
 \tif err := t.app.runSudo(preflight); err != nil { return fmt.Errorf("Direct ownership preflight: %w", err) }
+\tif err := directFileOwnershipError(directDnsmasqPath); err != nil { return err }
+\tif err := directFileOwnershipError(directNftPath); err != nil { return err }
 \tmutating = true
 \tt.cleanupDirectRoutingLocked()
 \tincludeRemoved, includeErr := removeDirectDnsmasqInclude()
@@ -628,6 +648,7 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \t\t} else { domainsOnly = append(domainsOnly, entry) }
 \t}
 \tvar nft strings.Builder
+\tnft.WriteString("# LALUNE_DIRECT_V1\\n")
 \tnft.WriteString("table inet lalune_direct {\\n  " + directNftOwnerComment + ";\\n")
 \tnft.WriteString("  set direct4 { type ipv4_addr; flags interval;")
 \tif len(ipv4s) > 0 { nft.WriteString(" elements = { " + strings.Join(ipv4s, ", ") + " };") }
@@ -655,6 +676,7 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \t\t// Keep A and AAAA nftset mappings in one directive. dnsmasq processes
 \t\t// both address families for the same domain using this combined form.
 \t\tvar dnsmasq strings.Builder
+\t\tdnsmasq.WriteString("# LALUNE_DIRECT_V1\\n")
 \t\tdnsmasq.WriteString("nftset=/")
 \t\tdnsmasq.WriteString(strings.Join(domainsOnly, "/"))
 \t\tdnsmasq.WriteString("/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6\\n")
