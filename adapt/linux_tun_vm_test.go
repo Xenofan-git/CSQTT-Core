@@ -434,21 +434,12 @@ func TestDirectGeneratesDualStackNftDnsAndPolicyRules(t *testing.T) {
     nftConfig, err := os.ReadFile(directNftPath)
     if err != nil { t.Fatal(err) }
     nft := string(nftConfig)
-    for _, required := range []string{
-        "set direct4 { type ipv4_addr; flags interval; elements = { 192.0.2.44 }; }",
-        "set direct6 { type ipv6_addr; flags interval; elements = { 2001:db8::44 }; }",
-        "ip saddr 192.168.5.0/24 ip daddr @direct4 meta mark set 0x4c4c",
-        "iifname \"eth1\" ip6 daddr @direct6 meta mark set 0x4c4c",
-    } {
-        if !strings.Contains(nft, required) { t.Fatalf("generated nft config missing %q:\n%s", required, nft) }
+    combinedNFTSet := "nftset=/example.com/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6"
+    if strings.TrimSpace(string(dns)) != combinedNFTSet {
+        t.Fatalf("production dnsmasq config must use the combined A/AAAA nftset directive; got:\\n%s", dns)
     }
-    dns, err := os.ReadFile(directDnsmasqPath)
-    if err != nil { t.Fatal(err) }
-    for _, required := range []string{
-        "nftset=/example.com/4#inet#lalune_direct#direct4",
-        "nftset=/example.com/6#inet#lalune_direct#direct6",
-    } {
-        if !strings.Contains(string(dns), required) { t.Fatalf("dnsmasq config missing %q:\\n%s", required, dns) }
+    if strings.Contains(string(dns), "nftset=/example.com/6#inet#lalune_direct#direct6") {
+        t.Fatalf("production dnsmasq config regressed to separate AAAA directive:\\n%s", dns)
     }
     mainConfig, err := os.ReadFile(directDnsmasqMain)
     if err != nil { t.Fatal(err) }
