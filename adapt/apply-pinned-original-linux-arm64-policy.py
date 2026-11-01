@@ -567,7 +567,7 @@ func (t *LinuxTun) cleanupDirectRoutingLocked() error {
 	// exact selector and reserved protocol; an untagged collision blocks cleanup.
 	preflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \"fwmark 0x4c4c/0xffff lookup main\") == 0 || index($0, \"proto 186\") == 0 { bad=1 } END { exit bad }' && " +
 		"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \"fwmark 0x4c4c/0xffff lookup main\") == 0 || index($0, \"proto 186\") == 0 { bad=1 } END { exit bad }' && " +
-		"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \"LALUNE_DIRECT_V1\"'; fi"
+		" { if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\"LALUNE_DIRECT_V1\\"'; else true; fi; }"
 	if err := t.app.runSudo(preflight); err != nil {
 		t.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: владение ресурсами не подтверждено: %v", err))
 		return fmt.Errorf("Direct ownership preflight: владение ресурсами не подтверждено")
@@ -618,7 +618,7 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 	// Preflight before changing any Direct state. Refuse foreign/ambiguous occupants.
 	preflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \"fwmark 0x4c4c/0xffff lookup main\") == 0 || index($0, \"proto 186\") == 0 { bad=1 } END { exit bad }' && " +
 		"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \"fwmark 0x4c4c/0xffff lookup main\") == 0 || index($0, \"proto 186\") == 0 { bad=1 } END { exit bad }' && " +
-		"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \"LALUNE_DIRECT_V1\"'; fi"
+		" { if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\"LALUNE_DIRECT_V1\\"'; else true; fi; }"
 	if err := t.app.runSudo(preflight); err != nil { return fmt.Errorf("Direct ownership preflight: %w", err) }
 	if err := directFileOwnershipError(directDnsmasqPath); err != nil { return err }
 	if err := directFileOwnershipError(directNftPath); err != nil { return err }
