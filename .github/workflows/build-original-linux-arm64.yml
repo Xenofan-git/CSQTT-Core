@@ -16,6 +16,7 @@ on:
       - fix/production-recovery-single-artifact
       - fix/direct-ip-hashmode-captcha-e2e
       - fix/socks5-dns-udp-health-e2e
+      - fix/direct-dnsmasq-dualstack-production
   workflow_dispatch:
 
 permissions:
