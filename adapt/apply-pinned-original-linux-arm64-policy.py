@@ -467,6 +467,9 @@ replace_once(
 linux_direct = r'''
 const directMark = "0x4c4c"
 const directRulePref = "22010"
+// Reserved fib-rule protocol marks resources owned by LaLune Direct.
+const directRuleProtocol = "186"
+const directNftOwnerComment = 'comment "LALUNE_DIRECT_V1"'
 
 // Paths are variables so tests can isolate Direct's filesystem effects in a tempdir.
 var directNftPath = "/run/lalune-direct.nft"
@@ -550,11 +553,18 @@ func prepareDirectPlan(domainsRaw string) ([]string, bool, error) {
 }
 
 func (t *LinuxTun) cleanupDirectRoutingLocked() {
-\t// Remove only rules carrying our exact mark/table signature; never delete
-\t// an unrelated rule merely because it shares the preference number.
-\tt.app.runSudo("ip rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main 2>/dev/null || true")
-\tt.app.runSudo("ip -6 rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main 2>/dev/null || true")
-\tt.app.runSudo("nft delete table inet lalune_direct 2>/dev/null || true")
+\t// Fail closed: every rule at the reserved preference must carry our
+\t// exact selector and reserved protocol; an untagged collision blocks cleanup.
+\tpreflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
+\t\t"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
+\t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\\"LALUNE_DIRECT_V1\\\"'; fi"
+\tif err := t.app.runSudo(preflight); err != nil {
+\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: владение ресурсами не подтверждено: %v", err))
+\t\treturn
+\t}
+\tif err := t.app.runSudo("if ip -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] IPv4 rule cleanup: %v", err)) }
+\tif err := t.app.runSudo("if ip -6 -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'; then ip -6 rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + "; fi"); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] IPv6 rule cleanup: %v", err)) }
+\tif err := t.app.runSudo("if nft list table inet lalune_direct >/dev/null 2>&1; then nft delete table inet lalune_direct; fi"); err != nil { t.app.core.AddLog(fmt.Sprintf("[DIRECT] nft cleanup: %v", err)) }
 \tincludeRemoved, includeErr := removeDirectDnsmasqInclude()
 \tconfigRemoved := false
 \tif _, err := os.Stat(directDnsmasqPath); err == nil {
@@ -578,18 +588,20 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \tdefer func() {
 \t\tif retErr != nil && mutating {
 \t\t\tt.cleanupDirectRoutingLocked()
-\t\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Частичное применение отменено; Direct очищен: %v", retErr))
+\t\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Частичное применение отменено; rollback запрошен: %v", retErr))
 \t\t}
 \t}()
 \tsettings := t.app.core.GetSettings()
 \tdomains, _, err := prepareDirectPlan(settings.DirectDomains + "," + settings.DirectIPs)
 \tif err != nil { return err }
 
+\t// Preflight before changing any Direct state. Refuse foreign/ambiguous occupants.
+\tpreflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
+\t\t"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
+\t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\\"LALUNE_DIRECT_V1\\\"'; fi"
+\tif err := t.app.runSudo(preflight); err != nil { return fmt.Errorf("Direct ownership preflight: %w", err) }
 \tmutating = true
-\t// Reconcile only CSQTT-owned Direct rules; never delete by priority alone.
-\tt.app.runSudo("ip rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main 2>/dev/null || true")
-\tt.app.runSudo("ip -6 rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main 2>/dev/null || true")
-\tt.app.runSudo("nft delete table inet lalune_direct 2>/dev/null || true")
+\tt.cleanupDirectRoutingLocked()
 \tincludeRemoved, includeErr := removeDirectDnsmasqInclude()
 \tif includeErr != nil { return includeErr }
 \thadDnsmasq := false
@@ -616,7 +628,7 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \t\t} else { domainsOnly = append(domainsOnly, entry) }
 \t}
 \tvar nft strings.Builder
-\tnft.WriteString("table inet lalune_direct {\\n")
+\tnft.WriteString("table inet lalune_direct {\\n  " + directNftOwnerComment + ";\\n")
 \tnft.WriteString("  set direct4 { type ipv4_addr; flags interval;")
 \tif len(ipv4s) > 0 { nft.WriteString(" elements = { " + strings.Join(ipv4s, ", ") + " };") }
 \tnft.WriteString(" }\\n")
@@ -660,10 +672,10 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \t\t}
 \t}
 
-\tif err := t.app.runSudo("ip rule add pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main"); err != nil {
+\tif err := t.app.runSudo("ip rule add pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol); err != nil {
 \t\treturn fmt.Errorf("IPv4 ip rule Direct: %w", err)
 \t}
-\tif err := t.app.runSudo("ip -6 rule add pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main"); err != nil {
+\tif err := t.app.runSudo("ip -6 rule add pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol); err != nil {
 \t\treturn fmt.Errorf("IPv6 ip rule Direct: %w", err)
 \t}
 
