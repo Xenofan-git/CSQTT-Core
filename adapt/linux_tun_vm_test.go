@@ -477,7 +477,7 @@ func TestDirectGeneratesDualStackNftDnsAndPolicyRules(t *testing.T) {
     dnsConfig, err := os.ReadFile(directDnsmasqPath)
     if err != nil { t.Fatalf("read production dnsmasq Direct config: %v", err) }
     dns := string(dnsConfig)
-    combinedNFTSet := "# LALUNE_DIRECT_V1\\nnftset=/example.com/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6"
+    combinedNFTSet := "# LALUNE_DIRECT_V1\nnftset=/example.com/4#inet#lalune_direct#direct4,6#inet#lalune_direct#direct6"
     if strings.TrimSpace(string(dns)) != combinedNFTSet {
         t.Fatalf("production dnsmasq config must use the combined A/AAAA nftset directive; got:\\n%s", dns)
     }
