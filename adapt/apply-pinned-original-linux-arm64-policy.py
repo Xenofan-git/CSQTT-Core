@@ -706,7 +706,7 @@ func (t *LinuxTun) CleanupDirectRouting() {
 '''
 # This Go fragment originated in a JavaScript patch and contains escaped tabs and
 # doubled Go escapes. Normalize it before inserting it into the Go source file.
-linux_direct = linux_direct.replace("\\\", "\\")
+linux_direct = linux_direct.replace("\\\\", "\\")
 _normalized_lines = []
 for _line in linux_direct.splitlines():
     _indent = ""
