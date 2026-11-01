@@ -581,11 +581,8 @@ func (t *LinuxTun) cleanupDirectRoutingLocked() error {
 		return err
 	}
 	if err := t.app.runSudo("ip rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + " 2>/dev/null || true"); err != nil { return fmt.Errorf("IPv4 Direct rule cleanup: %w", err) }
-	if err := t.app.runSudo("! ip -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'"); err != nil { return fmt.Errorf("IPv4 Direct rule remains after cleanup: %w", err) }
 	if err := t.app.runSudo("ip -6 rule del pref " + directRulePref + " fwmark " + directMark + "/0xffff lookup main protocol " + directRuleProtocol + " 2>/dev/null || true"); err != nil { return fmt.Errorf("IPv6 Direct rule cleanup: %w", err) }
-	if err := t.app.runSudo("! ip -6 -o rule show pref " + directRulePref + " | grep -Fq 'proto " + directRuleProtocol + "'"); err != nil { return fmt.Errorf("IPv6 Direct rule remains after cleanup: %w", err) }
 	if err := t.app.runSudo("nft delete table inet lalune_direct 2>/dev/null || true"); err != nil { return fmt.Errorf("nft Direct cleanup: %w", err) }
-	if err := t.app.runSudo("! nft list table inet lalune_direct >/dev/null 2>&1"); err != nil { return fmt.Errorf("nft Direct table remains after cleanup: %w", err) }
 	includeRemoved, includeErr := removeDirectDnsmasqInclude()
 	if includeErr != nil { return includeErr }
 	configRemoved := false
