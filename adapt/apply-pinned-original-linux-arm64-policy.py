@@ -556,7 +556,7 @@ func directFileOwnershipError(path string) error {
 \tdata, err := os.ReadFile(path)
 \tif os.IsNotExist(err) { return nil }
 \tif err != nil { return err }
-\tif strings.SplitN(string(data), "\\\\n", 2)[0] != "# LALUNE_DIRECT_V1" {
+\tif strings.SplitN(string(data), "\\n", 2)[0] != "# LALUNE_DIRECT_V1" {
 \t\treturn fmt.Errorf("Direct file %s exists without LaLune ownership marker", path)
 \t}
 \treturn nil
