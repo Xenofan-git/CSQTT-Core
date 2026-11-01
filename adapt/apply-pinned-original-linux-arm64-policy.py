@@ -533,7 +533,7 @@ func validDirectDomain(s string) bool {
 \tif net.ParseIP(s) != nil {
 \t\treturn true
 \t}
-\tif strings.ContainsAny(s, "/#:=<>\\"'\\\\") {
+\tif strings.ContainsAny(s, "/#:=<>\\"'\\\") {
 \t\treturn false
 \t}
 \treturn regexp.MustCompile("(?i)^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$").MatchString(s)
@@ -567,7 +567,7 @@ func (t *LinuxTun) cleanupDirectRoutingLocked() error {
 \t// exact selector and reserved protocol; an untagged collision blocks cleanup.
 \tpreflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
 \t\t"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
-\t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\\"LALUNE_DIRECT_V1\\\"'; fi"
+\t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\"LALUNE_DIRECT_V1\\"'; fi"
 \tif err := t.app.runSudo(preflight); err != nil {
 \t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Очистка остановлена: владение ресурсами не подтверждено: %v", err))
 \t\treturn fmt.Errorf("Direct ownership preflight: владение ресурсами не подтверждено")
@@ -618,7 +618,7 @@ func (t *LinuxTun) applyDirectRoutingLocked() (retErr error) {
 \t// Preflight before changing any Direct state. Refuse foreign/ambiguous occupants.
 \tpreflight := "ip -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
 \t\t"ip -6 -o rule show pref " + directRulePref + " | awk 'index($0, \\"fwmark 0x4c4c/0xffff lookup main\\") == 0 || index($0, \\"proto 186\\") == 0 { bad=1 } END { exit bad }' && " +
-\t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\\"LALUNE_DIRECT_V1\\\"'; fi"
+\t\t"if nft list table inet lalune_direct >/dev/null 2>&1; then nft list table inet lalune_direct | grep -Fq 'comment \\"LALUNE_DIRECT_V1\\"'; fi"
 \tif err := t.app.runSudo(preflight); err != nil { return fmt.Errorf("Direct ownership preflight: %w", err) }
 \tif err := directFileOwnershipError(directDnsmasqPath); err != nil { return err }
 \tif err := directFileOwnershipError(directNftPath); err != nil { return err }
@@ -722,7 +722,7 @@ func (t *LinuxTun) CleanupDirectRouting() {
 '''
 # This Go fragment originated in a JavaScript patch and contains escaped tabs and
 # doubled Go escapes. Normalize it before inserting it into the Go source file.
-linux_direct = linux_direct.replace("\\\\", "\\")
+linux_direct = linux_direct.replace("\\\", "\\")
 _normalized_lines = []
 for _line in linux_direct.splitlines():
     _indent = ""
