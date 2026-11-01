@@ -76,8 +76,21 @@ func TestSocks5RebindClosesSessionsFromOldAddress(t *testing.T) {
 	_ = client.SetReadDeadline(time.Now().Add(time.Second))
 	var b [1]byte
 	if _, err := client.Read(b[:]); err == nil { t.Fatal("old downstream session remained open after rebind") }
-	s.mu.Lock(); remaining := len(s.active); s.mu.Unlock()
-	if remaining != 0 { t.Fatalf("%d old sessions remain after rebind", remaining) }
+	// Closing the socket is synchronous, but the handler's deferred active-map
+	// cleanup runs when its goroutine is scheduled. Wait for that bookkeeping
+	// rather than asserting it in the same scheduling instant as Read returns.
+	cleanupDeadline := time.Now().Add(time.Second)
+	for time.Now().Before(cleanupDeadline) {
+		s.mu.Lock()
+		remaining := len(s.active)
+		s.mu.Unlock()
+		if remaining == 0 { return }
+		time.Sleep(time.Millisecond)
+	}
+	s.mu.Lock()
+	remaining := len(s.active)
+	s.mu.Unlock()
+	if remaining != 0 { t.Fatalf("%d old sessions remain after rebind cleanup deadline", remaining) }
 }
 
 func TestWriteSocksReplyUsesDynamicIPv4Address(t *testing.T) {
