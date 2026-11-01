@@ -522,20 +522,20 @@ func TestDirectCleanupUsesExactIPv4AndIPv6RuleSignature(t *testing.T) {
 
 
 func TestDirectApplyPreservesUnownedDnsmasqFile(t *testing.T) {
-\tlogPath := installTunCommandShims(t, "")
-\tisolateDirectFilesystem(t)
-\tforeign := []byte("# managed by another service\\nnftset=/foreign.example/4#inet#other#v4\\n")
-\tif err := os.WriteFile(directDnsmasqPath, foreign, 0644); err != nil { t.Fatal(err) }
-\tapp := tunTestApp()
-\tif !app.SaveSettings(`{"directDomains":"example.com"}`) { t.Fatal("could not persist Direct settings") }
-\tif err := app.tun.ApplyDirectRouting(); err == nil { t.Fatal("unowned dnsmasq file unexpectedly accepted") }
-\tgot, err := os.ReadFile(directDnsmasqPath)
-\tif err != nil { t.Fatalf("foreign dnsmasq file was removed: %v", err) }
-\tif string(got) != string(foreign) { t.Fatalf("foreign dnsmasq file changed: %q", got) }
-\tlog := readTunCommandLog(t, logPath)
-\tif strings.Contains(log, "nft -f "+directNftPath) || strings.Contains(log, "ip rule add pref 22010") {
-\t\tt.Fatalf("foreign dnsmasq file was detected after kernel mutation: %s", log)
-\t}
+	logPath := installTunCommandShims(t, "")
+	isolateDirectFilesystem(t)
+	foreign := []byte("# managed by another service\nnftset=/foreign.example/4#inet#other#v4\n")
+	if err := os.WriteFile(directDnsmasqPath, foreign, 0644); err != nil { t.Fatal(err) }
+	app := tunTestApp()
+	if !app.SaveSettings(`{"directDomains":"example.com"}`) { t.Fatal("could not persist Direct settings") }
+	if err := app.tun.ApplyDirectRouting(); err == nil { t.Fatal("unowned dnsmasq file unexpectedly accepted") }
+	got, err := os.ReadFile(directDnsmasqPath)
+	if err != nil { t.Fatalf("foreign dnsmasq file was removed: %v", err) }
+	if string(got) != string(foreign) { t.Fatalf("foreign dnsmasq file changed: %q", got) }
+	log := readTunCommandLog(t, logPath)
+	if strings.Contains(log, "nft -f "+directNftPath) || strings.Contains(log, "ip rule add pref 22010") {
+		t.Fatalf("foreign dnsmasq file was detected after kernel mutation: %s", log)
+	}
 }
 
 func TestDirectPartialApplyRollsBackEveryMutatingStage(t *testing.T) {
@@ -577,35 +577,35 @@ func TestDirectPartialApplyRollsBackEveryMutatingStage(t *testing.T) {
 				"nft delete table inet lalune_direct",
 			} {
 				if !strings.Contains(log, required) {
-					t.Fatalf("%s rollback omitted %q:\\n%s", stage.name, required, log)
+					t.Fatalf("%s rollback omitted %q:\n%s", stage.name, required, log)
 				}
 			}
 			if strings.Contains(log, "ip rule del pref 22010 2>/dev/null") ||
 				strings.Contains(log, "ip -6 rule del pref 22010 2>/dev/null") {
-				t.Fatalf("rollback used priority-only deletion and could remove foreign rules:\\n%s", log)
+				t.Fatalf("rollback used priority-only deletion and could remove foreign rules:\n%s", log)
 			}
 		})
 	}
 }
 
 func TestDirectOwnershipPreflightRejectsUnownedPriorityCollision(t *testing.T) {
-\tlogPath := installTunCommandShims(t, "awk")
-\tisolateDirectFilesystem(t)
-\tapp := tunTestApp()
-\tif !app.SaveSettings(`{"directDomains":"example.com"}`) {
-\t\tt.Fatal("could not persist Direct conflict settings")
-\t}
-\tif err := app.tun.ApplyDirectRouting(); err == nil {
-\t\tt.Fatal("unowned Direct priority collision unexpectedly passed preflight")
-\t}
-\tlog := readTunCommandLog(t, logPath)
-\tif !strings.Contains(log, "SUDO") || !strings.Contains(log, "awk") {
-\t\tt.Fatalf("ownership preflight was not executed: %s", log)
-\t}
-\tfor _, forbidden := range []string{"nft -f " + directNftPath, "ip rule add pref 22010", "ip -6 rule add pref 22010"} {
-\t\tif strings.Contains(log, forbidden) { t.Fatalf("preflight collision allowed mutation %q: %s", forbidden, log) }
-\t}
-\tfor _, path := range []string{directNftPath, directDnsmasqPath} {
-\t\tif _, err := os.Stat(path); !os.IsNotExist(err) { t.Fatalf("preflight collision created artifact %s", path) }
-\t}
+	logPath := installTunCommandShims(t, "awk")
+	isolateDirectFilesystem(t)
+	app := tunTestApp()
+	if !app.SaveSettings(`{"directDomains":"example.com"}`) {
+		t.Fatal("could not persist Direct conflict settings")
+	}
+	if err := app.tun.ApplyDirectRouting(); err == nil {
+		t.Fatal("unowned Direct priority collision unexpectedly passed preflight")
+	}
+	log := readTunCommandLog(t, logPath)
+	if !strings.Contains(log, "SUDO") || !strings.Contains(log, "awk") {
+		t.Fatalf("ownership preflight was not executed: %s", log)
+	}
+	for _, forbidden := range []string{"nft -f " + directNftPath, "ip rule add pref 22010", "ip -6 rule add pref 22010"} {
+		if strings.Contains(log, forbidden) { t.Fatalf("preflight collision allowed mutation %q: %s", forbidden, log) }
+	}
+	for _, path := range []string{directNftPath, directDnsmasqPath} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) { t.Fatalf("preflight collision created artifact %s", path) }
+	}
 }
