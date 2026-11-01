@@ -434,6 +434,17 @@ func TestDirectGeneratesDualStackNftDnsAndPolicyRules(t *testing.T) {
     nftConfig, err := os.ReadFile(directNftPath)
     if err != nil { t.Fatal(err) }
     nft := string(nftConfig)
+    for _, required := range []string{
+        "table inet lalune_direct",
+        "set direct4 { type ipv4_addr; flags interval; elements = { 192.0.2.44 }; }",
+        "set direct6 { type ipv6_addr; flags interval; elements = { 2001:db8::44 }; }",
+        "ip daddr @direct4 meta mark set 0x4c4c",
+        "ip6 daddr @direct6 meta mark set 0x4c4c",
+    } {
+        if !strings.Contains(nft, required) {
+            t.Fatalf("production nft Direct config missing %q:\\n%s", required, nft)
+        }
+    }
     dnsConfig, err := os.ReadFile(directDnsmasqPath)
     if err != nil { t.Fatalf("read production dnsmasq Direct config: %v", err) }
     dns := string(dnsConfig)
