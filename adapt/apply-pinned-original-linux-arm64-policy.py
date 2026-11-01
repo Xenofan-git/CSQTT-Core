@@ -469,7 +469,7 @@ const directMark = "0x4c4c"
 const directRulePref = "22010"
 // Reserved fib-rule protocol marks resources owned by LaLune Direct.
 const directRuleProtocol = "186"
-const directNftOwnerComment = 'comment "LALUNE_DIRECT_V1"'
+const directNftOwnerComment = "comment \"LALUNE_DIRECT_V1\""
 
 // Paths are variables so tests can isolate Direct's filesystem effects in a tempdir.
 var directNftPath = "/run/lalune-direct.nft"
