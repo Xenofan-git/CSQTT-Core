@@ -1202,26 +1202,17 @@ if final_linux.count(old_client_pid) != 1:
 final_linux = final_linux.replace(old_client_pid, new_client_pid, 1)
 
 # Waiter owns Wait; clear only the matching runner/app process identity.
-old_wait = """		cmd.Wait()
-		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
-new_wait = """		waitErr := cmd.Wait()
-		processDone <- waitErr
-		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
-if final_linux.count(old_wait) != 1:
-    raise SystemExit("LinuxRunner process waiter marker missing or ambiguous")
-final_linux = final_linux.replace(old_wait, new_wait, 1)
-# processDone is buffered so the Wait owner never blocks if startup has already returned.
-process_anchor = "	go func() {
-		waitErr := cmd.Wait()"
-if final_linux.count(process_anchor) != 1:
-    raise SystemExit("LinuxRunner process waiter goroutine marker missing or ambiguous")
-final_linux = final_linux.replace(process_anchor, "	processDone := make(chan error, 1)
-" + process_anchor, 1)
-new_wait = """		cmd.Wait()
-		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
-if final_linux.count(old_wait) != 1:
-    raise SystemExit("LinuxRunner process waiter marker missing or ambiguous")
-final_linux = final_linux.replace(old_wait, new_wait, 1)
+waiter_pattern = re.compile(
+    r'\tgo func\(\) \{\n\t\tcmd\.Wait\(\)\n\t\tif v, ok := linuxRunnerInputs\.LoadAndDelete\(r\); ok \{ _ = v\.\(io\.WriteCloser\)\.Close\(\) \}'
+)
+waiter_replacement = """\tprocessDone := make(chan error, 1)
+\tgo func() {
+\t\twaitErr := cmd.Wait()
+\t\tprocessDone <- waitErr
+\t\tif v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
+final_linux, waiter_count = waiter_pattern.subn(waiter_replacement, final_linux, count=1)
+if waiter_count != 1:
+    raise SystemExit("LinuxRunner process waiter pattern missing or ambiguous")
 
 old_clear_pid = """		r.app.mu.Lock()
 		r.app.clientPID = 0
