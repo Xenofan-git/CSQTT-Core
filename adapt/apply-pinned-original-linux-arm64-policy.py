@@ -590,10 +590,12 @@ func (t *LinuxTun) cleanupDirectRoutingLocked() error {
 		if err := os.Remove(directDnsmasqPath); err != nil { return fmt.Errorf("remove owned Direct dnsmasq config: %w", err) }
 		configRemoved = true
 	} else if !os.IsNotExist(err) { return fmt.Errorf("stat Direct dnsmasq config: %w", err) }
+	// Remove the owned nft source file before restarting dnsmasq. If the
+	// restart fails, rollback must still leave no stale Direct artifacts.
+	if err := os.Remove(directNftPath); err != nil && !os.IsNotExist(err) { return fmt.Errorf("remove owned Direct nft config: %w", err) }
 	if includeRemoved || configRemoved {
 		if err := t.app.runSudo("systemctl restart dnsmasq"); err != nil { return fmt.Errorf("dnsmasq restart after Direct cleanup: %w", err) }
 	}
-	if err := os.Remove(directNftPath); err != nil && !os.IsNotExist(err) { return err }
 	return nil
 }
 
