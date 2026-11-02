@@ -45,7 +45,7 @@ type singBoxConfigInput struct {
 }
 
 type singBoxConfig struct {
-	Log      map[string]string   `json:"log"`
+	Log      map[string]any      `json:"log"`
 	Inbounds []map[string]any    `json:"inbounds"`
 	Outbounds []map[string]any   `json:"outbounds"`
 	Route    map[string]any      `json:"route"`
@@ -249,11 +249,10 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	rules = append(rules, map[string]any{"action": "reject"})
 
 	config := singBoxConfig{
-		Log: map[string]string{"level": "info", "timestamp": "true"},
+		Log: map[string]any{"level": "info", "timestamp": true},
 		Inbounds: []map[string]any{{
 			"type": "socks", "tag": singBoxInboundTag,
 			"listen": listenHost, "listen_port": listenPort,
-			"sniff": false,
 		}},
 		Outbounds: outbounds,
 		Route: map[string]any{"rules": rules},
