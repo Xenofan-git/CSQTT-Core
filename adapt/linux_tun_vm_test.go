@@ -602,7 +602,7 @@ func TestDirectOwnershipPreflightRejectsUnownedPriorityCollision(t *testing.T) {
 		t.Fatal("could not persist Direct conflict settings")
 	}
 	if err := app.tun.ApplyDirectRouting(); err == nil {
-		t.Fatal("unowned Direct priority collision unexpectedly passed preflight")
+		t.Fatalf("unowned Direct priority collision unexpectedly passed preflight; command log:\n%s", readTunCommandLog(t, logPath))
 	}
 	log := readTunCommandLog(t, logPath)
 	if !strings.Contains(log, "SUDO") || !strings.Contains(log, "awk") {
