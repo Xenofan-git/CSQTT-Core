@@ -68,6 +68,22 @@ func singBoxHostPort(value, field string) (string, int, error) {
 	return host, port, nil
 }
 
+func singBoxOutboundHostPort(host, portText, field string) (string, int, error) {
+	host = strings.TrimSpace(host)
+	if net.ParseIP(host) == nil {
+		normalized, err := normalizeSingBoxDomain(host)
+		if err != nil {
+			return "", 0, fmt.Errorf("%s host: %w", field, err)
+		}
+		host = normalized
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("%s port must be between 1 and 65535", field)
+	}
+	return host, port, nil
+}
+
 func normalizeSingBoxDomain(value string) (string, error) {
 	domain := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
 	if domain == "" || len(domain) > 253 || strings.ContainsAny(domain, " /:*?#[]") {
@@ -189,8 +205,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		if _, exists := knownOutbounds[tag]; exists {
 			return nil, fmt.Errorf("duplicate outbound tag %q", tag)
 		}
-		hostPort := net.JoinHostPort(proxy.Server, strconv.Itoa(proxy.ServerPort))
-		host, port, err := singBoxHostPort(hostPort, "SOCKS5 outbound "+tag)
+		host, port, err := singBoxOutboundHostPort(proxy.Server, strconv.Itoa(proxy.ServerPort), "SOCKS5 outbound "+tag)
 		if err != nil {
 			return nil, err
 		}
