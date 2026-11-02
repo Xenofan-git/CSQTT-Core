@@ -218,6 +218,10 @@ jobs:
           grep -Fq 'resolvectl dns csqtt0' upstream-lalune/Desktop/Linux/app_linux.go
           grep -Fq 'bridge.StartTunnel(coreListenPort)' upstream-lalune/Desktop/Linux/app_linux.go
           grep -Fq 'func (r *LinuxRunner) StartCore' upstream-lalune/Desktop/Linux/app_linux.go
+          grep -Fq 'func (r *LinuxRunner) beginCoreStart() bool' upstream-lalune/Desktop/Linux/app_linux.go
+          grep -Fq 'cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}' upstream-lalune/Desktop/Linux/app_linux.go
+          grep -Fq 'case <-startupTimer.C:' upstream-lalune/Desktop/Linux/app_linux.go
+          grep -Fq 'abortCoreStartup(bridge, cmd,' upstream-lalune/Desktop/Linux/app_linux.go
           # Auto VK must never put access tokens in argv; sudo auth uses a separate stdin exchange.
           ! grep -Fq 'cmd = append(cmd, "--token", token)' upstream-lalune/Desktop/Libs/bridge.go
           grep -Fq 'VK_JS_BOOTSTRAP:' upstream-lalune/Desktop/Libs/bridge.go
@@ -285,6 +289,9 @@ jobs:
           cp adapt/linux_tun_vm_test.go upstream-lalune/Desktop/Linux/linux_tun_vm_test.go
           cp adapt/lalune_socks5_linux_test.go upstream-lalune/Desktop/Linux/lalune_socks5_linux_test.go
           cp adapt/linux_core_argv_test.go upstream-lalune/Desktop/Linux/linux_core_argv_test.go
+          cp adapt/linux_runner_lifecycle_test.go upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
+          grep -Fq 'func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree' upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
+          grep -Fq 'func TestLinuxRunnerSetupRoutesFailureKillsCoreProcessTree' upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
           mkdir -p upstream-lalune/Desktop/Linux/frontend
           cp -a upstream-lalune/Frontend/Core/build/web/. upstream-lalune/Desktop/Linux/frontend/
           # The binary's embedded fallback UI uses the CSQTT-style panel preview.
