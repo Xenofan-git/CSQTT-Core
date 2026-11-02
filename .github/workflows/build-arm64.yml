@@ -3,7 +3,7 @@ name: Build LaLune Linux ARM64
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, fix/linux-tun-uds]
   pull_request:
     branches: [main]
 
@@ -74,6 +74,18 @@ jobs:
       - name: Prepare SmartTunnel runtime library
         working-directory: upstream
         run: python3 prepare_st.py --platform=Linux
+      - name: Apply Linux TUN UDS patch
+        run: python3 patches/apply-linux-tun-uds.py
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build patched Linux ARM64 CSQTT core
+        run: |
+          git clone --depth 1 --branch 2026.09.16.17.59 https://github.com/Endlad2/csqtt-core.git csqtt-core
+          cp patches/csqtt-tun.rs csqtt-core/rust-client/tun.rs
+          cargo build --locked --release --manifest-path csqtt-core/rust-client/Cargo.toml
+          mkdir -p dist
+          cp csqtt-core/rust-client/target/release/client dist/client-linux-arm64-tun-uds
+          chmod +x dist/client-linux-arm64-tun-uds
       - name: Stage Wails Linux sources
         working-directory: upstream
         run: |
@@ -96,6 +108,12 @@ jobs:
           go test ./...
           mkdir -p ../dist
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../dist/lalune-gateway
+      - name: Upload patched CSQTT core
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-linux-arm64-tun-uds
+          path: dist/client-linux-arm64-tun-uds
+          if-no-files-found: error
       - name: Assemble artifacts
         run: |
           mkdir -p dist/lalune-gateway-bundle
