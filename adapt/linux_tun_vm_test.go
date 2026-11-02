@@ -32,9 +32,11 @@ func installTunCommandShims(t *testing.T, failContains string) string {
 	logPath := filepath.Join(dir, "commands.log")
 	sudo := "#!/bin/sh\nprintf 'SUDO %s\\n' \"$*\" >> \"" + logPath + "\"\n" +
 		"if [ -n \"${FAKE_SUDO_FAIL_CONTAINS:-}\" ]; then case \"$*\" in *\"$FAKE_SUDO_FAIL_CONTAINS\"*) exit 17;; esac; fi\n" +
-		"# Execute shell-based ownership preflights so fake ip output is parsed by real awk.\n" +
-		"case \"$*\" in *awk*) if [ \"$1\" = -n ]; then shift; fi; if [ \"$1\" = sh ] && [ \"$2\" = -c ]; then shift 2; exec /bin/sh -c \"$1\"; fi;; esac\n" +
-		"if [ \"$1\" = test ]; then shift; /usr/bin/test \"$@\"; exit $?; fi\nexit 0\n"
+		"# Dispatch commands the same way sudo does in production; preserve fake ip output for preflight.\\n" +
+		"if [ \"$1\" = -n ]; then shift; fi\\n" +
+		"if [ \"$1\" = sh ] && [ \"$2\" = -c ]; then shift 2; exec /bin/sh -c \"$1\"; fi\\n" +
+		"if [ \"$1\" = ip ]; then exec \"$@\"; fi\\n" +
+		"if [ \"$1\" = test ]; then shift; /usr/bin/test \"$@\"; exit $?; fi\\nexit 0\\n"
 	ip := "#!/bin/sh\nprintf 'IP %s\\n' \"$*\" >> \"" + logPath + "\"\n" +
 		"case \"$*\" in\n" +
 		"  '-o route show table 202') [ -n \"${FAKE_IP_OCCUPIED_ROUTE:-}\" ] && echo \"$FAKE_IP_OCCUPIED_ROUTE\";;\n" +
@@ -594,24 +596,30 @@ func TestDirectPartialApplyRollsBackEveryMutatingStage(t *testing.T) {
 }
 
 func TestDirectOwnershipPreflightRejectsUnownedPriorityCollision(t *testing.T) {
-	logPath := installTunCommandShims(t, "")
-	t.Setenv("FAKE_IP_OCCUPIED_DIRECT_RULE", "22010: from all lookup 42424")
-	isolateDirectFilesystem(t)
-	app := tunTestApp()
-	if !app.SaveSettings(`{"directDomains":"example.com"}`) {
-		t.Fatal("could not persist Direct conflict settings")
+	cases := []struct { name, env, rule string }{
+		{name: "foreign IPv4 rule", env: "FAKE_IP_OCCUPIED_DIRECT_RULE", rule: "22010: from all lookup 42424"},
+		{name: "foreign IPv6 rule", env: "FAKE_IP_OCCUPIED_DIRECT6_RULE", rule: "22010: from all lookup 42424"},
 	}
-	if err := app.tun.ApplyDirectRouting(); err == nil {
-		t.Fatalf("unowned Direct priority collision unexpectedly passed preflight; command log:\n%s", readTunCommandLog(t, logPath))
-	}
-	log := readTunCommandLog(t, logPath)
-	if !strings.Contains(log, "SUDO") || !strings.Contains(log, "awk") {
-		t.Fatalf("ownership preflight was not executed: %s", log)
-	}
-	for _, forbidden := range []string{"nft -f " + directNftPath, "ip rule add pref 22010", "ip -6 rule add pref 22010"} {
-		if strings.Contains(log, forbidden) { t.Fatalf("preflight collision allowed mutation %q: %s", forbidden, log) }
-	}
-	for _, path := range []string{directNftPath, directDnsmasqPath} {
-		if _, err := os.Stat(path); !os.IsNotExist(err) { t.Fatalf("preflight collision created artifact %s", path) }
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logPath := installTunCommandShims(t, "")
+			t.Setenv(tc.env, tc.rule)
+			isolateDirectFilesystem(t)
+			app := tunTestApp()
+			if !app.SaveSettings(`{"directDomains":"example.com"}`) { t.Fatal("could not persist Direct conflict settings") }
+			if err := app.tun.ApplyDirectRouting(); err == nil {
+				t.Fatalf("unowned Direct priority collision unexpectedly passed preflight; command log:\\n%s", readTunCommandLog(t, logPath))
+			}
+			log := readTunCommandLog(t, logPath)
+			if !strings.Contains(log, "SUDO ip") || !strings.Contains(log, "IP ") {
+				t.Fatalf("ownership preflight did not dispatch through fake ip: %s", log)
+			}
+			for _, forbidden := range []string{"nft -f " + directNftPath, "ip rule add pref 22010", "ip -6 rule add pref 22010", "systemctl restart dnsmasq", "ip rule del pref 22010", "ip -6 rule del pref 22010"} {
+				if strings.Contains(log, forbidden) { t.Fatalf("preflight collision allowed mutation %q: %s", forbidden, log) }
+			}
+			for _, path := range []string{directNftPath, directDnsmasqPath} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) { t.Fatalf("preflight collision created artifact %s", path) }
+			}
+		})
 	}
 }
