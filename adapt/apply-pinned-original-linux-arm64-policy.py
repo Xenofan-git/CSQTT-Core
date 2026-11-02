@@ -125,7 +125,7 @@ LINUX.write_text(s)
 s = LINUX.read_text()
 s = s.replace("type LinuxRunner struct {", "var linuxRunnerInputs sync.Map\n\ntype LinuxRunner struct {", 1)
 wait_old = '\t\tcmd.Wait()'
-wait_new = '\tprocessDone := make(chan error, 1)\n\tgo func() {\n\t\twaitErr := cmd.Wait()\n\t\tprocessDone <- waitErr\n\t\tif v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }'
+wait_new = '\t\tcmd.Wait()\n\t\tif v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }'
 if wait_old not in s:
     raise SystemExit("core wait marker not found for stdin cleanup")
 s = s.replace(wait_old, wait_new, 1)
@@ -1204,6 +1204,19 @@ final_linux = final_linux.replace(old_client_pid, new_client_pid, 1)
 # Waiter owns Wait; clear only the matching runner/app process identity.
 old_wait = """		cmd.Wait()
 		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
+new_wait = """		waitErr := cmd.Wait()
+		processDone <- waitErr
+		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
+if final_linux.count(old_wait) != 1:
+    raise SystemExit("LinuxRunner process waiter marker missing or ambiguous")
+final_linux = final_linux.replace(old_wait, new_wait, 1)
+# processDone is buffered so the Wait owner never blocks if startup has already returned.
+process_anchor = "	go func() {
+		waitErr := cmd.Wait()"
+if final_linux.count(process_anchor) != 1:
+    raise SystemExit("LinuxRunner process waiter goroutine marker missing or ambiguous")
+final_linux = final_linux.replace(process_anchor, "	processDone := make(chan error, 1)
+" + process_anchor, 1)
 new_wait = """		cmd.Wait()
 		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
 if final_linux.count(old_wait) != 1:
