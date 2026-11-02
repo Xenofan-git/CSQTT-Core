@@ -37,6 +37,8 @@ func installTunCommandShims(t *testing.T, failContains string) string {
 		"  '-o route show table 202') [ -n \"${FAKE_IP_OCCUPIED_ROUTE:-}\" ] && echo \"$FAKE_IP_OCCUPIED_ROUTE\";;\n" +
 		"  '-o rule show pref 22020') [ -n \"${FAKE_IP_OCCUPIED_RULE:-}\" ] && echo \"$FAKE_IP_OCCUPIED_RULE\";;\n" +
 		"  '-o rule show pref 22015') [ -n \"${FAKE_IP_OCCUPIED_SOCKS_RULE:-}\" ] && echo \"$FAKE_IP_OCCUPIED_SOCKS_RULE\";;\n" +
+		"  '-o rule show pref 22010') [ -n \"${FAKE_IP_OCCUPIED_DIRECT_RULE:-}\" ] && echo \"$FAKE_IP_OCCUPIED_DIRECT_RULE\";;\n" +
+		"  '-6 -o rule show pref 22010') [ -n \"${FAKE_IP_OCCUPIED_DIRECT6_RULE:-}\" ] && echo \"$FAKE_IP_OCCUPIED_DIRECT6_RULE\";;\n" +
 		"esac\nexit 0\n"
 	for name, content := range map[string]string{"sudo": sudo, "ip": ip} {
 		path := filepath.Join(dir, name)
@@ -589,7 +591,8 @@ func TestDirectPartialApplyRollsBackEveryMutatingStage(t *testing.T) {
 }
 
 func TestDirectOwnershipPreflightRejectsUnownedPriorityCollision(t *testing.T) {
-	logPath := installTunCommandShims(t, "awk")
+	logPath := installTunCommandShims(t, "")
+	t.Setenv("FAKE_IP_OCCUPIED_DIRECT_RULE", "22010: from all lookup 42424")
 	isolateDirectFilesystem(t)
 	app := tunTestApp()
 	if !app.SaveSettings(`{"directDomains":"example.com"}`) {
