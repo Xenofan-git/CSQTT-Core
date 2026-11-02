@@ -78,7 +78,7 @@ old_runner = '''            if !bridge.StartTunnel(coreListenPort) {
                 bridge.Core.AddLog("[TUN] Подключение отменено: пакетный мост не запущен")
                 bridge.CleanupRoutes()
                 bridge.Core.SetConnected(false)
-                if cmd.Process != nil { _ = terminateCoreProcessGroup(cmd.Process.Pid) }
+                if cmd.Process != nil { _ = cmd.Process.Kill() }
                 return
             }'''
 new_runner = '''            if err := startTunnelAndSocks(bridge, coreListenPort); err != nil {
