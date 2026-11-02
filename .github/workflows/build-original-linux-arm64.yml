@@ -567,7 +567,7 @@ jobs:
           metadata = {
               "schemaVersion": 1,
               "artifact": "csqtt-lalune-linux-arm64",
-              "producer": "Xenofan-git/LaLune-NanoPi-ARM64",
+              "producer": "Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64",
               "sourceRepository": "amurcanov/csqtt",
               "sourceCommit": source_commit,
               "sourceTag": "v2.1.9",
