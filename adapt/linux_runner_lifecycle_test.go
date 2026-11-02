@@ -138,14 +138,35 @@ func TestLinuxRunnerSetupRoutesFailureKillsCoreProcessTree(t *testing.T) {
 	waitProcessGone(t, childPID)
 }
 
-func TestAbortCoreStartupCleansBridgeOwnership(t *testing.T) {
+func TestAbortCoreStartupKillsProcessGroupAndMarksDisconnected(t *testing.T) {
+	dir := t.TempDir()
+	childPIDFile := filepath.Join(dir, "abort-child.pid")
+	script := "sleep 60 & echo $! > " + shellQuoteForTest(childPIDFile) + "; wait"
+	cmd := exec.Command("/bin/sh", "-c", script)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil { t.Fatalf("start child fixture: %v", err) }
+	deadline := time.Now().Add(2 * time.Second)
+	var childPID int
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(childPIDFile)
+		if err == nil {
+			childPID, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+			if childPID > 0 { break }
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if childPID == 0 {
+		_ = terminateCoreProcessGroup(cmd.Process.Pid)
+		_ = cmd.Wait()
+		t.Fatal("child PID fixture was not created")
+	}
 	core := libs.NewAppCore()
 	core.SetConnected(true)
-	tun := &runnerLifecycleProbeTun{}
-	bridge := libs.NewBridge(core, tun, nil)
-	bridge.TunRunning = true
-	abortCoreStartup(bridge, nil, "test abort")
+	bridge := libs.NewBridge(core, &runnerLifecycleProbeTun{}, nil)
+	abortCoreStartup(bridge, cmd, "test abort")
 	if core.IsConnected() { t.Fatal("connected state remained true after abort") }
-	if !tun.stopped { t.Fatal("TUN Stop was not called") }
-	if !tun.cleaned { t.Fatal("TUN CleanupRoutes was not called") }
+	if err := cmd.Wait(); err != nil {
+		if _, ok := err.(*exec.ExitError); !ok { t.Fatalf("wait for killed fixture: %v", err) }
+	}
+	waitProcessGone(t, childPID)
 }

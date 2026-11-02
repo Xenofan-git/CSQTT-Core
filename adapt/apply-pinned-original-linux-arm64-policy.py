@@ -1075,8 +1075,7 @@ func abortCoreStartup(bridge *libs.Bridge, cmd *exec.Cmd, reason string) {
 		}
 	}
 	bridge.Core.SetConnected(false)
-	bridge.StopTunnel()
-	bridge.CleanupRoutes()
+	// The cmd.Wait owner performs Bridge/TUN cleanup after the process group exits.
 }
 
 """
@@ -1188,7 +1187,6 @@ final_linux = final_linux.replace(old_client_pid, new_client_pid, 1)
 old_wait = """		cmd.Wait()
 		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
 new_wait = """		cmd.Wait()
-		r.markCoreStopped(cmd.Process.Pid)
 		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
 if final_linux.count(old_wait) != 1:
     raise SystemExit("LinuxRunner process waiter marker missing or ambiguous")
@@ -1199,7 +1197,8 @@ old_clear_pid = """		r.app.mu.Lock()
 		r.app.mu.Unlock()"""
 new_clear_pid = """		r.app.mu.Lock()
 		if r.app.clientPID == cmd.Process.Pid { r.app.clientPID = 0 }
-		r.app.mu.Unlock()"""
+		r.app.mu.Unlock()
+		r.markCoreStopped(cmd.Process.Pid)"""
 if final_linux.count(old_clear_pid) != 1:
     raise SystemExit("LinuxRunner clientPID cleanup marker missing or ambiguous")
 final_linux = final_linux.replace(old_clear_pid, new_clear_pid, 1)
