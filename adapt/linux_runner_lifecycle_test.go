@@ -106,7 +106,6 @@ func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree(t *testing.T) {
 func TestLinuxRunnerSetupRoutesFailureKillsCoreProcessTree(t *testing.T) {
 	installTunCommandShims(t, "ip tuntap add")
 	isolateDirectFilesystem(t)
-	installRunnerFixtureSudo(t)
 	logFile := filepath.Join(os.TempDir(), "lalune_core_logs.txt")
 	_ = os.Remove(logFile)
 	t.Cleanup(func() { _ = os.Remove(logFile) })
