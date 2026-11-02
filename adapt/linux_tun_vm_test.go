@@ -623,3 +623,143 @@ func TestDirectOwnershipPreflightRejectsUnownedPriorityCollision(t *testing.T) {
 		})
 	}
 }
+
+
+func TestNewAppOwnsUnstartedEth1SocksServer(t *testing.T) {
+	app := NewApp()
+	if app == nil { t.Fatal("NewApp returned nil") }
+	if app.socks == nil { t.Fatal("NewApp did not create its SOCKS5 server") }
+	if app.socks.addr != "eth1:12500" {
+		t.Fatalf("SOCKS5 listener address = %q; want eth1:12500", app.socks.addr)
+	}
+	if status := app.socks.Status(); status.Monitoring || status.Listening {
+		t.Fatalf("SOCKS5 started during App construction: %+v", status)
+	}
+	if app.tun == nil || app.tun.app != app { t.Fatal("LinuxTun is not owned by App") }
+	if app.runner == nil || app.runner.app != app { t.Fatal("LinuxRunner is not owned by App") }
+	if app.bridge == nil || app.bridge.Tun != app.tun || app.bridge.Runner != app.runner {
+		t.Fatal("Bridge is not wired to the App-owned LinuxTun and LinuxRunner")
+	}
+}
+
+func installFakeTunStartHooks(t *testing.T, app *App) {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "fake-tun")
+	if err != nil { t.Fatal(err) }
+	t.Cleanup(func() { _ = f.Close() })
+	app.tun.tunOpen = func() (*os.File, error) { return f, nil }
+	app.tun.tunSetIFF = func(*os.File, *unix.Ifreq) error { return nil }
+}
+
+func TestLinuxRunnerStartsSocksOnlyAfterTUNBridge(t *testing.T) {
+	logPath := installTunCommandShims(t, "")
+	isolateDirectFilesystem(t)
+	app := tunTestApp()
+	app.socks = NewSocks5Server("127.0.0.1:0")
+
+	if err := app.tun.SetupRoutes("192.0.2.10", "8.8.8.8"); err != nil {
+		t.Fatalf("TUN route setup failed: %v", err)
+	}
+	if status := app.socks.Status(); status.Monitoring || status.Listening {
+		t.Fatalf("SOCKS5 became available before the packet bridge: %+v", status)
+	}
+	if app.tun.socksRuleCreated {
+		t.Fatal("SOCKS5 fwmark rule was installed before the packet bridge")
+	}
+	if log := readTunCommandLog(t, logPath); strings.Contains(log, "SUDO ip rule add pref 22015") {
+		t.Fatalf("SOCKS5 fwmark rule was installed during SetupRoutes: %s", log)
+	}
+
+	installFakeTunStartHooks(t, app)
+	udpListener, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil { t.Fatalf("create fake core UDP listener: %v", err) }
+	defer udpListener.Close()
+	bridge := libs.NewBridge(app.core, app.tun, nil)
+	port := udpListener.LocalAddr().(*net.UDPAddr).Port
+
+	if err := startTunnelAndSocks(bridge, port); err != nil {
+		t.Fatalf("start TUN bridge and SOCKS5: %v", err)
+	}
+	if !bridge.TunRunning || app.tun.tunFile == nil || app.tun.udpConn == nil {
+		t.Fatal("packet bridge was not active when SOCKS5 startup returned")
+	}
+	if !app.tun.socksRuleCreated {
+		t.Fatal("SOCKS5 fwmark rule was not installed after packet bridge startup")
+	}
+	if status := app.socks.Status(); !status.Monitoring || !status.Listening {
+		t.Fatalf("SOCKS5 listener did not start after packet bridge: %+v", status)
+	}
+	log := readTunCommandLog(t, logPath)
+	routeIndex := strings.Index(log, "SUDO ip route add default dev csqtt0 table 202")
+	markIndex := strings.Index(log, "SUDO ip rule add pref 22015 fwmark 0x4d53/0xffff lookup 202")
+	if routeIndex < 0 || markIndex <= routeIndex {
+		t.Fatalf("SOCKS5 mark rule was not added after TUN route setup:\\n%s", log)
+	}
+
+	bridge.StopTunnel()
+	bridge.CleanupRoutes()
+	if status := app.socks.Status(); status.Monitoring || status.Listening {
+		t.Fatalf("SOCKS5 remained active after bridge cleanup: %+v", status)
+	}
+	if app.tun.socksRuleCreated {
+		t.Fatal("SOCKS5 fwmark ownership flag remained set after cleanup")
+	}
+}
+
+func TestLinuxTunStartSocksRejectsInactivePacketBridge(t *testing.T) {
+	logPath := installTunCommandShims(t, "")
+	app := tunTestApp()
+	app.socks = NewSocks5Server("127.0.0.1:0")
+
+	if err := app.tun.StartSocks(); err == nil || !strings.Contains(err.Error(), "packet bridge is active") {
+		t.Fatalf("StartSocks without an attached TUN fd returned %v", err)
+	}
+	if status := app.socks.Status(); status.Monitoring || status.Listening {
+		t.Fatalf("SOCKS5 started without an attached TUN fd: %+v", status)
+	}
+	if log := readTunCommandLog(t, logPath); strings.Contains(log, "SUDO ip rule add pref 22015") {
+		t.Fatalf("SOCKS5 fwmark rule was installed without an attached TUN fd: %s", log)
+	}
+}
+
+func TestLinuxRunnerSocksBindFailureRollsBackPacketBridgeAndMarkRule(t *testing.T) {
+	logPath := installTunCommandShims(t, "")
+	isolateDirectFilesystem(t)
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatalf("reserve SOCKS5 address: %v", err) }
+	defer occupied.Close()
+
+	app := tunTestApp()
+	app.socks = NewSocks5Server(occupied.Addr().String())
+	if err := app.tun.SetupRoutes("192.0.2.10", "8.8.8.8"); err != nil {
+		t.Fatalf("TUN route setup failed: %v", err)
+	}
+	installFakeTunStartHooks(t, app)
+	udpListener, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil { t.Fatalf("create fake core UDP listener: %v", err) }
+	defer udpListener.Close()
+	bridge := libs.NewBridge(app.core, app.tun, nil)
+
+	err = startTunnelAndSocks(bridge, udpListener.LocalAddr().(*net.UDPAddr).Port)
+	if err == nil || !strings.Contains(err.Error(), "start SOCKS5 after TUN packet bridge") {
+		t.Fatalf("expected SOCKS5 bind failure after packet bridge startup, got %v", err)
+	}
+	if bridge.TunRunning || bridge.UdpConn != nil {
+		t.Fatal("packet bridge remained active after SOCKS5 bind failure")
+	}
+	if app.tun.tunFile != nil || app.tun.udpConn != nil {
+		t.Fatal("TUN fd or UDP bridge connection remained after rollback")
+	}
+	if app.tun.socksRuleCreated {
+		t.Fatal("SOCKS5 fwmark ownership flag remained set after rollback")
+	}
+	if status := app.socks.Status(); status.Monitoring || status.Listening {
+		t.Fatalf("SOCKS5 remained active after bind failure: %+v", status)
+	}
+	log := readTunCommandLog(t, logPath)
+	addIndex := strings.Index(log, "SUDO ip rule add pref 22015 fwmark 0x4d53/0xffff lookup 202")
+	delIndex := strings.Index(log, "SUDO ip rule del pref 22015 fwmark 0x4d53/0xffff lookup 202")
+	if addIndex < 0 || delIndex <= addIndex {
+		t.Fatalf("failed SOCKS5 startup did not roll back its fwmark rule:\\n%s", log)
+	}
+}
