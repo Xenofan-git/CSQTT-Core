@@ -108,6 +108,41 @@ func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree(t *testing.T) {
 	waitProcessGone(t, childPID)
 }
 
+func TestLinuxRunnerEarlyCoreExitKillsRemainingProcessTree(t *testing.T) {
+	installTunCommandShims(t, "")
+	isolateDirectFilesystem(t)
+
+	dir := t.TempDir()
+	childPIDFile := filepath.Join(dir, "early-exit-child.pid")
+	corePath := filepath.Join(dir, "fake-core")
+	script := "#!/bin/sh\nsleep 60 & echo $! > " + shellQuoteForTest(childPIDFile) + "\nexit 17\n"
+	if err := os.WriteFile(corePath, []byte(script), 0700); err != nil { t.Fatal(err) }
+
+	app := tunTestApp()
+	app.core.SetConnected(true)
+	bridge := libs.NewBridge(app.core, app.tun, nil)
+	runner := &LinuxRunner{app: app, startupTimeout: 30 * time.Second}
+	runner.startCoreWithSudo([]string{corePath}, 52230, bridge)
+
+	deadline := time.Now().Add(3 * time.Second)
+	var childPID int
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(childPIDFile)
+		if err == nil {
+			childPID, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+			if childPID > 0 { break }
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if childPID == 0 { t.Fatal("fake core did not create early-exit child PID") }
+
+	waitRunnerStopped(t, app)
+	if logs := app.core.GetLogsJson(); !strings.Contains(logs, "Процесс завершился до готовности TUNCONF/traffic") {
+		t.Fatalf("early process exit was not reported; runner logs: %s", logs)
+	}
+	waitProcessGone(t, childPID)
+}
+
 func TestLinuxRunnerSetupRoutesFailureKillsCoreProcessTree(t *testing.T) {
 	installTunCommandShims(t, "ip tuntap add")
 	isolateDirectFilesystem(t)
