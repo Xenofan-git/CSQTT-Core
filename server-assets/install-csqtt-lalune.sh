@@ -135,7 +135,7 @@ mv -f -- "${BIN}.new" "$BIN"
 cat > "${UNIT_FILE}.new" <<'UNIT'
 [Unit]
 Description=CSQTT LaLune isolated dataplane
-Documentation=https://github.com/Xenofan-git/LaLune-NanoPi-ARM64
+Documentation=https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64
 After=network-online.target
 Wants=network-online.target
 ConditionPathIsExecutable=/usr/local/bin/csqtt-lalune
