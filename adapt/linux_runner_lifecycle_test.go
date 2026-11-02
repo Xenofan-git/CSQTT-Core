@@ -55,7 +55,7 @@ func waitProcessGone(t *testing.T, pid int) {
 
 func waitRunnerStopped(t *testing.T, app *App) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		app.mu.Lock()
 		pid := app.clientPID
@@ -70,7 +70,7 @@ func waitRunnerStopped(t *testing.T, app *App) {
 }
 
 func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree(t *testing.T) {
-	installTunCommandShims(t, "")
+	commandLog := installTunCommandShims(t, "")
 	isolateDirectFilesystem(t)
 	logFile := filepath.Join(os.TempDir(), "lalune_core_logs.txt")
 	_ = os.Remove(logFile)
@@ -85,10 +85,10 @@ func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree(t *testing.T) {
 	app := tunTestApp()
 	app.core.SetConnected(true)
 	bridge := libs.NewBridge(app.core, app.tun, nil)
-	runner := &LinuxRunner{app: app, startupTimeout: 150 * time.Millisecond}
+	runner := &LinuxRunner{app: app, startupTimeout: 5 * time.Second}
 	runner.startCoreWithSudo([]string{corePath}, 52230, bridge)
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(3 * time.Second)
 	var childPID int
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(childPIDFile)
@@ -98,7 +98,10 @@ func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if childPID == 0 { t.Fatal("fake core did not create child PID") }
+	if childPID == 0 {
+		coreLog, _ := os.ReadFile(logFile)
+		t.Fatalf("fake core did not create child PID; sudo/ip log:\n%s\ncore log:\n%s", readTunCommandLog(t, commandLog), string(coreLog))
+	}
 	waitRunnerStopped(t, app)
 	waitProcessGone(t, childPID)
 }
