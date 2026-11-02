@@ -1015,3 +1015,197 @@ if final_linux.count(linux_auth_marker) != 1:
 final_linux = final_linux.replace(linux_auth_marker, linux_auth_replacement, 1)
 LINUX.write_text(final_linux)
 
+
+
+# LinuxRunner lifecycle ownership: one active core, bounded startup, process-group cleanup.
+final_linux = LINUX.read_text()
+old_runner_struct = """type LinuxRunner struct {
+	app *App
+}"""
+new_runner_struct = """type LinuxRunner struct {
+	app *App
+	lifecycleMu sync.Mutex
+	starting bool
+	activePID int
+	startupTimeout time.Duration
+}"""
+if final_linux.count(old_runner_struct) != 1:
+    raise SystemExit("LinuxRunner struct lifecycle marker missing or ambiguous")
+final_linux = final_linux.replace(old_runner_struct, new_runner_struct, 1)
+
+lifecycle_helpers = """func (r *LinuxRunner) beginCoreStart() bool {
+	r.lifecycleMu.Lock()
+	defer r.lifecycleMu.Unlock()
+	if r.starting || r.activePID != 0 { return false }
+	r.starting = true
+	return true
+}
+
+func (r *LinuxRunner) cancelCoreStart() {
+	r.lifecycleMu.Lock()
+	r.starting = false
+	r.lifecycleMu.Unlock()
+}
+
+func (r *LinuxRunner) markCoreStarted(pid int) {
+	r.lifecycleMu.Lock()
+	r.activePID = pid
+	r.starting = false
+	r.lifecycleMu.Unlock()
+}
+
+func (r *LinuxRunner) markCoreStopped(pid int) {
+	r.lifecycleMu.Lock()
+	if r.activePID == pid { r.activePID = 0 }
+	r.lifecycleMu.Unlock()
+}
+
+func terminateCoreProcessGroup(pid int) error {
+	if pid <= 0 { return nil }
+	err := syscall.Kill(-pid, syscall.SIGKILL)
+	if err == syscall.ESRCH { return nil }
+	return err
+}
+
+func abortCoreStartup(bridge *libs.Bridge, cmd *exec.Cmd, reason string) {
+	bridge.Core.AddLog("[TUN] " + reason)
+	if cmd != nil && cmd.Process != nil {
+		if err := terminateCoreProcessGroup(cmd.Process.Pid); err != nil {
+			bridge.Core.AddLog(fmt.Sprintf("[TUN] Ошибка завершения process group: %v", err))
+		}
+	}
+	bridge.Core.SetConnected(false)
+	bridge.StopTunnel()
+	bridge.CleanupRoutes()
+}
+
+"""
+start_anchor = "func (r *LinuxRunner) StartCore(cmdArgs []string, listenPort int, bridge *libs.Bridge) {"
+if final_linux.count(start_anchor) != 1:
+    raise SystemExit("LinuxRunner StartCore anchor missing or ambiguous")
+final_linux = final_linux.replace(start_anchor, lifecycle_helpers + start_anchor, 1)
+
+old_start = """func (r *LinuxRunner) StartCore(cmdArgs []string, listenPort int, bridge *libs.Bridge) {
+	password, err := loadTunnelAuthPassword()
+	if err != nil {
+		bridge.Core.AddLog("[AUTH] Пароль туннеля не задан; запуск отменён")
+		bridge.Core.SetConnected(false)
+		return
+	}
+	deviceID := csqttDeviceID(bridge.Core)
+	if deviceID == "" {
+		bridge.Core.AddLog("[AUTH] ID устройства LaLune не задан; запуск отменён")
+		bridge.Core.SetConnected(false)
+		return
+	}
+	cmdArgs = appendCSQTTAuthArgs(cmdArgs, password, deviceID)
+	r.startCoreWithSudo(cmdArgs, listenPort, bridge)
+}"""
+new_start = """func (r *LinuxRunner) StartCore(cmdArgs []string, listenPort int, bridge *libs.Bridge) {
+	if !r.beginCoreStart() {
+		bridge.Core.AddLog("[CORE] Повторный запуск отклонён: ядро уже запускается или работает")
+		return
+	}
+	defer r.cancelCoreStart()
+	password, err := loadTunnelAuthPassword()
+	if err != nil {
+		bridge.Core.AddLog("[AUTH] Пароль туннеля не задан; запуск отменён")
+		bridge.Core.SetConnected(false)
+		return
+	}
+	deviceID := csqttDeviceID(bridge.Core)
+	if deviceID == "" {
+		bridge.Core.AddLog("[AUTH] ID устройства LaLune не задан; запуск отменён")
+		bridge.Core.SetConnected(false)
+		return
+	}
+	cmdArgs = appendCSQTTAuthArgs(cmdArgs, password, deviceID)
+	r.startCoreWithSudo(cmdArgs, listenPort, bridge)
+}"""
+if final_linux.count(old_start) != 1:
+    raise SystemExit("LinuxRunner StartCore auth body marker missing or ambiguous")
+final_linux = final_linux.replace(old_start, new_start, 1)
+
+# Every command has a dedicated process group so sudo/sh/core descendants share one owned group.
+runner_anchor = "func (r *LinuxRunner) startCoreWithSudo(cmdArgs []string, listenPort int, bridge *libs.Bridge) {"
+runner_pos = final_linux.index(runner_anchor)
+stderr_pos = final_linux.find("\tcmd.Stderr = os.Stderr\n", runner_pos)
+if stderr_pos < 0:
+    raise SystemExit("LinuxRunner stderr setup marker missing")
+stderr_end = stderr_pos + len("\tcmd.Stderr = os.Stderr\n")
+final_linux = final_linux[:stderr_end] + "\tcmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}\n" + final_linux[stderr_end:]
+
+# A single timer measures the full startup interval; events do not restart the deadline.
+old_timer_loop = """		hasConf, hasTraffic := false, false
+		for !hasConf || !hasTraffic {"""
+new_timer_loop = """		hasConf, hasTraffic := false, false
+		startupTimeout := r.startupTimeout
+		if startupTimeout <= 0 { startupTimeout = 90 * time.Second }
+		startupTimer := time.NewTimer(startupTimeout)
+		defer startupTimer.Stop()
+		for !hasConf || !hasTraffic {"""
+if final_linux.count(old_timer_loop) != 1:
+    raise SystemExit("LinuxRunner startup wait loop marker missing or ambiguous")
+final_linux = final_linux.replace(old_timer_loop, new_timer_loop, 1)
+
+old_timeout = """			case <-time.After(90 * time.Second):
+				bridge.Core.AddLog("[TUN] Таймаут ожидания")
+				bridge.Core.SetConnected(false)
+				return"""
+new_timeout = """			case <-startupTimer.C:
+				abortCoreStartup(bridge, cmd, "Таймаут ожидания TUNCONF/traffic; ядро остановлено")
+				return"""
+if final_linux.count(old_timeout) != 1:
+    raise SystemExit("LinuxRunner startup timeout marker missing or ambiguous")
+final_linux = final_linux.replace(old_timeout, new_timeout, 1)
+
+old_setup_error = """            if err := tun.SetupRoutes(tunIP, tunDNS); err != nil {
+                bridge.Core.AddLog(fmt.Sprintf("[TUN] Подключение отменено: %v", err))
+                bridge.Core.SetConnected(false)
+                return
+            }"""
+new_setup_error = """            if err := tun.SetupRoutes(tunIP, tunDNS); err != nil {
+                abortCoreStartup(bridge, cmd, fmt.Sprintf("Подключение отменено: %v; ядро остановлено", err))
+                return
+            }"""
+if final_linux.count(old_setup_error) != 1:
+    raise SystemExit("LinuxRunner SetupRoutes error branch marker missing or ambiguous")
+final_linux = final_linux.replace(old_setup_error, new_setup_error, 1)
+
+# Record the owned process identity immediately after successful Start.
+old_client_pid = """	r.app.mu.Lock()
+	r.app.clientPID = cmd.Process.Pid
+	r.app.mu.Unlock()"""
+new_client_pid = """	r.markCoreStarted(cmd.Process.Pid)
+	r.app.mu.Lock()
+	r.app.clientPID = cmd.Process.Pid
+	r.app.mu.Unlock()"""
+if final_linux.count(old_client_pid) != 1:
+    raise SystemExit("LinuxRunner clientPID assignment marker missing or ambiguous")
+final_linux = final_linux.replace(old_client_pid, new_client_pid, 1)
+
+# Waiter owns Wait; clear only the matching runner/app process identity.
+old_wait = """		cmd.Wait()
+		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
+new_wait = """		cmd.Wait()
+		r.markCoreStopped(cmd.Process.Pid)
+		if v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
+if final_linux.count(old_wait) != 1:
+    raise SystemExit("LinuxRunner process waiter marker missing or ambiguous")
+final_linux = final_linux.replace(old_wait, new_wait, 1)
+
+old_clear_pid = """		r.app.mu.Lock()
+		r.app.clientPID = 0
+		r.app.mu.Unlock()"""
+new_clear_pid = """		r.app.mu.Lock()
+		if r.app.clientPID == cmd.Process.Pid { r.app.clientPID = 0 }
+		r.app.mu.Unlock()"""
+if final_linux.count(old_clear_pid) != 1:
+    raise SystemExit("LinuxRunner clientPID cleanup marker missing or ambiguous")
+final_linux = final_linux.replace(old_clear_pid, new_clear_pid, 1)
+
+# Disconnect signals the owned process group, not just sudo's wrapper PID.
+final_linux = final_linux.replace("syscall.Kill(pid, syscall.SIGTERM)", "syscall.Kill(-pid, syscall.SIGTERM)", 1)
+final_linux = final_linux.replace("syscall.Kill(pid, syscall.SIGKILL)", "syscall.Kill(-pid, syscall.SIGKILL)", 1)
+
+LINUX.write_text(final_linux)

@@ -78,13 +78,13 @@ old_runner = '''            if !bridge.StartTunnel(coreListenPort) {
                 bridge.Core.AddLog("[TUN] Подключение отменено: пакетный мост не запущен")
                 bridge.CleanupRoutes()
                 bridge.Core.SetConnected(false)
-                if cmd.Process != nil { _ = cmd.Process.Kill() }
+                if cmd.Process != nil { _ = terminateCoreProcessGroup(cmd.Process.Pid) }
                 return
             }'''
 new_runner = '''            if err := startTunnelAndSocks(bridge, coreListenPort); err != nil {
                 bridge.Core.AddLog(fmt.Sprintf("[TUN] Подключение отменено: %v", err))
                 bridge.Core.SetConnected(false)
-                if cmd.Process != nil { _ = cmd.Process.Kill() }
+                if cmd.Process != nil { _ = terminateCoreProcessGroup(cmd.Process.Pid) }
                 return
             }'''
 if s.count(old_runner) != 1:
