@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -42,23 +41,6 @@ func TestLinuxRunnerLifecycleReservationRejectsConcurrentStart(t *testing.T) {
 	r.cancelCoreStart()
 }
 
-func startProcessGroupFixture(t *testing.T, childPIDFile string) *exec.Cmd {
-	t.Helper()
-	script := "sleep 60 & echo $! > " + shellQuoteForTest(childPIDFile) + "; wait"
-	cmd := exec.Command("/bin/sh", "-c", script)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil { t.Fatalf("start process group fixture: %v", err) }
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(childPIDFile); err == nil { return cmd }
-		time.Sleep(10 * time.Millisecond)
-	}
-	_ = terminateCoreProcessGroup(cmd.Process.Pid)
-	_ = cmd.Wait()
-	t.Fatal("child PID fixture was not created")
-	return nil
-}
-
 func waitProcessGone(t *testing.T, pid int) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -87,19 +69,9 @@ func waitRunnerStopped(t *testing.T, app *App) {
 	t.Fatalf("runner did not finish cleanup: connected=%v clientPID=%d", app.core.IsConnected(), pid)
 }
 
-func installRunnerFixtureSudo(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	sudo := "#!/bin/sh\nif [ \"$1\" = -v ]; then exit 0; fi\nif [ \"$1\" = -n ]; then shift; fi\nexec \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "sudo"), []byte(sudo), 0700); err != nil { t.Fatal(err) }
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return dir
-}
-
 func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree(t *testing.T) {
 	installTunCommandShims(t, "")
 	isolateDirectFilesystem(t)
-	installRunnerFixtureSudo(t)
 	logFile := filepath.Join(os.TempDir(), "lalune_core_logs.txt")
 	_ = os.Remove(logFile)
 	t.Cleanup(func() { _ = os.Remove(logFile) })
@@ -172,7 +144,7 @@ func TestAbortCoreStartupCleansBridgeOwnership(t *testing.T) {
 	tun := &runnerLifecycleProbeTun{}
 	bridge := libs.NewBridge(core, tun, nil)
 	bridge.TunRunning = true
-	abortCoreStartup(bridge, nil, fmt.Sprintf("test abort"))
+	abortCoreStartup(bridge, nil, "test abort")
 	if core.IsConnected() { t.Fatal("connected state remained true after abort") }
 	if !tun.stopped { t.Fatal("TUN Stop was not called") }
 	if !tun.cleaned { t.Fatal("TUN CleanupRoutes was not called") }
