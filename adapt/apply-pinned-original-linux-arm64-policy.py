@@ -125,7 +125,7 @@ LINUX.write_text(s)
 s = LINUX.read_text()
 s = s.replace("type LinuxRunner struct {", "var linuxRunnerInputs sync.Map\n\ntype LinuxRunner struct {", 1)
 wait_old = '\t\tcmd.Wait()'
-wait_new = '\t\tcmd.Wait()\n\t\tif v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }'
+wait_new = '\tprocessDone := make(chan error, 1)\n\tgo func() {\n\t\twaitErr := cmd.Wait()\n\t\tprocessDone <- waitErr\n\t\tif v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }'
 if wait_old not in s:
     raise SystemExit("core wait marker not found for stdin cleanup")
 s = s.replace(wait_old, wait_new, 1)
@@ -1157,6 +1157,24 @@ new_timeout = """			case <-startupTimer.C:
 if final_linux.count(old_timeout) != 1:
     raise SystemExit("LinuxRunner startup timeout marker missing or ambiguous")
 final_linux = final_linux.replace(old_timeout, new_timeout, 1)
+
+# Detect a core that exits before TUNCONF/traffic instead of misreporting a startup timeout.
+old_early_exit = '''\t\t\tcase <-startupTimer.C:
+\t\t\t\tabortCoreStartup(bridge, cmd, "Таймаут ожидания TUNCONF/traffic; ядро остановлено")
+\t\t\t\treturn'''
+new_early_exit = '''\t\t\tcase waitErr := <-processDone:
+\t\t\t\tbridge.Core.AddLog(fmt.Sprintf("[CORE] Процесс завершился до готовности TUNCONF/traffic: %v", waitErr))
+\t\t\t\tif err := terminateCoreProcessGroup(cmd.Process.Pid); err != nil {
+\t\t\t\t\tbridge.Core.AddLog(fmt.Sprintf("[CORE] Ошибка очистки process group после раннего выхода: %v", err))
+\t\t\t\t}
+\t\t\t\tbridge.Core.SetConnected(false)
+\t\t\t\treturn
+\t\t\tcase <-startupTimer.C:
+\t\t\t\tabortCoreStartup(bridge, cmd, "Таймаут ожидания TUNCONF/traffic; ядро остановлено")
+\t\t\t\treturn'''
+if final_linux.count(old_early_exit) != 1:
+    raise SystemExit("early-exit select marker missing or ambiguous")
+final_linux = final_linux.replace(old_early_exit, new_early_exit, 1)
 
 old_setup_error = """            if err := tun.SetupRoutes(tunIP, tunDNS); err != nil {
                 bridge.Core.AddLog(fmt.Sprintf("[TUN] Подключение отменено: %v", err))
