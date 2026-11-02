@@ -78,8 +78,9 @@ func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree(t *testing.T) {
 
 	dir := t.TempDir()
 	childPIDFile := filepath.Join(dir, "timeout-child.pid")
+	startedFile := filepath.Join(dir, "timeout-core-started")
 	corePath := filepath.Join(dir, "fake-core")
-	script := "#!/bin/sh\nsleep 60 & echo $! > " + shellQuoteForTest(childPIDFile) + "\nwait\n"
+	script := "#!/bin/sh\necho started > " + shellQuoteForTest(startedFile) + "\nsleep 60 & echo $! > " + shellQuoteForTest(childPIDFile) + "\nwait\n"
 	if err := os.WriteFile(corePath, []byte(script), 0700); err != nil { t.Fatal(err) }
 
 	app := tunTestApp()
@@ -100,7 +101,8 @@ func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree(t *testing.T) {
 	}
 	if childPID == 0 {
 		coreLog, _ := os.ReadFile(logFile)
-		t.Fatalf("fake core did not create child PID; sudo/ip log:\n%s\ncore log:\n%s", readTunCommandLog(t, commandLog), string(coreLog))
+		_, startedErr := os.Stat(startedFile)
+		t.Fatalf("fake core did not create child PID (started marker error: %v); sudo/ip log:\n%s\ncore log:\n%s\nrunner logs:\n%s", startedErr, readTunCommandLog(t, commandLog), string(coreLog), app.core.GetLogsJson())
 	}
 	waitRunnerStopped(t, app)
 	waitProcessGone(t, childPID)
