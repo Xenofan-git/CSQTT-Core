@@ -290,6 +290,10 @@ jobs:
           cp adapt/lalune_socks5_linux_test.go upstream-lalune/Desktop/Linux/lalune_socks5_linux_test.go
           cp adapt/linux_core_argv_test.go upstream-lalune/Desktop/Linux/linux_core_argv_test.go
           cp adapt/linux_runner_lifecycle_test.go upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
+          cp adapt/singbox_config_linux.go upstream-lalune/Desktop/Linux/singbox_config_linux.go
+          cp adapt/singbox_config_linux_test.go upstream-lalune/Desktop/Linux/singbox_config_linux_test.go
+          grep -Fq 'func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate' upstream-lalune/Desktop/Linux/singbox_config_linux_test.go
+          grep -Fq 'func TestBuildSingBoxConfigDoesNotImplicitlyRouteUnmatchedTraffic' upstream-lalune/Desktop/Linux/singbox_config_linux_test.go
           grep -Fq 'func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree' upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
           grep -Fq 'func TestLinuxRunnerSetupRoutesFailureKillsCoreProcessTree' upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
           mkdir -p upstream-lalune/Desktop/Linux/frontend
