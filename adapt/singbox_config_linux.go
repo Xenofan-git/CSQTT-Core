@@ -134,7 +134,7 @@ func normalizeSingBoxDomains(values []string, suffix bool) ([]string, error) {
 	return out, nil
 }
 
-func singBoxRouteRule(domains, suffixes, cidrs []string, outbound string) map[string]any {
+func makeSingBoxRouteRule(domains, suffixes, cidrs []string, outbound string) map[string]any {
 	rule := map[string]any{
 		"inbound": []string{singBoxInboundTag},
 		"action": "route",
@@ -229,7 +229,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		"action": "sniff",
 	})
 	if len(directDomains) > 0 || len(directCIDRs) > 0 {
-		rules = append(rules, singBoxRouteRule(directDomains, nil, directCIDRs, singBoxDirectTag))
+		rules = append(rules, makeSingBoxRouteRule(directDomains, nil, directCIDRs, singBoxDirectTag))
 	}
 
 	seenRuleIDs := make(map[string]struct{}, len(input.Rules))
@@ -258,7 +258,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		if _, exists := knownOutbounds[item.Outbound]; !exists {
 			return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound)
 		}
-		rules = append(rules, singBoxRouteRule(domains, suffixes, nil, item.Outbound))
+		rules = append(rules, makeSingBoxRouteRule(domains, suffixes, nil, item.Outbound))
 	}
 	// A catch-all reject prevents an implicit first-outbound/global fallback.
 	rules = append(rules, map[string]any{"action": "reject"})
