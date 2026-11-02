@@ -1196,7 +1196,8 @@ old_client_pid = """	r.app.mu.Lock()
 new_client_pid = """	r.markCoreStarted(cmd.Process.Pid)
 	r.app.mu.Lock()
 	r.app.clientPID = cmd.Process.Pid
-	r.app.mu.Unlock()"""
+	r.app.mu.Unlock()
+	processDone := make(chan error, 1)"""
 if final_linux.count(old_client_pid) != 1:
     raise SystemExit("LinuxRunner clientPID assignment marker missing or ambiguous")
 final_linux = final_linux.replace(old_client_pid, new_client_pid, 1)
@@ -1205,8 +1206,7 @@ final_linux = final_linux.replace(old_client_pid, new_client_pid, 1)
 waiter_pattern = re.compile(
     r'\tgo func\(\) \{\n\t\tcmd\.Wait\(\)\n\t\tif v, ok := linuxRunnerInputs\.LoadAndDelete\(r\); ok \{ _ = v\.\(io\.WriteCloser\)\.Close\(\) \}'
 )
-waiter_replacement = """\tprocessDone := make(chan error, 1)
-\tgo func() {
+waiter_replacement = """\tgo func() {
 \t\twaitErr := cmd.Wait()
 \t\tprocessDone <- waitErr
 \t\tif v, ok := linuxRunnerInputs.LoadAndDelete(r); ok { _ = v.(io.WriteCloser).Close() }"""
