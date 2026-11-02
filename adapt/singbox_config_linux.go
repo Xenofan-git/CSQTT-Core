@@ -1,0 +1,266 @@
+//go:build linux
+
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/netip"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+const (
+	singBoxInboundTag = "csqtt-route-in"
+	singBoxDirectTag  = "direct"
+	singBoxCSQTTTag   = "csqtt"
+)
+
+type singBoxSOCKS5Outbound struct {
+	ID         string
+	Server     string
+	ServerPort int
+	Username   string
+	Password   string
+	Enabled    bool
+}
+
+type singBoxRouteRule struct {
+	ID             string
+	Domains        []string
+	DomainSuffixes []string
+	Outbound       string
+	Enabled        bool
+}
+
+type singBoxConfigInput struct {
+	ListenAddress string
+	CSQTTAddress  string
+	DirectDomains []string
+	DirectIPCIDRs []string
+	SOCKS5        []singBoxSOCKS5Outbound
+	Rules         []singBoxRouteRule
+}
+
+type singBoxConfig struct {
+	Log      map[string]string   `json:"log"`
+	Inbounds []map[string]any    `json:"inbounds"`
+	Outbounds []map[string]any   `json:"outbounds"`
+	Route    map[string]any      `json:"route"`
+}
+
+var singBoxIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,32}$`)
+
+func singBoxHostPort(value, field string) (string, int, error) {
+	host, portText, err := net.SplitHostPort(strings.TrimSpace(value))
+	if err != nil {
+		return "", 0, fmt.Errorf("%s must be an explicit host:port: %w", field, err)
+	}
+	if net.ParseIP(host) == nil {
+		return "", 0, fmt.Errorf("%s host must be an IP address", field)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("%s port must be between 1 and 65535", field)
+	}
+	return host, port, nil
+}
+
+func normalizeSingBoxDomain(value string) (string, error) {
+	domain := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(value)), ".")
+	if domain == "" || len(domain) > 253 || strings.ContainsAny(domain, " /:*?#[]") {
+		return "", fmt.Errorf("invalid domain %q", value)
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return "", fmt.Errorf("invalid domain %q", value)
+		}
+		for _, r := range label {
+			if !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && r != '-' {
+				return "", fmt.Errorf("invalid domain %q", value)
+			}
+		}
+	}
+	return domain, nil
+}
+
+func normalizeSingBoxSuffix(value string) (string, error) {
+	suffix := strings.TrimPrefix(strings.TrimSpace(value), ".")
+	domain, err := normalizeSingBoxDomain(suffix)
+	if err != nil {
+		return "", err
+	}
+	return "." + domain, nil
+}
+
+func normalizeSingBoxDomains(values []string, suffix bool) ([]string, error) {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		var normalized string
+		var err error
+		if suffix {
+			normalized, err = normalizeSingBoxSuffix(value)
+		} else {
+			normalized, err = normalizeSingBoxDomain(value)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out, nil
+}
+
+func singBoxRouteRule(domains, suffixes, cidrs []string, outbound string) map[string]any {
+	rule := map[string]any{
+		"inbound": []string{singBoxInboundTag},
+		"action": "route",
+		"outbound": outbound,
+	}
+	if len(domains) > 0 {
+		rule["domain"] = domains
+	}
+	if len(suffixes) > 0 {
+		rule["domain_suffix"] = suffixes
+	}
+	if len(cidrs) > 0 {
+		rule["ip_cidr"] = cidrs
+	}
+	return rule
+}
+
+// buildSingBoxConfig creates an explicit SOCKS entrypoint and ordered route rules.
+// It deliberately creates no TUN inbound, auto_route, auto_redirect, or system capture.
+// Direct exclusions are emitted before user route rules; unmatched traffic is rejected.
+func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
+	listenHost, listenPort, err := singBoxHostPort(input.ListenAddress, "listen address")
+	if err != nil {
+		return nil, err
+	}
+	csqttHost, csqttPort, err := singBoxHostPort(input.CSQTTAddress, "CSQTT SOCKS address")
+	if err != nil {
+		return nil, err
+	}
+	if listenHost == csqttHost && listenPort == csqttPort {
+		return nil, fmt.Errorf("sing-box inbound and CSQTT SOCKS outbound must use different endpoints")
+	}
+
+	directDomains, err := normalizeSingBoxDomains(input.DirectDomains, false)
+	if err != nil {
+		return nil, fmt.Errorf("Direct domains: %w", err)
+	}
+	directCIDRs := make([]string, 0, len(input.DirectIPCIDRs))
+	seenCIDRs := make(map[string]struct{}, len(input.DirectIPCIDRs))
+	for _, raw := range input.DirectIPCIDRs {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+		if err != nil {
+			return nil, fmt.Errorf("Direct IP/CIDR %q: %w", raw, err)
+		}
+		value := prefix.Masked().String()
+		if _, ok := seenCIDRs[value]; !ok {
+			seenCIDRs[value] = struct{}{}
+			directCIDRs = append(directCIDRs, value)
+		}
+	}
+
+	outbounds := []map[string]any{
+		{"type": "direct", "tag": singBoxDirectTag},
+		{"type": "socks", "tag": singBoxCSQTTTag, "server": csqttHost, "server_port": csqttPort, "version": "5"},
+	}
+	knownOutbounds := map[string]struct{}{
+		singBoxDirectTag: {},
+		singBoxCSQTTTag: {},
+	}
+	for _, proxy := range input.SOCKS5 {
+		if !proxy.Enabled {
+			continue
+		}
+		if !singBoxIDPattern.MatchString(proxy.ID) {
+			return nil, fmt.Errorf("invalid SOCKS5 outbound ID %q", proxy.ID)
+		}
+		tag := "socks-" + proxy.ID
+		if _, exists := knownOutbounds[tag]; exists {
+			return nil, fmt.Errorf("duplicate outbound tag %q", tag)
+		}
+		hostPort := net.JoinHostPort(proxy.Server, strconv.Itoa(proxy.ServerPort))
+		host, port, err := singBoxHostPort(hostPort, "SOCKS5 outbound "+tag)
+		if err != nil {
+			return nil, err
+		}
+		if (proxy.Username == "") != (proxy.Password == "") {
+			return nil, fmt.Errorf("SOCKS5 outbound %q must provide both username and password", tag)
+		}
+		outbound := map[string]any{
+			"type": "socks", "tag": tag, "server": host, "server_port": port, "version": "5",
+		}
+		if proxy.Username != "" {
+			outbound["username"] = proxy.Username
+			outbound["password"] = proxy.Password
+		}
+		outbounds = append(outbounds, outbound)
+		knownOutbounds[tag] = struct{}{}
+	}
+
+	rules := make([]map[string]any, 0, 2+len(input.Rules))
+	rules = append(rules, map[string]any{
+		"inbound": []string{singBoxInboundTag},
+		"action": "sniff",
+	})
+	if len(directDomains) > 0 || len(directCIDRs) > 0 {
+		rules = append(rules, singBoxRouteRule(directDomains, nil, directCIDRs, singBoxDirectTag))
+	}
+
+	seenRuleIDs := make(map[string]struct{}, len(input.Rules))
+	for _, item := range input.Rules {
+		if !item.Enabled {
+			continue
+		}
+		if !singBoxIDPattern.MatchString(item.ID) {
+			return nil, fmt.Errorf("invalid route rule ID %q", item.ID)
+		}
+		if _, exists := seenRuleIDs[item.ID]; exists {
+			return nil, fmt.Errorf("duplicate route rule ID %q", item.ID)
+		}
+		seenRuleIDs[item.ID] = struct{}{}
+		domains, err := normalizeSingBoxDomains(item.Domains, false)
+		if err != nil {
+			return nil, fmt.Errorf("route rule %q domains: %w", item.ID, err)
+		}
+		suffixes, err := normalizeSingBoxDomains(item.DomainSuffixes, true)
+		if err != nil {
+			return nil, fmt.Errorf("route rule %q suffixes: %w", item.ID, err)
+		}
+		if len(domains)+len(suffixes) == 0 {
+			return nil, fmt.Errorf("route rule %q has no domain matchers", item.ID)
+		}
+		if _, exists := knownOutbounds[item.Outbound]; !exists {
+			return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound)
+		}
+		rules = append(rules, singBoxRouteRule(domains, suffixes, nil, item.Outbound))
+	}
+	// A catch-all reject prevents an implicit first-outbound/global fallback.
+	rules = append(rules, map[string]any{"action": "reject"})
+
+	config := singBoxConfig{
+		Log: map[string]string{"level": "info", "timestamp": "true"},
+		Inbounds: []map[string]any{{
+			"type": "socks", "tag": singBoxInboundTag,
+			"listen": listenHost, "listen_port": listenPort,
+			"sniff": false,
+		}},
+		Outbounds: outbounds,
+		Route: map[string]any{"rules": rules},
+	}
+	encoded, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode sing-box config: %w", err)
+	}
+	return append(encoded, '\n'), nil
+}
