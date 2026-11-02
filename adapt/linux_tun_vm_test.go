@@ -31,7 +31,10 @@ func installTunCommandShims(t *testing.T, failContains string) string {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "commands.log")
 	sudo := "#!/bin/sh\nprintf 'SUDO %s\\n' \"$*\" >> \"" + logPath + "\"\n" +
-		"if [ -n \"${FAKE_SUDO_FAIL_CONTAINS:-}\" ]; then case \"$*\" in *\"$FAKE_SUDO_FAIL_CONTAINS\"*) exit 17;; esac; fi\nif [ \"$1\" = test ]; then shift; /usr/bin/test \"$@\"; exit $?; fi\nexit 0\n"
+		"if [ -n \"${FAKE_SUDO_FAIL_CONTAINS:-}\" ]; then case \"$*\" in *\"$FAKE_SUDO_FAIL_CONTAINS\"*) exit 17;; esac; fi\n" +
+		"# Execute shell-based ownership preflights so fake ip output is parsed by real awk.\n" +
+		"case \"$*\" in *awk*) if [ \"$1\" = -n ]; then shift; fi; if [ \"$1\" = sh ] && [ \"$2\" = -c ]; then shift 2; exec /bin/sh -c \"$1\"; fi;; esac\n" +
+		"if [ \"$1\" = test ]; then shift; /usr/bin/test \"$@\"; exit $?; fi\nexit 0\n"
 	ip := "#!/bin/sh\nprintf 'IP %s\\n' \"$*\" >> \"" + logPath + "\"\n" +
 		"case \"$*\" in\n" +
 		"  '-o route show table 202') [ -n \"${FAKE_IP_OCCUPIED_ROUTE:-}\" ] && echo \"$FAKE_IP_OCCUPIED_ROUTE\";;\n" +
