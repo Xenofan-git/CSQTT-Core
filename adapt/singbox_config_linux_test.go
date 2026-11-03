@@ -3,9 +3,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
@@ -74,4 +79,41 @@ func TestBuildSingBoxConfigDoesNotImplicitlyRouteUnmatchedTraffic(t *testing.T) 
 	last:=rules[len(rules)-1].(map[string]any)
 	if last["action"]!="reject" { t.Fatalf("unexpected catch-all: %#v",last) }
 	if _,ok:=config["route"].(map[string]any)["final"];ok { t.Fatal("route.final would introduce an implicit outbound fallback") }
+}
+
+func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
+	binary := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binary == "" {
+		t.Skip("CSQTT_SING_BOX_BINARY is not set; real sing-box validation runs in pinned CI")
+	}
+
+	encoded, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "127.0.0.1:12500",
+		CSQTTAddress:  "127.0.0.1:12501",
+		DirectDomains: []string{"example.com"},
+		DirectIPCIDRs: []string{"192.0.2.0/24", "2001:db8::/32"},
+		SOCKS5: []singBoxSOCKS5Outbound{{
+			ID: "proxy-a", Server: "198.51.100.2", ServerPort: 1080, Enabled: true,
+		}},
+		Rules: []singBoxRouteRule{{
+			ID: "route-a", DomainSuffixes: []string{".example.net"},
+			Outbound: "socks-proxy-a", Enabled: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("build sing-box config: %v", err)
+	}
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(configPath, encoded, 0600); err != nil {
+		t.Fatalf("write generated config: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "check", "-c", configPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("pinned sing-box config check failed: %v\n%s", err, output)
+	}
 }
