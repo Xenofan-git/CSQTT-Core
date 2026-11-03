@@ -20,6 +20,16 @@ func newFakeSingBox(t *testing.T, script string) string {
 	return path
 }
 
+func writeValidSingBoxConfigForTest(t *testing.T, path string) {
+	t.Helper()
+	encoded, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19080",
+		CSQTTAddress: "127.0.0.1:19081",
+	})
+	if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(path, encoded, 0600); err != nil { t.Fatal(err) }
+}
+
 func TestSingBoxListenIPAssignedMatchesExactInterfaceAddress(t *testing.T) {
 	addrs := []net.Addr{
 		&net.IPNet{IP: net.ParseIP("192.168.5.2"), Mask: net.CIDRMask(24, 32)},
@@ -35,7 +45,7 @@ func TestSingBoxManagerOwnsIndependentProcessLifecycle(t *testing.T) {
 	childPIDFile := filepath.Join(dir, "child.pid")
 	binary := newFakeSingBox(t, "if [ \"$1\" = check ]; then exit 0; fi\nsleep 60 & echo $! > "+shellQuoteForTest(childPIDFile)+"\nwait")
 	config := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(config, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+	writeValidSingBoxConfigForTest(t, config)
 	manager := NewSingBoxManager(binary, config, filepath.Join(dir, "logs", "sing-box.log"))
 	manager.stopTimeout = 300 * time.Millisecond
 	if err := manager.Start(context.Background()); err != nil { t.Fatal(err) }
@@ -60,7 +70,7 @@ func TestSingBoxManagerFailsClosedWhenConfigCheckFails(t *testing.T) {
 	dir := t.TempDir()
 	binary := newFakeSingBox(t, "if [ \"$1\" = check ]; then echo invalid-config >&2; exit 23; fi\nexit 0")
 	config := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(config, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+	writeValidSingBoxConfigForTest(t, config)
 	manager := NewSingBoxManager(binary, config, filepath.Join(dir, "sing-box.log"))
 	err := manager.Start(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "invalid-config") { t.Fatalf("expected check error, got %v", err) }
@@ -80,7 +90,7 @@ func TestSingBoxManagerStopCancelsInFlightStart(t *testing.T) {
 	runStarted := filepath.Join(dir, "run.started")
 	binary := newFakeSingBox(t, "if [ \"$1\" = check ]; then touch "+shellQuoteForTest(checkStarted)+"; exec sleep 60; fi\ntouch "+shellQuoteForTest(runStarted)+"\nexec sleep 60")
 	config := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(config, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+	writeValidSingBoxConfigForTest(t, config)
 	manager := NewSingBoxManager(binary, config, filepath.Join(dir, "sing-box.log"))
 
 	startResult := make(chan error, 1)
@@ -115,10 +125,18 @@ func TestSingBoxManagerSaveConfigIsAtomicAndValidated(t *testing.T) {
 	config := filepath.Join(dir, "config.json")
 	binary := newFakeSingBox(t, "if [ \"$1\" = check ]; then grep -q 'invalid-marker' \"$3\" && { echo invalid >&2; exit 9; }; exit 0; fi\nexit 0")
 	manager := NewSingBoxManager(binary, config, filepath.Join(dir, "sing-box.log"))
-	input := singBoxConfigInput{ListenAddress: "127.0.0.1:19080", CSQTTAddress: "127.0.0.1:19081"}
+	input := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19080", CSQTTAddress: "127.0.0.1:19081",
+		DirectDomainSuffixes: []string{".example.org"},
+		Rules: []singBoxRouteRule{{ID:"route-a", DomainKeywords:[]string{"stream"}, DomainRegexes:[]string{"video"}, IPCIDRs:[]string{"198.51.100.0/24"}, Outbound:singBoxCSQTTTag, Enabled:true}},
+	}
 	if err := manager.SaveConfig(input); err != nil { t.Fatalf("SaveConfig valid config: %v", err) }
 	before, err := os.ReadFile(config); if err != nil { t.Fatal(err) }
 	if len(before) == 0 { t.Fatal("empty config persisted") }
+	loaded, err := manager.LoadConfig()
+	if err != nil { t.Fatalf("LoadConfig: %v", err) }
+	if len(loaded.DirectDomainSuffixes) != 1 || loaded.DirectDomainSuffixes[0] != ".example.org" { t.Fatalf("Direct suffix did not round-trip: %#v", loaded.DirectDomainSuffixes) }
+	if len(loaded.Rules) != 1 || len(loaded.Rules[0].DomainKeywords) != 1 || loaded.Rules[0].DomainKeywords[0] != "stream" || len(loaded.Rules[0].DomainRegexes) != 1 || len(loaded.Rules[0].IPCIDRs) != 1 { t.Fatalf("extended route matchers did not round-trip: %#v", loaded.Rules) }
 	invalid := input
 	invalid.DirectDomains = []string{"bad domain"}
 	if err := manager.SaveConfig(invalid); err == nil { t.Fatal("invalid config accepted") }
