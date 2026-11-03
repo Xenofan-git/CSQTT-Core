@@ -265,7 +265,24 @@ var vkAutoMu sync.Mutex
 var vkAutoResult = "{\"pending\":false}"
 var vkAutoRunning bool
 
-func apiHandler(app *App) http.Handler {
+var singBoxManagerOnce sync.Once
+var sharedSingBoxManager *SingBoxManager
+
+func defaultSingBoxManager() *SingBoxManager {
+	singBoxManagerOnce.Do(func() {
+		dir, err := os.UserConfigDir()
+		if err != nil { dir = os.TempDir() }
+		dir = filepath.Join(dir, "csqtt-lalune", "sing-box")
+		binary := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+		if binary == "" { binary = "sing-box" }
+		sharedSingBoxManager = NewSingBoxManager(binary, filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	})
+	return sharedSingBoxManager
+}
+
+func apiHandler(app *App) http.Handler { return apiHandlerWithSingBox(app, defaultSingBoxManager()) }
+
+func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
     mux := http.NewServeMux()
 
     mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
@@ -441,6 +458,45 @@ func apiHandler(app *App) http.Handler {
             return
         }
         writeJSON(w, app.socks.Status())
+    })
+
+    mux.HandleFunc("/singbox/status", func(w http.ResponseWriter, r *http.Request) {
+        if !method(w, r, http.MethodGet) { return }
+        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
+        status := singBox.Status()
+        _, err := os.Stat(singBox.configPath)
+        writeJSON(w, map[string]any{"running": status.Running, "pid": status.PID, "configured": err == nil, "log_path": status.LogPath, "error": status.Error})
+    })
+    mux.HandleFunc("/singbox/config", func(w http.ResponseWriter, r *http.Request) {
+        if !method(w, r, http.MethodPut) { return }
+        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
+        var input singBoxConfigInput
+        decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+        decoder.DisallowUnknownFields()
+        if err := decoder.Decode(&input); err != nil { http.Error(w, "invalid sing-box config request", http.StatusBadRequest); return }
+        if err := singBox.SaveConfig(input); err != nil { http.Error(w, err.Error(), http.StatusUnprocessableEntity); return }
+        writeJSON(w, map[string]bool{"ok": true})
+    })
+    mux.HandleFunc("/singbox/start", func(w http.ResponseWriter, r *http.Request) {
+        if !method(w, r, http.MethodPost) { return }
+        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
+        if err := singBox.Start(r.Context()); err != nil { http.Error(w, err.Error(), http.StatusConflict); return }
+        writeJSON(w, map[string]bool{"ok": true})
+    })
+    mux.HandleFunc("/singbox/stop", func(w http.ResponseWriter, r *http.Request) {
+        if !method(w, r, http.MethodPost) { return }
+        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
+        if err := singBox.Stop(); err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
+        writeJSON(w, map[string]bool{"ok": true})
+    })
+    mux.HandleFunc("/singbox/logs", func(w http.ResponseWriter, r *http.Request) {
+        if !method(w, r, http.MethodGet) { return }
+        if !privateClient(r) { http.Error(w, "sing-box logs are available only from LAN or Tailscale", http.StatusForbidden); return }
+        w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+        if err := singBox.CopyLogs(w); err != nil {
+            if os.IsNotExist(err) { w.WriteHeader(http.StatusNoContent); return }
+            http.Error(w, "unable to read sing-box log", http.StatusInternalServerError)
+        }
     })
 
     mux.HandleFunc("/deploy", func(w http.ResponseWriter, r *http.Request) {

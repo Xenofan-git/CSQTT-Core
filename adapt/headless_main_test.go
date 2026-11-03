@@ -618,3 +618,40 @@ func TestVPNConnectAndReconnectRequireStableDeviceID(t *testing.T) {
         }
     }
 }
+
+func TestSingBoxAPIControlsIndependentManager(t *testing.T) {
+	dir := t.TempDir()
+	binary := newFakeSingBox(t, "if [ \"$1\" = check ]; then exit 0; fi\necho singbox-fixture-log\nexec sleep 60")
+	manager := NewSingBoxManager(binary, filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	handler := apiHandlerWithSingBox(nil, manager)
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "http://panel.test"+path, strings.NewReader(body))
+		req.RemoteAddr = "192.168.1.10:12345"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	config := `{"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:19181"}`
+	if got := request(http.MethodPut, "/singbox/config", config); got.Code != http.StatusOK { t.Fatalf("save config status=%d body=%s",got.Code,got.Body.String()) }
+	if got := request(http.MethodPost, "/singbox/start", ""); got.Code != http.StatusOK { t.Fatalf("start status=%d body=%s",got.Code,got.Body.String()) }
+	if got := request(http.MethodGet, "/singbox/status", ""); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"running":true`) { t.Fatalf("status=%d body=%s",got.Code,got.Body.String()) }
+	if got := request(http.MethodGet, "/singbox/logs", ""); got.Code != http.StatusOK && got.Code != http.StatusNoContent { t.Fatalf("logs status=%d body=%s",got.Code,got.Body.String()) }
+	if got := request(http.MethodPost, "/singbox/stop", ""); got.Code != http.StatusOK { t.Fatalf("stop status=%d body=%s",got.Code,got.Body.String()) }
+	if manager.Status().Running { t.Fatal("manager still running after API stop") }
+}
+
+func TestSingBoxAPIRejectsPublicControlAndUnknownConfigFields(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), filepath.Join(dir,"config.json"), filepath.Join(dir,"log"))
+	handler := apiHandlerWithSingBox(nil, manager)
+	public := httptest.NewRequest(http.MethodPost, "/singbox/start", nil)
+	public.RemoteAddr = "8.8.8.8:1234"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, public)
+	if rec.Code != http.StatusForbidden { t.Fatalf("public control status=%d, want 403",rec.Code) }
+	unknown := httptest.NewRequest(http.MethodPut, "/singbox/config", strings.NewReader(`{"ListenAddress":"127.0.0.1:1","CSQTTAddress":"127.0.0.1:2","unexpected":true}`))
+	unknown.RemoteAddr = "192.168.1.2:1234"
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, unknown)
+	if rec.Code != http.StatusBadRequest { t.Fatalf("unknown config field status=%d, want 400",rec.Code) }
+}
