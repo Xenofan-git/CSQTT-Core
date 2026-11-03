@@ -62,3 +62,39 @@ func TestSingBoxManagerRejectsMissingConfigWithoutStarting(t *testing.T) {
 	if err := manager.Start(context.Background()); err == nil { t.Fatal("missing config must be rejected") }
 	if manager.Status().Running { t.Fatal("manager started without a config") }
 }
+
+func TestSingBoxManagerStopCancelsInFlightStart(t *testing.T) {
+	dir := t.TempDir()
+	checkStarted := filepath.Join(dir, "check.started")
+	runStarted := filepath.Join(dir, "run.started")
+	binary := newFakeSingBox(t, "if [ \"$1\" = check ]; then touch "+shellQuoteForTest(checkStarted)+"; exec sleep 60; fi\ntouch "+shellQuoteForTest(runStarted)+"\nexec sleep 60")
+	config := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(config, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+	manager := NewSingBoxManager(binary, config, filepath.Join(dir, "sing-box.log"))
+
+	startResult := make(chan error, 1)
+	go func() { startResult <- manager.Start(context.Background()) }()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(checkStarted); err == nil { break }
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := os.Stat(checkStarted); err != nil { t.Fatal("config check did not start") }
+
+	stopResult := make(chan error, 1)
+	go func() { stopResult <- manager.Stop() }()
+	select {
+	case err := <-startResult:
+		if err == nil { t.Fatal("Start unexpectedly succeeded after Stop cancelled it") }
+	case <-time.After(3 * time.Second):
+		t.Fatal("Start did not return after Stop cancelled config check")
+	}
+	select {
+	case err := <-stopResult:
+		if err != nil { t.Fatalf("Stop failed: %v", err) }
+	case <-time.After(3 * time.Second):
+		t.Fatal("Stop did not wait for in-flight Start")
+	}
+	if _, err := os.Stat(runStarted); err == nil { t.Fatal("sing-box run process started after Stop") }
+	if got := manager.Status(); got.Running || got.PID != 0 { t.Fatalf("unexpected process after cancelled start: %+v", got) }
+}

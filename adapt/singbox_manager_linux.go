@@ -27,6 +27,9 @@ type SingBoxManager struct {
 	done chan struct{}
 	logFile *os.File
 	lastError string
+	starting bool
+	startDone chan struct{}
+	startCancel context.CancelFunc
 }
 
 type SingBoxStatus struct {
@@ -65,43 +68,55 @@ func (m *SingBoxManager) checkConfig(ctx context.Context) error {
 
 func (m *SingBoxManager) Start(ctx context.Context) error {
 	m.mu.Lock()
-	if m.cmd != nil {
+	if m.cmd != nil || m.starting {
 		m.mu.Unlock()
-		return fmt.Errorf("sing-box is already running or stopping")
+		return fmt.Errorf("sing-box is already running, starting, or stopping")
 	}
+	checkCtx, cancel := context.WithCancel(ctx)
+	startDone := make(chan struct{})
+	m.starting, m.startDone, m.startCancel = true, startDone, cancel
 	m.mu.Unlock()
 
-	if err := m.checkConfig(ctx); err != nil {
-		m.mu.Lock(); m.lastError = err.Error(); m.mu.Unlock()
-		return err
+	finishStart := func(err error) {
+		cancel()
+		m.mu.Lock()
+		m.starting, m.startDone, m.startCancel = false, nil, nil
+		if err != nil { m.lastError = err.Error() }
+		m.mu.Unlock()
+		close(startDone)
 	}
+	fail := func(err error) error { finishStart(err); return err }
+
+	if err := m.checkConfig(checkCtx); err != nil { return fail(err) }
+	if err := checkCtx.Err(); err != nil { return fail(fmt.Errorf("sing-box start cancelled: %w", err)) }
 	if err := os.MkdirAll(filepath.Dir(m.logPath), 0700); err != nil {
-		return fmt.Errorf("create sing-box log directory: %w", err)
+		return fail(fmt.Errorf("create sing-box log directory: %w", err))
 	}
 	logFile, err := os.OpenFile(m.logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil { return fmt.Errorf("open sing-box log: %w", err) }
+	if err != nil { return fail(fmt.Errorf("open sing-box log: %w", err)) }
 
 	cmd := exec.Command(m.binary, "run", "-c", m.configPath)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	cmd.Stdout, cmd.Stderr = logFile, logFile
 
 	m.mu.Lock()
-	if m.cmd != nil {
+	if err := checkCtx.Err(); err != nil {
 		m.mu.Unlock()
 		_ = logFile.Close()
-		return fmt.Errorf("sing-box is already running or stopping")
+		return fail(fmt.Errorf("sing-box start cancelled: %w", err))
 	}
 	if err := cmd.Start(); err != nil {
 		m.lastError = err.Error()
 		m.mu.Unlock()
 		_ = logFile.Close()
-		return fmt.Errorf("start sing-box: %w", err)
+		return fail(fmt.Errorf("start sing-box: %w", err))
 	}
 	done := make(chan struct{})
 	m.cmd, m.done, m.logFile = cmd, done, logFile
 	m.lastError = ""
+	m.starting, m.startDone, m.startCancel = false, nil, nil
 	m.mu.Unlock()
+	close(startDone)
 
 	go func() {
 		waitErr := cmd.Wait()
@@ -116,36 +131,43 @@ func (m *SingBoxManager) Start(ctx context.Context) error {
 	}()
 	return nil
 }
-
 func (m *SingBoxManager) Stop() error {
-	m.mu.Lock()
-	cmd, done := m.cmd, m.done
-	timeout := m.stopTimeout
-	m.mu.Unlock()
-	if cmd == nil { return nil }
-	if timeout <= 0 { timeout = 5 * time.Second }
+	for {
+		m.mu.Lock()
+		if m.starting {
+			startDone, cancel := m.startDone, m.startCancel
+			m.mu.Unlock()
+			if cancel != nil { cancel() }
+			<-startDone
+			continue
+		}
+		cmd, done := m.cmd, m.done
+		timeout := m.stopTimeout
+		m.mu.Unlock()
+		if cmd == nil { return nil }
+		if timeout <= 0 { timeout = 5 * time.Second }
 
-	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
-		return fmt.Errorf("terminate sing-box process group: %w", err)
-	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case <-done:
-		return nil
-	case <-timer.C:
-	}
-	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-		return fmt.Errorf("force-kill sing-box process group: %w", err)
-	}
-	select {
-	case <-done:
-		return nil
-	case <-time.After(timeout):
-		return fmt.Errorf("sing-box process did not exit after SIGKILL")
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+			return fmt.Errorf("terminate sing-box process group: %w", err)
+		}
+		timer := time.NewTimer(timeout)
+		select {
+		case <-done:
+			if !timer.Stop() { <-timer.C }
+			return nil
+		case <-timer.C:
+		}
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+			return fmt.Errorf("force-kill sing-box process group: %w", err)
+		}
+		select {
+		case <-done:
+			return nil
+		case <-time.After(timeout):
+			return fmt.Errorf("sing-box process did not exit after SIGKILL")
+		}
 	}
 }
-
 func (m *SingBoxManager) Status() SingBoxStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
