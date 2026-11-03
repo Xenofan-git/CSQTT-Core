@@ -242,6 +242,22 @@ func TestSingBoxRoutesDomainThroughCSQTTOutbound(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("CSQTT SOCKS outbound did not receive the routed domain")
 	}
+
+	// The catch-all reject must not silently send unmatched traffic to the
+	// first outbound (DIRECT) or to CSQTT.
+	unmatched, err := net.DialTimeout("tcp", input.ListenAddress, time.Second)
+	if err != nil { t.Fatal(err) }
+	defer unmatched.Close()
+	_ = unmatched.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := unmatched.Write([]byte{5, 1, 0}); err != nil { t.Fatal(err) }
+	if _, err := io.ReadFull(unmatched, greetingReply[:]); err != nil { t.Fatal(err) }
+	unknown := "unmatched-route.test"
+	request = []byte{5, 1, 0, 3, byte(len(unknown))}
+	request = append(request, []byte(unknown)...)
+	request = append(request, 0x01, 0xbb)
+	if _, err := unmatched.Write(request); err != nil { t.Fatal(err) }
+	if _, err := io.ReadFull(unmatched, reply[:]); err != nil { t.Fatalf("read unmatched SOCKS response: %v", err) }
+	if reply[1] == 0 { t.Fatalf("unmatched domain unexpectedly routed: %v", reply) }
 }
 
 func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
