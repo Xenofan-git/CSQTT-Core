@@ -98,3 +98,21 @@ func TestSingBoxManagerStopCancelsInFlightStart(t *testing.T) {
 	if _, err := os.Stat(runStarted); err == nil { t.Fatal("sing-box run process started after Stop") }
 	if got := manager.Status(); got.Running || got.PID != 0 { t.Fatalf("unexpected process after cancelled start: %+v", got) }
 }
+
+func TestSingBoxManagerSaveConfigIsAtomicAndValidated(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.json")
+	binary := newFakeSingBox(t, "if [ \"$1\" = check ]; then grep -q 'invalid-marker' \"$3\" && { echo invalid >&2; exit 9; }; exit 0; fi\nexit 0")
+	manager := NewSingBoxManager(binary, config, filepath.Join(dir, "sing-box.log"))
+	input := singBoxConfigInput{ListenAddress: "127.0.0.1:19080", CSQTTAddress: "127.0.0.1:19081"}
+	if err := manager.SaveConfig(input); err != nil { t.Fatalf("SaveConfig valid config: %v", err) }
+	before, err := os.ReadFile(config); if err != nil { t.Fatal(err) }
+	if len(before) == 0 { t.Fatal("empty config persisted") }
+	invalid := input
+	invalid.DirectDomains = []string{"bad domain"}
+	if err := manager.SaveConfig(invalid); err == nil { t.Fatal("invalid config accepted") }
+	after, err := os.ReadFile(config); if err != nil { t.Fatal(err) }
+	if string(after) != string(before) { t.Fatal("invalid config replaced the last known-good config") }
+	info, err := os.Stat(config); if err != nil { t.Fatal(err) }
+	if info.Mode().Perm() != 0600 { t.Fatalf("config permissions = %o, want 0600", info.Mode().Perm()) }
+}
