@@ -243,6 +243,7 @@ func TestSingBoxRoutesDomainThroughCSQTTOutbound(t *testing.T) {
 		t.Fatal("CSQTT SOCKS outbound did not receive the routed domain")
 	}
 
+	_ = inbound.Close()
 	// The catch-all reject must not silently send unmatched traffic to the
 	// first outbound (DIRECT) or to CSQTT.
 	unmatched, err := net.DialTimeout("tcp", input.ListenAddress, time.Second)
