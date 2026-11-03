@@ -468,14 +468,26 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
         writeJSON(w, map[string]any{"running": status.Running, "pid": status.PID, "configured": err == nil, "log_path": status.LogPath, "error": status.Error})
     })
     mux.HandleFunc("/singbox/config", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPut) { return }
         if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
-        var input singBoxConfigInput
-        decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-        decoder.DisallowUnknownFields()
-        if err := decoder.Decode(&input); err != nil { http.Error(w, "invalid sing-box config request", http.StatusBadRequest); return }
-        if err := singBox.SaveConfig(input); err != nil { http.Error(w, err.Error(), http.StatusUnprocessableEntity); return }
-        writeJSON(w, map[string]bool{"ok": true})
+        switch r.Method {
+        case http.MethodGet:
+            input, err := singBox.LoadConfig()
+            if err != nil {
+                if os.IsNotExist(err) { writeJSON(w, map[string]any{"configured": false}); return }
+                http.Error(w, "unable to load sing-box config: "+err.Error(), http.StatusInternalServerError); return
+            }
+            writeJSON(w, map[string]any{"configured": true, "config": input})
+        case http.MethodPut:
+            var input singBoxConfigInput
+            decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+            decoder.DisallowUnknownFields()
+            if err := decoder.Decode(&input); err != nil { http.Error(w, "invalid sing-box config request", http.StatusBadRequest); return }
+            if err := singBox.SaveConfig(input); err != nil { http.Error(w, err.Error(), http.StatusUnprocessableEntity); return }
+            writeJSON(w, map[string]bool{"ok": true})
+        default:
+            w.Header().Set("Allow", "GET, PUT")
+            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+        }
     })
     mux.HandleFunc("/singbox/start", func(w http.ResponseWriter, r *http.Request) {
         if !method(w, r, http.MethodPost) { return }

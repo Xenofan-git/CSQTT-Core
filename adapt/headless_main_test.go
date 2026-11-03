@@ -634,6 +634,11 @@ func TestSingBoxAPIControlsIndependentManager(t *testing.T) {
 	}
 	config := `{"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:19181"}`
 	if got := request(http.MethodPut, "/singbox/config", config); got.Code != http.StatusOK { t.Fatalf("save config status=%d body=%s",got.Code,got.Body.String()) }
+	loaded := request(http.MethodGet, "/singbox/config", "")
+	if loaded.Code != http.StatusOK { t.Fatalf("load config status=%d body=%s", loaded.Code, loaded.Body.String()) }
+	var restored struct { Config singBoxConfigInput `json:"config"`; Configured bool `json:"configured"` }
+	if err := json.Unmarshal(loaded.Body.Bytes(), &restored); err != nil { t.Fatalf("decode loaded config: %v", err) }
+	if !restored.Configured || restored.Config.ListenAddress != "127.0.0.1:19180" || restored.Config.CSQTTAddress != "127.0.0.1:19181" { t.Fatalf("loaded config mismatch: %#v", restored) }
 	if got := request(http.MethodPost, "/singbox/start", ""); got.Code != http.StatusOK { t.Fatalf("start status=%d body=%s",got.Code,got.Body.String()) }
 	if got := request(http.MethodGet, "/singbox/status", ""); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"running":true`) { t.Fatalf("status=%d body=%s",got.Code,got.Body.String()) }
 	if got := request(http.MethodGet, "/singbox/logs", ""); got.Code != http.StatusOK && got.Code != http.StatusNoContent { t.Fatalf("logs status=%d body=%s",got.Code,got.Body.String()) }

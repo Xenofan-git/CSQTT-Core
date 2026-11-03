@@ -4,6 +4,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"net"
+	"strconv"
+	"strings"
 	"fmt"
 	"io"
 	"os"
@@ -216,6 +220,57 @@ func (m *SingBoxManager) Status() SingBoxStatus {
 		status.PID = m.cmd.Process.Pid
 	}
 	return status
+}
+
+
+func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
+	var input singBoxConfigInput
+	data, err := os.ReadFile(m.configPath)
+	if err != nil { return input, fmt.Errorf("read sing-box config: %w", err) }
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil { return input, fmt.Errorf("decode sing-box config: %w", err) }
+	inbounds, _ := raw["inbounds"].([]any)
+	if len(inbounds) != 1 { return input, fmt.Errorf("unsupported sing-box config: expected one inbound") }
+	inbound, _ := inbounds[0].(map[string]any)
+	if inbound["type"] != "socks" || inbound["tag"] != singBoxInboundTag { return input, fmt.Errorf("unsupported sing-box inbound") }
+	host, _ := inbound["listen"].(string)
+	port, ok := inbound["listen_port"].(float64)
+	if host == "" || !ok || port < 1 || port > 65535 { return input, fmt.Errorf("invalid sing-box inbound endpoint") }
+	input.ListenAddress = net.JoinHostPort(host, strconv.Itoa(int(port)))
+	outbounds, _ := raw["outbounds"].([]any)
+	known := make(map[string]map[string]any)
+	for _, item := range outbounds {
+		entry, ok := item.(map[string]any); if !ok { continue }
+		tag, _ := entry["tag"].(string); known[tag] = entry
+	}
+	csqtt := known[singBoxCSQTTTag]
+	if csqtt == nil || csqtt["type"] != "socks" { return input, fmt.Errorf("missing CSQTT SOCKS outbound") }
+	csqttHost, _ := csqtt["server"].(string)
+	csqttPort, ok := csqtt["server_port"].(float64)
+	if csqttHost == "" || !ok || csqttPort < 1 || csqttPort > 65535 { return input, fmt.Errorf("invalid CSQTT SOCKS endpoint") }
+	input.CSQTTAddress = net.JoinHostPort(csqttHost, strconv.Itoa(int(csqttPort)))
+	for tag, entry := range known {
+		if !strings.HasPrefix(tag, "socks-") { continue }
+		host, _ := entry["server"].(string); port, ok := entry["server_port"].(float64)
+		if !ok || port < 1 || port > 65535 { return input, fmt.Errorf("invalid SOCKS5 outbound %q", tag) }
+		username, _ := entry["username"].(string); password, _ := entry["password"].(string)
+		input.SOCKS5 = append(input.SOCKS5, singBoxSOCKS5Outbound{ID:strings.TrimPrefix(tag,"socks-"), Server:host, ServerPort:int(port), Username:username, Password:password, Enabled:true})
+	}
+	route, _ := raw["route"].(map[string]any); rules, _ := route["rules"].([]any)
+	for _, item := range rules {
+		rule, ok := item.(map[string]any); if !ok || rule["action"] != "route" { continue }
+		outbound, _ := rule["outbound"].(string)
+		domains, suffixes, cidrs := stringSlice(rule["domain"]), stringSlice(rule["domain_suffix"]), stringSlice(rule["ip_cidr"])
+		if outbound == singBoxDirectTag { input.DirectDomains=append(input.DirectDomains,domains...); input.DirectIPCIDRs=append(input.DirectIPCIDRs,cidrs...); continue }
+		if outbound == "" || known[outbound] == nil { return input, fmt.Errorf("route references missing outbound %q", outbound) }
+		input.Rules=append(input.Rules,singBoxRouteRule{ID:fmt.Sprintf("loaded-%d",len(input.Rules)+1),Domains:domains,DomainSuffixes:suffixes,Outbound:outbound,Enabled:true})
+	}
+	return input,nil
+}
+func stringSlice(value any) []string {
+	items, _ := value.([]any); out := make([]string,0,len(items))
+	for _, item := range items { if s,ok:=item.(string); ok { out=append(out,s) } }
+	return out
 }
 
 func (m *SingBoxManager) CopyLogs(w io.Writer) error {
