@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(".").resolve()
 HTML = ROOT / "adapt" / "csqtt-panel-preview.html"
-EXPECTED = {"connect", "settings", "deploy", "logs", "route"}
+EXPECTED = {"connect", "settings", "deploy", "logs", "route", "singbox"}
 WIDTHS = [390, 768, 1280]
 
 
@@ -105,6 +105,18 @@ def main():
                 body = {"ok": True}
             else:
                 body = {"ok": False}
+        elif path == "/singbox/status":
+            body = {"running": False, "pid": 0, "configured": True, "log_path": "/tmp/sing-box.log"}
+        elif path == "/singbox/config" and method == "GET":
+            body = {"configured": True, "config": {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:12500","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[],"Rules":[]}}
+        elif path == "/singbox/config" and method == "PUT":
+            body = {"ok": True}
+        elif path == "/singbox/logs":
+            body = "fixture sing-box log"
+        elif path == "/singbox/start" and method == "POST":
+            body = {"ok": True}
+        elif path == "/singbox/stop" and method == "POST":
+            body = {"ok": True}
         elif path == "/socks5/status":
             body = dict(socks5_state)
         elif path == "/deploy/status":
@@ -140,7 +152,7 @@ def main():
 
             tabs = page.locator("button[data-page]")
             actual = [tabs.nth(i).get_attribute("data-page") for i in range(tabs.count())]
-            assert len(actual) == 5 and set(actual) == EXPECTED, f"five-tab set mismatch: {actual}"
+            assert len(actual) == 6 and set(actual) == EXPECTED, f"six-tab set mismatch: {actual}"
             assert page.locator("#page-connect > .connect-hero").count() == 1
             assert page.locator("#page-connect > .card").count() == 1, "Connect must retain the clean 2.5.0 single-card composition"
             assert page.locator("#topHeart").count() == 1 and page.locator("#topSwitch").count() == 1 and page.locator("#topSettings").count() == 1
@@ -173,6 +185,18 @@ def main():
                     # Route is a full-screen dialog; close it before using bottom navigation again.
                     page.locator("#routeClose").click()
                     assert page.locator("#page-connect").evaluate("el => el.classList.contains('active')")
+
+            page.locator('button[data-page="singbox"]').click()
+            assert page.locator("#page-singbox").evaluate("el => el.classList.contains('active')")
+            assert page.locator("#singboxListen").input_value() == "127.0.0.1:19180"
+            assert page.locator("#singboxDirectDomains").input_value() == "example.ru"
+            page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
+            page.locator("#singboxSave").click()
+            page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
+            assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
+            assert page.locator("#singboxLogs").inner_text() == "fixture sing-box log"
+            page.locator("#singboxStart").click()
+            assert any(method == "POST" and path == "/singbox/start" for method, path, _ in calls)
 
             # The agreed design is a fixed 390px native-phone canvas on every
             # device. Desktop must center that same canvas; it must not stretch,
@@ -539,7 +563,7 @@ def main():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
-    print("CSQTT_CHROMIUM_UI_SMOKE_PASS widths=320,360,390,768,1280 tabs=5 profile-api=PASS connect-disconnect=PASS tunnel-settings=PASS direct-settings-api=PASS deploy-api=PASS socks5-live-status=PASS socks5-address-hidden-when-inactive=PASS logs=PASS captcha-bridge-trusted-origin=PASS captcha-bridge-fail-closed=PASS")
+    print("CSQTT_CHROMIUM_UI_SMOKE_PASS widths=320,360,390,768,1280 tabs=6 singbox-config-api=PASS profile-api=PASS connect-disconnect=PASS tunnel-settings=PASS direct-settings-api=PASS deploy-api=PASS socks5-live-status=PASS socks5-address-hidden-when-inactive=PASS logs=PASS captcha-bridge-trusted-origin=PASS captcha-bridge-fail-closed=PASS")
 
 
 if __name__ == "__main__":

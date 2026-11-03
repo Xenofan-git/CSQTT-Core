@@ -78,7 +78,7 @@ jobs:
           grep -q 'id="directDomains"' adapt/csqtt-panel-preview.html
           grep -q 'id="directIPs"' adapt/csqtt-panel-preview.html
           grep -q 'id="saveDirectRules"' adapt/csqtt-panel-preview.html
-          test "$(grep -o 'data-page="' adapt/csqtt-panel-preview.html | wc -l)" -eq 5
+          test "$(grep -o 'data-page="' adapt/csqtt-panel-preview.html | wc -l)" -eq 6
           node <<'NODE'
           const fs = require("fs");
           const html = fs.readFileSync("adapt/csqtt-panel-preview.html", "utf8");
@@ -90,7 +90,7 @@ jobs:
           const pages = buttons.map(button => button.match(/data-page="([^"]+)"/)?.[1] ?? "");
           const firstButton = buttons[0] ?? "";
           const first = firstButton.slice(firstButton.indexOf(">") + 1).replace(/<[^>]*>/g, "").trim();
-          if (pages.join(",") !== "connect,settings,deploy,route,logs" || first !== "Подключение") {
+          if (pages.join(",") !== "connect,settings,deploy,route,singbox,logs" || first !== "Подключение") {
             throw new Error(JSON.stringify({ pages, first }));
           }
           for (const id of ["directDomains", "directIPs"]) {
@@ -202,7 +202,7 @@ jobs:
           # Put it into the actual packaged frontend, not just the preview source file.
           cp ../../../adapt/csqtt-panel-preview.html build/web/index.html
           grep -Fq '<title>CSQTT · NanoPi</title>' build/web/index.html
-          test "$(grep -o 'data-page="' build/web/index.html | wc -l)" -eq 5
+          test "$(grep -o 'data-page="' build/web/index.html | wc -l)" -eq 6
           node -e "const fs=require('fs');const h=fs.readFileSync('build/web/index.html','utf8');const m=h.match(/<script>([\\s\\S]*?)<\\/script>/);if(!m)process.exit(2);new Function(m[1]);"
       - name: Verify provenance and exact adaptation
         run: |

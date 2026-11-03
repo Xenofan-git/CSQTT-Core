@@ -43,16 +43,16 @@ js = "\n".join(scripts)
 
 parser = PanelParser()
 parser.feed(html)
-if len(parser.tabs) != 5 or set(parser.tabs) != {
-    "connect", "settings", "deploy", "route", "logs"
+if len(parser.tabs) != 6 or set(parser.tabs) != {
+    "connect", "settings", "deploy", "route", "logs", "singbox"
 }:
     raise SystemExit(f"unexpected CSQTT tab contract: {parser.tabs}")
-if len(parser.pages) != 5 or set(parser.pages) != set(parser.tabs):
+if len(parser.pages) != 6 or set(parser.pages) != set(parser.tabs):
     raise SystemExit(f"tab/page mismatch: tabs={parser.tabs}, pages={parser.pages}")
 
-# Navigation order is intentionally not a contract. All five functional
+# Navigation order is intentionally not a contract. All six functional
 # pages must exist exactly once and each tab must map to a page.
-if len(parser.tabs) != 5 or set(parser.tabs) != {"connect", "settings", "deploy", "route", "logs"}:
+if len(parser.tabs) != 6 or set(parser.tabs) != {"connect", "settings", "deploy", "route", "logs", "singbox"}:
     raise SystemExit(f"unexpected CSQTT tab set: {parser.tabs}")
 
 # Keep the browser port on the native CSQTT brand palette and floating-tab
@@ -80,7 +80,7 @@ for token in (
 if "background:linear-gradient(145deg,#ddfff0,#fff)" in html:
     raise SystemExit("connected power button uses a light-only hardcoded gradient")
 
-# CSQTT 2.5.0 visual adaptation: retain the native five-tab navigation while
+# CSQTT 2.5.0 visual adaptation: retain the native six-tab navigation while
 # using the newer Material-style surfaces and outlined controls.
 for token in (
     "CSQTT 2.5.0 visual adaptation",
@@ -285,6 +285,10 @@ if "Не удалось получить фактическое состояни
     raise SystemExit("SOCKS5 API failure is not represented as unknown")
 if "Переподключите туннель CSQTT" not in html:
     raise SystemExit("Direct rules must explain that reconnect is required to apply changes")
+
+for token in ('id="page-singbox"', 'id="singboxStart"', 'id="singboxStop"', 'id="singboxSave"', "req('/singbox/config')", "req('/singbox/status')", "req('/singbox/logs')"):
+    if token not in html:
+        raise SystemExit("sing-box panel contract missing: " + token)
 
 print(
     f"CSQTT panel contract OK: {len(parser.button_ids)} fixed buttons, "
