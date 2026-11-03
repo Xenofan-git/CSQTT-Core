@@ -3,7 +3,8 @@
 package main
 
 import (
-	"context"\n\t"fmt"
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
