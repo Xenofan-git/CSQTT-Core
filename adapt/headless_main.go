@@ -748,6 +748,9 @@ func main() {
         app.core.AddLog(fmt.Sprintf("[ERROR] Headless API stopped: %v", err))
     }
 
+    if err := defaultSingBoxManager().Stop(); err != nil {
+        app.core.AddLog(fmt.Sprintf("[sing-box] Shutdown error: %v", err))
+    }
     _ = app.Disconnect()
     _ = srv.Shutdown(context.Background())
     _ = panelSrv.Shutdown(context.Background())

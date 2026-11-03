@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,6 +18,16 @@ func newFakeSingBox(t *testing.T, script string) string {
 	path := filepath.Join(t.TempDir(), "sing-box")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script+"\n"), 0700); err != nil { t.Fatal(err) }
 	return path
+}
+
+func TestSingBoxListenIPAssignedMatchesExactInterfaceAddress(t *testing.T) {
+	addrs := []net.Addr{
+		&net.IPNet{IP: net.ParseIP("192.168.5.2"), Mask: net.CIDRMask(24, 32)},
+		&net.IPNet{IP: net.ParseIP("fd00::2"), Mask: net.CIDRMask(64, 128)},
+	}
+	if !singBoxListenIPAssigned(net.ParseIP("192.168.5.2"), addrs) { t.Fatal("assigned IPv4 address was not recognized") }
+	if !singBoxListenIPAssigned(net.ParseIP("fd00::2"), addrs) { t.Fatal("assigned IPv6 address was not recognized") }
+	if singBoxListenIPAssigned(net.ParseIP("192.168.5.3"), addrs) { t.Fatal("different host in the same subnet was incorrectly accepted") }
 }
 
 func TestSingBoxManagerOwnsIndependentProcessLifecycle(t *testing.T) {

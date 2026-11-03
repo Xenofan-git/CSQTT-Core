@@ -51,6 +51,33 @@ func NewSingBoxManager(binary, configPath, logPath string) *SingBoxManager {
 	}
 }
 
+func singBoxListenIPAssigned(ip net.IP, addrs []net.Addr) bool {
+	for _, addr := range addrs {
+		assigned, _, err := net.ParseCIDR(addr.String())
+		if err == nil && assigned.Equal(ip) { return true }
+	}
+	return false
+}
+
+func validateSingBoxListenAddress(address string) error {
+	host, _, err := singBoxHostPort(address, "listen address")
+	if err != nil { return err }
+	ip := net.ParseIP(host)
+	if ip == nil { return fmt.Errorf("listen address must be an IP literal") }
+	if ip.IsLoopback() { return nil }
+	if !ip.IsPrivate() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() {
+		return fmt.Errorf("listen address must be loopback or a private eth1 address")
+	}
+	iface, err := net.InterfaceByName("eth1")
+	if err != nil { return fmt.Errorf("private sing-box inbound must bind to eth1: %w", err) }
+	addrs, err := iface.Addrs()
+	if err != nil { return fmt.Errorf("read eth1 addresses: %w", err) }
+	if !singBoxListenIPAssigned(ip, addrs) {
+		return fmt.Errorf("sing-box inbound address %s is not assigned to eth1", ip)
+	}
+	return nil
+}
+
 func (m *SingBoxManager) checkConfig(ctx context.Context) error { return m.checkConfigPath(ctx, m.configPath) }
 
 func (m *SingBoxManager) checkConfigPath(ctx context.Context, configPath string) error {
@@ -77,6 +104,9 @@ func (m *SingBoxManager) checkConfigPath(ctx context.Context, configPath string)
 func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	encoded, err := buildSingBoxConfig(input)
 	if err != nil { return fmt.Errorf("build sing-box config: %w", err) }
+	if err := validateSingBoxListenAddress(input.ListenAddress); err != nil {
+		return fmt.Errorf("unsafe sing-box inbound: %w", err)
+	}
 	m.mu.Lock()
 	if m.cmd != nil || m.starting || m.configuring {
 		m.mu.Unlock()
@@ -130,6 +160,11 @@ func (m *SingBoxManager) Start(ctx context.Context) error {
 	}
 	fail := func(err error) error { finishStart(err); return err }
 
+	input, loadErr := m.LoadConfig()
+	if loadErr != nil { return fail(loadErr) }
+	if err := validateSingBoxListenAddress(input.ListenAddress); err != nil {
+		return fail(fmt.Errorf("unsafe sing-box inbound: %w", err))
+	}
 	if err := m.checkConfig(checkCtx); err != nil { return fail(err) }
 	if err := checkCtx.Err(); err != nil { return fail(fmt.Errorf("sing-box start cancelled: %w", err)) }
 	if err := os.MkdirAll(filepath.Dir(m.logPath), 0700); err != nil {
