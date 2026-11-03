@@ -3,10 +3,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
+	"sync"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -104,6 +106,136 @@ func TestBuildSingBoxConfigDoesNotImplicitlyRouteUnmatchedTraffic(t *testing.T) 
 	last:=rules[len(rules)-1].(map[string]any)
 	if last["action"]!="reject" { t.Fatalf("unexpected catch-all: %#v",last) }
 	if _,ok:=config["route"].(map[string]any)["final"];ok { t.Fatal("route.final would introduce an implicit outbound fallback") }
+}
+
+type singBoxTestLogBuffer struct {
+	mu sync.Mutex
+	builder strings.Builder
+}
+func (b *singBoxTestLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.builder.Write(p)
+}
+func (b *singBoxTestLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.builder.String()
+}
+
+func reserveSingBoxTestAddress(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	address := ln.Addr().String()
+	if err := ln.Close(); err != nil { t.Fatal(err) }
+	return address
+}
+
+func readSingBoxTestSOCKSAddress(conn net.Conn) (string, error) {
+	var header [4]byte
+	if _, err := io.ReadFull(conn, header[:]); err != nil { return "", err }
+	var host string
+	switch header[3] {
+	case 1:
+		b := make([]byte, 4)
+		if _, err := io.ReadFull(conn, b); err != nil { return "", err }
+		host = net.IP(b).String()
+	case 3:
+		var size [1]byte
+		if _, err := io.ReadFull(conn, size[:]); err != nil { return "", err }
+		b := make([]byte, int(size[0]))
+		if _, err := io.ReadFull(conn, b); err != nil { return "", err }
+		host = string(b)
+	case 4:
+		b := make([]byte, 16)
+		if _, err := io.ReadFull(conn, b); err != nil { return "", err }
+		host = net.IP(b).String()
+	default:
+		return "", io.ErrUnexpectedEOF
+	}
+	var port [2]byte
+	if _, err := io.ReadFull(conn, port[:]); err != nil { return "", err }
+	return net.JoinHostPort(host, strconv.Itoa(int(binary.BigEndian.Uint16(port[:])))), nil
+}
+
+func TestSingBoxRoutesDomainThroughCSQTTOutbound(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" { t.Skip("requires pinned sing-box binary from CI") }
+
+	upstream, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer upstream.Close()
+	targets := make(chan string, 4)
+	go func() {
+		for {
+			conn, acceptErr := upstream.Accept()
+			if acceptErr != nil { return }
+			go func(c net.Conn) {
+				defer c.Close()
+				_ = c.SetDeadline(time.Now().Add(8 * time.Second))
+				var greeting [2]byte
+				if _, err := io.ReadFull(c, greeting[:]); err != nil { return }
+				methods := make([]byte, int(greeting[1]))
+				if _, err := io.ReadFull(c, methods); err != nil { return }
+				if _, err := c.Write([]byte{5, 0}); err != nil { return }
+				target, err := readSingBoxTestSOCKSAddress(c)
+				if err != nil { return }
+				select { case targets <- target: default: }
+				if _, err := c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0}); err != nil { return }
+				_, _ = io.Copy(c, c)
+			}(conn)
+		}
+	}()
+
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		CSQTTAddress: upstream.Addr().String(),
+		Rules: []singBoxRouteRule{{ID: "csqtt-domain", Domains: []string{"route-csqtt.test"}, Outbound: singBoxCSQTTTag, Enabled: true}},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatal(err) }
+	configPath := filepath.Join(t.TempDir(), "sing-box.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil { t.Fatalf("start sing-box: %v", err) }
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	var inbound net.Conn
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		inbound, err = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+		if err == nil { break }
+		time.Sleep(50 * time.Millisecond)
+	}
+	if inbound == nil { t.Fatalf("sing-box inbound did not become ready: %v; logs: %s", err, output.String()) }
+	defer inbound.Close()
+	_ = inbound.SetDeadline(time.Now().Add(8 * time.Second))
+	if _, err := inbound.Write([]byte{5, 1, 0}); err != nil { t.Fatal(err) }
+	var greetingReply [2]byte
+	if _, err := io.ReadFull(inbound, greetingReply[:]); err != nil { t.Fatal(err) }
+	if greetingReply != [2]byte{5, 0} { t.Fatalf("inbound SOCKS greeting = %v", greetingReply) }
+	host := "route-csqtt.test"
+	request := []byte{5, 1, 0, 3, byte(len(host))}
+	request = append(request, []byte(host)...)
+	request = append(request, 0x01, 0xbb) // TCP/443
+	if _, err := inbound.Write(request); err != nil { t.Fatal(err) }
+	var reply [10]byte
+	if _, err := io.ReadFull(inbound, reply[:]); err != nil { t.Fatalf("read CONNECT response: %v; sing-box logs: %s", err, output.String()) }
+	if reply[1] != 0 { t.Fatalf("domain route was not connected: SOCKS reply=%v; logs: %s", reply, output.String()) }
+	payload := []byte("sing-box-to-csqtt-loopback-e2e")
+	if _, err := inbound.Write(payload); err != nil { t.Fatal(err) }
+	got := make([]byte, len(payload))
+	if _, err := io.ReadFull(inbound, got); err != nil { t.Fatalf("read echo through CSQTT outbound: %v", err) }
+	if string(got) != string(payload) { t.Fatalf("echo=%q want=%q", got, payload) }
+	select {
+	case target := <-targets:
+		if target != "route-csqtt.test:443" { t.Fatalf("CSQTT SOCKS outbound received %q", target) }
+	case <-time.After(3 * time.Second):
+		t.Fatal("CSQTT SOCKS outbound did not receive the routed domain")
+	}
 }
 
 func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
