@@ -295,10 +295,16 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	for _, item := range rules {
 		rule, ok := item.(map[string]any); if !ok || rule["action"] != "route" { continue }
 		outbound, _ := rule["outbound"].(string)
-		domains, suffixes, cidrs := stringSlice(rule["domain"]), stringSlice(rule["domain_suffix"]), stringSlice(rule["ip_cidr"])
-		if outbound == singBoxDirectTag { input.DirectDomains=append(input.DirectDomains,domains...); input.DirectIPCIDRs=append(input.DirectIPCIDRs,cidrs...); continue }
+		domains, suffixes := stringSlice(rule["domain"]), stringSlice(rule["domain_suffix"])
+		keywords, regexes, cidrs := stringSlice(rule["domain_keyword"]), stringSlice(rule["domain_regex"]), stringSlice(rule["ip_cidr"])
+		if outbound == singBoxDirectTag {
+			input.DirectDomains=append(input.DirectDomains,domains...)
+			input.DirectDomainSuffixes=append(input.DirectDomainSuffixes,suffixes...)
+			input.DirectIPCIDRs=append(input.DirectIPCIDRs,cidrs...)
+			continue
+		}
 		if outbound == "" || known[outbound] == nil { return input, fmt.Errorf("route references missing outbound %q", outbound) }
-		input.Rules=append(input.Rules,singBoxRouteRule{ID:fmt.Sprintf("loaded-%d",len(input.Rules)+1),Domains:domains,DomainSuffixes:suffixes,Outbound:outbound,Enabled:true})
+		input.Rules=append(input.Rules,singBoxRouteRule{ID:fmt.Sprintf("loaded-%d",len(input.Rules)+1),Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,Outbound:outbound,Enabled:true})
 	}
 	return input,nil
 }

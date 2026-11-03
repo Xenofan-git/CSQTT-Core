@@ -31,6 +31,9 @@ type singBoxRouteRule struct {
 	ID             string
 	Domains        []string
 	DomainSuffixes []string
+	DomainKeywords []string
+	DomainRegexes  []string
+	IPCIDRs        []string
 	Outbound       string
 	Enabled        bool
 }
@@ -38,8 +41,9 @@ type singBoxRouteRule struct {
 type singBoxConfigInput struct {
 	ListenAddress string
 	CSQTTAddress  string
-	DirectDomains []string
-	DirectIPCIDRs []string
+	DirectDomains        []string
+	DirectDomainSuffixes []string
+	DirectIPCIDRs        []string
 	SOCKS5        []singBoxSOCKS5Outbound
 	Rules         []singBoxRouteRule
 }
@@ -134,7 +138,55 @@ func normalizeSingBoxDomains(values []string, suffix bool) ([]string, error) {
 	return out, nil
 }
 
-func makeSingBoxRouteRule(domains, suffixes, cidrs []string, outbound string) map[string]any {
+func normalizeSingBoxKeywords(values []string) ([]string, error) {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, raw := range values {
+		value := strings.ToLower(strings.TrimSpace(raw))
+		if value == "" || len(value) > 253 || strings.ContainsAny(value, " /:*?#[]") {
+			return nil, fmt.Errorf("invalid domain keyword %q", raw)
+		}
+		if _, ok := seen[value]; ok { continue }
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out, nil
+}
+
+func normalizeSingBoxRegexes(values []string) ([]string, error) {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" || len(value) > 512 { return nil, fmt.Errorf("invalid domain regex %q", raw) }
+		if _, err := regexp.Compile(value); err != nil { return nil, fmt.Errorf("invalid domain regex %q: %w", raw, err) }
+		if _, ok := seen[value]; ok { continue }
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out, nil
+}
+
+func normalizeSingBoxCIDRs(values []string) ([]string, error) {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			address, addressErr := netip.ParseAddr(value)
+			if addressErr != nil { return nil, fmt.Errorf("invalid IP/CIDR %q: %w", raw, err) }
+			prefix = netip.PrefixFrom(address, address.BitLen())
+		}
+		normalized := prefix.Masked().String()
+		if _, ok := seen[normalized]; ok { continue }
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out, nil
+}
+
+func makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs []string, outbound string) map[string]any {
 	rule := map[string]any{
 		"inbound": []string{singBoxInboundTag},
 		"action": "route",
@@ -145,6 +197,12 @@ func makeSingBoxRouteRule(domains, suffixes, cidrs []string, outbound string) ma
 	}
 	if len(suffixes) > 0 {
 		rule["domain_suffix"] = suffixes
+	}
+	if len(keywords) > 0 {
+		rule["domain_keyword"] = keywords
+	}
+	if len(regexes) > 0 {
+		rule["domain_regex"] = regexes
 	}
 	if len(cidrs) > 0 {
 		rule["ip_cidr"] = cidrs
@@ -177,22 +235,11 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	}
 
 	directDomains, err := normalizeSingBoxDomains(input.DirectDomains, false)
-	if err != nil {
-		return nil, fmt.Errorf("Direct domains: %w", err)
-	}
-	directCIDRs := make([]string, 0, len(input.DirectIPCIDRs))
-	seenCIDRs := make(map[string]struct{}, len(input.DirectIPCIDRs))
-	for _, raw := range input.DirectIPCIDRs {
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
-		if err != nil {
-			return nil, fmt.Errorf("Direct IP/CIDR %q: %w", raw, err)
-		}
-		value := prefix.Masked().String()
-		if _, ok := seenCIDRs[value]; !ok {
-			seenCIDRs[value] = struct{}{}
-			directCIDRs = append(directCIDRs, value)
-		}
-	}
+	if err != nil { return nil, fmt.Errorf("Direct domains: %w", err) }
+	directSuffixes, err := normalizeSingBoxDomains(input.DirectDomainSuffixes, true)
+	if err != nil { return nil, fmt.Errorf("Direct domain suffixes: %w", err) }
+	directCIDRs, err := normalizeSingBoxCIDRs(input.DirectIPCIDRs)
+	if err != nil { return nil, fmt.Errorf("Direct IP/CIDR: %w", err) }
 
 	outbounds := []map[string]any{
 		{"type": "direct", "tag": singBoxDirectTag},
@@ -236,8 +283,8 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		"inbound": []string{singBoxInboundTag},
 		"action": "sniff",
 	})
-	if len(directDomains) > 0 || len(directCIDRs) > 0 {
-		rules = append(rules, makeSingBoxRouteRule(directDomains, nil, directCIDRs, singBoxDirectTag))
+	if len(directDomains) > 0 || len(directSuffixes) > 0 || len(directCIDRs) > 0 {
+		rules = append(rules, makeSingBoxRouteRule(directDomains, directSuffixes, nil, nil, directCIDRs, singBoxDirectTag))
 	}
 
 	seenRuleIDs := make(map[string]struct{}, len(input.Rules))
@@ -257,16 +304,20 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			return nil, fmt.Errorf("route rule %q domains: %w", item.ID, err)
 		}
 		suffixes, err := normalizeSingBoxDomains(item.DomainSuffixes, true)
-		if err != nil {
-			return nil, fmt.Errorf("route rule %q suffixes: %w", item.ID, err)
-		}
-		if len(domains)+len(suffixes) == 0 {
+		if err != nil { return nil, fmt.Errorf("route rule %q suffixes: %w", item.ID, err) }
+		keywords, err := normalizeSingBoxKeywords(item.DomainKeywords)
+		if err != nil { return nil, fmt.Errorf("route rule %q keywords: %w", item.ID, err) }
+		regexes, err := normalizeSingBoxRegexes(item.DomainRegexes)
+		if err != nil { return nil, fmt.Errorf("route rule %q regexes: %w", item.ID, err) }
+		cidrs, err := normalizeSingBoxCIDRs(item.IPCIDRs)
+		if err != nil { return nil, fmt.Errorf("route rule %q IP/CIDR: %w", item.ID, err) }
+		if len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs) == 0 {
 			return nil, fmt.Errorf("route rule %q has no domain matchers", item.ID)
 		}
 		if _, exists := knownOutbounds[item.Outbound]; !exists {
 			return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound)
 		}
-		rules = append(rules, makeSingBoxRouteRule(domains, suffixes, nil, item.Outbound))
+		rules = append(rules, makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, item.Outbound))
 	}
 	// A catch-all reject prevents an implicit first-outbound/global fallback.
 	rules = append(rules, map[string]any{"action": "reject"})

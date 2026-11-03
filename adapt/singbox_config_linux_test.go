@@ -23,11 +23,42 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 		ListenAddress: "192.168.5.2:12500",
 		CSQTTAddress: "127.0.0.1:12501",
 		DirectDomains: []string{"LOCAL.example", "local.example."},
-		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64"},
+		DirectDomainSuffixes: []string{".example.org", "example.org"},
+		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
 		SOCKS5: []singBoxSOCKS5Outbound{{ID:"proxy-a", Server:"198.51.100.2", ServerPort:1080, Enabled:true}},
 		Rules: []singBoxRouteRule{
 			{ID:"first", Domains:[]string{"one.example"}, Outbound:"socks-proxy-a", Enabled:true},
-			{ID:"second", DomainSuffixes:[]string{".example.net"}, Outbound:singBoxCSQTTTag, Enabled:true},
+			{ID:"second", DomainSuffixes:[]string{".example.net"}, DomainKeywords:[]string{"stream"}, DomainRegexes:[]string{`^video\\..+\\.test//go:build linux
+
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "192.168.5.2:12500",
+		CSQTTAddress: "127.0.0.1:12501",
+		DirectDomains: []string{"LOCAL.example", "local.example."},
+		DirectDomainSuffixes: []string{".example.org", "example.org"},
+		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"proxy-a", Server:"198.51.100.2", ServerPort:1080, Enabled:true}},
+		Rules: []singBoxRouteRule{
+			{ID:"first", Domains:[]string{"one.example"}, Outbound:"socks-proxy-a", Enabled:true},
+			, IPCIDRs:[]string{"198.51.100.9"}, Outbound:singBoxCSQTTTag, Enabled:true},
 			{ID:"disabled", Domains:[]string{"disabled.example"}, Outbound:singBoxDirectTag, Enabled:false},
 		},
 	})
@@ -50,11 +81,100 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 	direct := rules[1].(map[string]any)
 	if direct["outbound"] != singBoxDirectTag { t.Fatalf("Direct bypass is not first: %#v", direct) }
 	if direct["domain"].([]any)[0] != "local.example" { t.Fatalf("domain normalization/dedup failed: %#v", direct) }
-	if direct["ip_cidr"].([]any)[0] != "192.0.2.0/24" { t.Fatalf("CIDR normalization failed: %#v", direct) }
+	if direct["domain_suffix"].([]any)[0] != ".example.org" { t.Fatalf("Direct suffix missing: %#v", direct) }
+	if direct["ip_cidr"].([]any)[0] != "192.0.2.0/24" || direct["ip_cidr"].([]any)[2] != "203.0.113.8/32" { t.Fatalf("CIDR normalization failed: %#v", direct) }
 	first := rules[2].(map[string]any)
 	second := rules[3].(map[string]any)
 	if first["outbound"] != "socks-proxy-a" || first["domain"].([]any)[0] != "one.example" { t.Fatalf("first user route lost ordering: %#v", first) }
-	if second["outbound"] != singBoxCSQTTTag || second["domain_suffix"].([]any)[0] != ".example.net" { t.Fatalf("second user route malformed: %#v", second) }
+	if second["outbound"] != singBoxCSQTTTag || second["domain_suffix"].([]any)[0] != ".example.net" || second["domain_keyword"].([]any)[0] != "stream" || second["domain_regex"].([]any)[0] != `^video\\..+\\.test//go:build linux
+
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "192.168.5.2:12500",
+		CSQTTAddress: "127.0.0.1:12501",
+		DirectDomains: []string{"LOCAL.example", "local.example."},
+		DirectDomainSuffixes: []string{".example.org", "example.org"},
+		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"proxy-a", Server:"198.51.100.2", ServerPort:1080, Enabled:true}},
+		Rules: []singBoxRouteRule{
+			{ID:"first", Domains:[]string{"one.example"}, Outbound:"socks-proxy-a", Enabled:true},
+			{ID:"second", DomainSuffixes:[]string{".example.net"}, DomainKeywords:[]string{"stream"}, DomainRegexes:[]string{`^video\\..+\\.test//go:build linux
+
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "192.168.5.2:12500",
+		CSQTTAddress: "127.0.0.1:12501",
+		DirectDomains: []string{"LOCAL.example", "local.example."},
+		DirectDomainSuffixes: []string{".example.org", "example.org"},
+		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"proxy-a", Server:"198.51.100.2", ServerPort:1080, Enabled:true}},
+		Rules: []singBoxRouteRule{
+			{ID:"first", Domains:[]string{"one.example"}, Outbound:"socks-proxy-a", Enabled:true},
+			, IPCIDRs:[]string{"198.51.100.9"}, Outbound:singBoxCSQTTTag, Enabled:true},
+			{ID:"disabled", Domains:[]string{"disabled.example"}, Outbound:singBoxDirectTag, Enabled:false},
+		},
+	})
+	if err != nil { t.Fatal(err) }
+
+	var config map[string]any
+	if err := json.Unmarshal(got, &config); err != nil { t.Fatal(err) }
+	inbounds := config["inbounds"].([]any)
+	inbound := inbounds[0].(map[string]any)
+	if inbound["type"] != "socks" || inbound["listen"] != "192.168.5.2" || inbound["listen_port"] != float64(12500) {
+		t.Fatalf("unexpected inbound: %#v", inbound)
+	}
+	if _, exists := config["dns"]; exists {
+		t.Fatal("DNS must remain an explicit next-stage design, not be silently redirected")
+	}
+	outbounds := config["outbounds"].([]any)
+	if len(outbounds) != 3 { t.Fatalf("got %d outbounds, want direct + CSQTT + one user SOCKS5", len(outbounds)) }
+	rules := config["route"].(map[string]any)["rules"].([]any)
+	if len(rules) != 5 { t.Fatalf("got %d rules, want sniff + Direct + 2 enabled routes + reject", len(rules)) }
+	direct := rules[1].(map[string]any)
+	if direct["outbound"] != singBoxDirectTag { t.Fatalf("Direct bypass is not first: %#v", direct) }
+	if direct["domain"].([]any)[0] != "local.example" { t.Fatalf("domain normalization/dedup failed: %#v", direct) }
+	if direct["domain_suffix"].([]any)[0] != ".example.org" { t.Fatalf("Direct suffix missing: %#v", direct) }
+	if direct["ip_cidr"].([]any)[0] != "192.0.2.0/24" || direct["ip_cidr"].([]any)[2] != "203.0.113.8/32" { t.Fatalf("CIDR normalization failed: %#v", direct) }
+	first := rules[2].(map[string]any)
+	second := rules[3].(map[string]any)
+	if first["outbound"] != "socks-proxy-a" || first["domain"].([]any)[0] != "one.example" { t.Fatalf("first user route lost ordering: %#v", first) }
+	 || second["ip_cidr"].([]any)[0] != "198.51.100.9/32" { t.Fatalf("second user route malformed: %#v", second) }
 	last := rules[4].(map[string]any)
 	if last["action"] != "reject" { t.Fatalf("unmatched traffic must fail closed: %#v", last) }
 	encoded := string(got)
@@ -69,6 +189,7 @@ func TestBuildSingBoxConfigRejectsInvalidOrAmbiguousInputs(t *testing.T) {
 		{"same inbound and CSQTT endpoint", singBoxConfigInput{ListenAddress:"127.0.0.1:12501", CSQTTAddress:"127.0.0.1:12501"}},
 		{"invalid domain", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", DirectDomains:[]string{"https://bad.example"}}},
 		{"invalid CIDR", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", DirectIPCIDRs:[]string{"not-a-cidr"}}},
+		{"invalid route regex", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", Rules:[]singBoxRouteRule{{ID:"r1",DomainRegexes:[]string{"["},Outbound:singBoxCSQTTTag,Enabled:true}}}},
 		{"unknown outbound", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", Rules:[]singBoxRouteRule{{ID:"r1",Domains:[]string{"a.example"},Outbound:"missing",Enabled:true}}}},
 		{"partial credentials", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", SOCKS5:[]singBoxSOCKS5Outbound{{ID:"p1",Server:"198.51.100.1",ServerPort:1080,Username:"u",Enabled:true}}}},
 	}
@@ -256,7 +377,386 @@ func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
 			ID: "proxy-a", Server: "198.51.100.2", ServerPort: 1080, Enabled: true,
 		}},
 		Rules: []singBoxRouteRule{{
-			ID: "route-a", DomainSuffixes: []string{".example.net"},
+			ID: "route-a", DomainSuffixes: []string{".example.net"}, DomainKeywords: []string{"stream"}, DomainRegexes: []string{`^video\\..+\\.test//go:build linux
+
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "192.168.5.2:12500",
+		CSQTTAddress: "127.0.0.1:12501",
+		DirectDomains: []string{"LOCAL.example", "local.example."},
+		DirectDomainSuffixes: []string{".example.org", "example.org"},
+		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"proxy-a", Server:"198.51.100.2", ServerPort:1080, Enabled:true}},
+		Rules: []singBoxRouteRule{
+			{ID:"first", Domains:[]string{"one.example"}, Outbound:"socks-proxy-a", Enabled:true},
+			{ID:"second", DomainSuffixes:[]string{".example.net"}, DomainKeywords:[]string{"stream"}, DomainRegexes:[]string{`^video\\..+\\.test//go:build linux
+
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "192.168.5.2:12500",
+		CSQTTAddress: "127.0.0.1:12501",
+		DirectDomains: []string{"LOCAL.example", "local.example."},
+		DirectDomainSuffixes: []string{".example.org", "example.org"},
+		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"proxy-a", Server:"198.51.100.2", ServerPort:1080, Enabled:true}},
+		Rules: []singBoxRouteRule{
+			{ID:"first", Domains:[]string{"one.example"}, Outbound:"socks-proxy-a", Enabled:true},
+			, IPCIDRs:[]string{"198.51.100.9"}, Outbound:singBoxCSQTTTag, Enabled:true},
+			{ID:"disabled", Domains:[]string{"disabled.example"}, Outbound:singBoxDirectTag, Enabled:false},
+		},
+	})
+	if err != nil { t.Fatal(err) }
+
+	var config map[string]any
+	if err := json.Unmarshal(got, &config); err != nil { t.Fatal(err) }
+	inbounds := config["inbounds"].([]any)
+	inbound := inbounds[0].(map[string]any)
+	if inbound["type"] != "socks" || inbound["listen"] != "192.168.5.2" || inbound["listen_port"] != float64(12500) {
+		t.Fatalf("unexpected inbound: %#v", inbound)
+	}
+	if _, exists := config["dns"]; exists {
+		t.Fatal("DNS must remain an explicit next-stage design, not be silently redirected")
+	}
+	outbounds := config["outbounds"].([]any)
+	if len(outbounds) != 3 { t.Fatalf("got %d outbounds, want direct + CSQTT + one user SOCKS5", len(outbounds)) }
+	rules := config["route"].(map[string]any)["rules"].([]any)
+	if len(rules) != 5 { t.Fatalf("got %d rules, want sniff + Direct + 2 enabled routes + reject", len(rules)) }
+	direct := rules[1].(map[string]any)
+	if direct["outbound"] != singBoxDirectTag { t.Fatalf("Direct bypass is not first: %#v", direct) }
+	if direct["domain"].([]any)[0] != "local.example" { t.Fatalf("domain normalization/dedup failed: %#v", direct) }
+	if direct["domain_suffix"].([]any)[0] != ".example.org" { t.Fatalf("Direct suffix missing: %#v", direct) }
+	if direct["ip_cidr"].([]any)[0] != "192.0.2.0/24" || direct["ip_cidr"].([]any)[2] != "203.0.113.8/32" { t.Fatalf("CIDR normalization failed: %#v", direct) }
+	first := rules[2].(map[string]any)
+	second := rules[3].(map[string]any)
+	if first["outbound"] != "socks-proxy-a" || first["domain"].([]any)[0] != "one.example" { t.Fatalf("first user route lost ordering: %#v", first) }
+	if second["outbound"] != singBoxCSQTTTag || second["domain_suffix"].([]any)[0] != ".example.net" || second["domain_keyword"].([]any)[0] != "stream" || second["domain_regex"].([]any)[0] != `^video\\..+\\.test//go:build linux
+
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "192.168.5.2:12500",
+		CSQTTAddress: "127.0.0.1:12501",
+		DirectDomains: []string{"LOCAL.example", "local.example."},
+		DirectDomainSuffixes: []string{".example.org", "example.org"},
+		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"proxy-a", Server:"198.51.100.2", ServerPort:1080, Enabled:true}},
+		Rules: []singBoxRouteRule{
+			{ID:"first", Domains:[]string{"one.example"}, Outbound:"socks-proxy-a", Enabled:true},
+			{ID:"second", DomainSuffixes:[]string{".example.net"}, DomainKeywords:[]string{"stream"}, DomainRegexes:[]string{`^video\\..+\\.test//go:build linux
+
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "192.168.5.2:12500",
+		CSQTTAddress: "127.0.0.1:12501",
+		DirectDomains: []string{"LOCAL.example", "local.example."},
+		DirectDomainSuffixes: []string{".example.org", "example.org"},
+		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"proxy-a", Server:"198.51.100.2", ServerPort:1080, Enabled:true}},
+		Rules: []singBoxRouteRule{
+			{ID:"first", Domains:[]string{"one.example"}, Outbound:"socks-proxy-a", Enabled:true},
+			, IPCIDRs:[]string{"198.51.100.9"}, Outbound:singBoxCSQTTTag, Enabled:true},
+			{ID:"disabled", Domains:[]string{"disabled.example"}, Outbound:singBoxDirectTag, Enabled:false},
+		},
+	})
+	if err != nil { t.Fatal(err) }
+
+	var config map[string]any
+	if err := json.Unmarshal(got, &config); err != nil { t.Fatal(err) }
+	inbounds := config["inbounds"].([]any)
+	inbound := inbounds[0].(map[string]any)
+	if inbound["type"] != "socks" || inbound["listen"] != "192.168.5.2" || inbound["listen_port"] != float64(12500) {
+		t.Fatalf("unexpected inbound: %#v", inbound)
+	}
+	if _, exists := config["dns"]; exists {
+		t.Fatal("DNS must remain an explicit next-stage design, not be silently redirected")
+	}
+	outbounds := config["outbounds"].([]any)
+	if len(outbounds) != 3 { t.Fatalf("got %d outbounds, want direct + CSQTT + one user SOCKS5", len(outbounds)) }
+	rules := config["route"].(map[string]any)["rules"].([]any)
+	if len(rules) != 5 { t.Fatalf("got %d rules, want sniff + Direct + 2 enabled routes + reject", len(rules)) }
+	direct := rules[1].(map[string]any)
+	if direct["outbound"] != singBoxDirectTag { t.Fatalf("Direct bypass is not first: %#v", direct) }
+	if direct["domain"].([]any)[0] != "local.example" { t.Fatalf("domain normalization/dedup failed: %#v", direct) }
+	if direct["domain_suffix"].([]any)[0] != ".example.org" { t.Fatalf("Direct suffix missing: %#v", direct) }
+	if direct["ip_cidr"].([]any)[0] != "192.0.2.0/24" || direct["ip_cidr"].([]any)[2] != "203.0.113.8/32" { t.Fatalf("CIDR normalization failed: %#v", direct) }
+	first := rules[2].(map[string]any)
+	second := rules[3].(map[string]any)
+	if first["outbound"] != "socks-proxy-a" || first["domain"].([]any)[0] != "one.example" { t.Fatalf("first user route lost ordering: %#v", first) }
+	 || second["ip_cidr"].([]any)[0] != "198.51.100.9/32" { t.Fatalf("second user route malformed: %#v", second) }
+	last := rules[4].(map[string]any)
+	if last["action"] != "reject" { t.Fatalf("unmatched traffic must fail closed: %#v", last) }
+	encoded := string(got)
+	for _, forbidden := range []string{"auto_route", "auto_redirect", "\"type\": \"tun\""} {
+		if strings.Contains(encoded, forbidden) { t.Fatalf("config contains forbidden global capture field %q", forbidden) }
+	}
+}
+
+func TestBuildSingBoxConfigRejectsInvalidOrAmbiguousInputs(t *testing.T) {
+	tests := []struct{name string; input singBoxConfigInput}{
+		{"missing inbound address", singBoxConfigInput{CSQTTAddress:"127.0.0.1:12501"}},
+		{"same inbound and CSQTT endpoint", singBoxConfigInput{ListenAddress:"127.0.0.1:12501", CSQTTAddress:"127.0.0.1:12501"}},
+		{"invalid domain", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", DirectDomains:[]string{"https://bad.example"}}},
+		{"invalid CIDR", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", DirectIPCIDRs:[]string{"not-a-cidr"}}},
+		{"invalid route regex", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", Rules:[]singBoxRouteRule{{ID:"r1",DomainRegexes:[]string{"["},Outbound:singBoxCSQTTTag,Enabled:true}}}},
+		{"unknown outbound", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", Rules:[]singBoxRouteRule{{ID:"r1",Domains:[]string{"a.example"},Outbound:"missing",Enabled:true}}}},
+		{"partial credentials", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", SOCKS5:[]singBoxSOCKS5Outbound{{ID:"p1",Server:"198.51.100.1",ServerPort:1080,Username:"u",Enabled:true}}}},
+	}
+	for _, tt := range tests { t.Run(tt.name,func(t *testing.T){ if _,err:=buildSingBoxConfig(tt.input); err==nil { t.Fatal("expected validation error") } }) }
+}
+
+func TestBuildSingBoxConfigRestrictsListenerAndCSQTTOutboundScope(t *testing.T) {
+	base := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12501"}
+	for _, address := range []string{"0.0.0.0:19180", "[::]:19180", "8.8.8.8:19180", "169.254.1.2:19180", "224.0.0.1:19180"} {
+		t.Run("reject inbound "+address, func(t *testing.T) {
+			input := base
+			input.ListenAddress = address
+			if _, err := buildSingBoxConfig(input); err == nil { t.Fatalf("unsafe inbound %q was accepted", address) }
+		})
+	}
+	for _, address := range []string{"192.168.5.1:12500", "8.8.8.8:12500", "0.0.0.0:12500"} {
+		t.Run("reject non-loopback CSQTT "+address, func(t *testing.T) {
+			input := base
+			input.CSQTTAddress = address
+			if _, err := buildSingBoxConfig(input); err == nil { t.Fatalf("non-loopback CSQTT endpoint %q was accepted", address) }
+		})
+	}
+	for _, address := range []string{"192.168.5.2:19180", "[fd00::2]:19180", "127.0.0.1:19180", "[::1]:19180"} {
+		t.Run("allow scoped inbound "+address, func(t *testing.T) {
+			input := base
+			input.ListenAddress = address
+			if _, err := buildSingBoxConfig(input); err != nil { t.Fatalf("safe inbound %q rejected: %v", address, err) }
+		})
+	}
+}
+
+func TestBuildSingBoxConfigDoesNotImplicitlyRouteUnmatchedTraffic(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:12500",CSQTTAddress:"127.0.0.1:12501"})
+	if err != nil { t.Fatal(err) }
+	var config map[string]any
+	if err:=json.Unmarshal(got,&config); err!=nil { t.Fatal(err) }
+	rules:=config["route"].(map[string]any)["rules"].([]any)
+	last:=rules[len(rules)-1].(map[string]any)
+	if last["action"]!="reject" { t.Fatalf("unexpected catch-all: %#v",last) }
+	if _,ok:=config["route"].(map[string]any)["final"];ok { t.Fatal("route.final would introduce an implicit outbound fallback") }
+}
+
+type singBoxTestLogBuffer struct {
+	mu sync.Mutex
+	builder strings.Builder
+}
+func (b *singBoxTestLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.builder.Write(p)
+}
+func (b *singBoxTestLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.builder.String()
+}
+
+func reserveSingBoxTestAddress(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	address := ln.Addr().String()
+	if err := ln.Close(); err != nil { t.Fatal(err) }
+	return address
+}
+
+func readSingBoxTestSOCKSAddress(conn net.Conn) (string, error) {
+	var header [4]byte
+	if _, err := io.ReadFull(conn, header[:]); err != nil { return "", err }
+	var host string
+	switch header[3] {
+	case 1:
+		b := make([]byte, 4)
+		if _, err := io.ReadFull(conn, b); err != nil { return "", err }
+		host = net.IP(b).String()
+	case 3:
+		var size [1]byte
+		if _, err := io.ReadFull(conn, size[:]); err != nil { return "", err }
+		b := make([]byte, int(size[0]))
+		if _, err := io.ReadFull(conn, b); err != nil { return "", err }
+		host = string(b)
+	case 4:
+		b := make([]byte, 16)
+		if _, err := io.ReadFull(conn, b); err != nil { return "", err }
+		host = net.IP(b).String()
+	default:
+		return "", io.ErrUnexpectedEOF
+	}
+	var port [2]byte
+	if _, err := io.ReadFull(conn, port[:]); err != nil { return "", err }
+	return net.JoinHostPort(host, strconv.Itoa(int(binary.BigEndian.Uint16(port[:])))), nil
+}
+
+func TestSingBoxRoutesDomainThroughCSQTTOutbound(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" { t.Skip("requires pinned sing-box binary from CI") }
+
+	upstream, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer upstream.Close()
+	targets := make(chan string, 4)
+	go func() {
+		for {
+			conn, acceptErr := upstream.Accept()
+			if acceptErr != nil { return }
+			go func(c net.Conn) {
+				defer c.Close()
+				_ = c.SetDeadline(time.Now().Add(8 * time.Second))
+				var greeting [2]byte
+				if _, err := io.ReadFull(c, greeting[:]); err != nil { return }
+				methods := make([]byte, int(greeting[1]))
+				if _, err := io.ReadFull(c, methods); err != nil { return }
+				if _, err := c.Write([]byte{5, 0}); err != nil { return }
+				target, err := readSingBoxTestSOCKSAddress(c)
+				if err != nil { return }
+				select { case targets <- target: default: }
+				if _, err := c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0}); err != nil { return }
+				_, _ = io.Copy(c, c)
+			}(conn)
+		}
+	}()
+
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		CSQTTAddress: upstream.Addr().String(),
+		Rules: []singBoxRouteRule{{ID: "csqtt-domain", Domains: []string{"route-csqtt.test"}, Outbound: singBoxCSQTTTag, Enabled: true}},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatal(err) }
+	configPath := filepath.Join(t.TempDir(), "sing-box.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil { t.Fatalf("start sing-box: %v", err) }
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	var inbound net.Conn
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		inbound, err = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+		if err == nil { break }
+		time.Sleep(50 * time.Millisecond)
+	}
+	if inbound == nil { t.Fatalf("sing-box inbound did not become ready: %v; logs: %s", err, output.String()) }
+	defer inbound.Close()
+	_ = inbound.SetDeadline(time.Now().Add(8 * time.Second))
+	if _, err := inbound.Write([]byte{5, 1, 0}); err != nil { t.Fatal(err) }
+	var greetingReply [2]byte
+	if _, err := io.ReadFull(inbound, greetingReply[:]); err != nil { t.Fatal(err) }
+	if greetingReply != [2]byte{5, 0} { t.Fatalf("inbound SOCKS greeting = %v", greetingReply) }
+	host := "route-csqtt.test"
+	request := []byte{5, 1, 0, 3, byte(len(host))}
+	request = append(request, []byte(host)...)
+	request = append(request, 0x01, 0xbb) // TCP/443
+	if _, err := inbound.Write(request); err != nil { t.Fatal(err) }
+	var reply [10]byte
+	if _, err := io.ReadFull(inbound, reply[:]); err != nil { t.Fatalf("read CONNECT response: %v; sing-box logs: %s", err, output.String()) }
+	if reply[1] != 0 { t.Fatalf("domain route was not connected: SOCKS reply=%v; logs: %s", reply, output.String()) }
+	payload := []byte("sing-box-to-csqtt-loopback-e2e")
+	if _, err := inbound.Write(payload); err != nil { t.Fatal(err) }
+	got := make([]byte, len(payload))
+	if _, err := io.ReadFull(inbound, got); err != nil { t.Fatalf("read echo through CSQTT outbound: %v", err) }
+	if string(got) != string(payload) { t.Fatalf("echo=%q want=%q", got, payload) }
+	select {
+	case target := <-targets:
+		if target != "route-csqtt.test:443" { t.Fatalf("CSQTT SOCKS outbound received %q", target) }
+	case <-time.After(3 * time.Second):
+		t.Fatal("CSQTT SOCKS outbound did not receive the routed domain")
+	}
+}
+
+func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
+	binary := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binary == "" {
+		t.Skip("CSQTT_SING_BOX_BINARY is not set; real sing-box validation runs in pinned CI")
+	}
+
+	encoded, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "127.0.0.1:12500",
+		CSQTTAddress:  "127.0.0.1:12501",
+		DirectDomains: []string{"example.com"},
+		DirectIPCIDRs: []string{"192.0.2.0/24", "2001:db8::/32"},
+		SOCKS5: []singBoxSOCKS5Outbound{{
+			ID: "proxy-a", Server: "198.51.100.2", ServerPort: 1080, Enabled: true,
+		}},
+		Rules: []singBoxRouteRule{{
+			ID: "route-a", }, IPCIDRs: []string{"203.0.113.7"},
 			Outbound: "socks-proxy-a", Enabled: true,
 		}},
 	})
