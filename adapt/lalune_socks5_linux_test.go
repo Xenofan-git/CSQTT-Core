@@ -159,6 +159,22 @@ func TestReadUDPAddrRejectsTruncatedPacket(t *testing.T) {
 	}
 }
 
+func TestSocks5LoopbackListenerIsReachableWithoutDownstreamInterface(t *testing.T) {
+	s := NewSocks5Server("127.0.0.1:0")
+	if err := s.Start(); err != nil { t.Fatal(err) }
+	defer s.Stop()
+	status := s.Status()
+	if !status.Listening { t.Fatal("loopback listener did not start") }
+	host, _, err := net.SplitHostPort(status.Address)
+	if err != nil { t.Fatal(err) }
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() { t.Fatalf("listener escaped loopback: %q", status.Address) }
+	conn, err := net.DialTimeout("tcp", status.Address, time.Second)
+	if err != nil { t.Fatalf("loopback listener is unreachable: %v", err) }
+	defer conn.Close()
+	socks5Handshake(t, conn)
+}
+
 func TestSocks5ServerStartStopIsIdempotent(t *testing.T) {
 	s := NewSocks5Server("127.0.0.1:0")
 	if err := s.Start(); err != nil {

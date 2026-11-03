@@ -15,7 +15,7 @@ import (
 
 func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
 	got, err := buildSingBoxConfig(singBoxConfigInput{
-		ListenAddress: "192.0.2.1:12500",
+		ListenAddress: "192.168.5.2:12500",
 		CSQTTAddress: "127.0.0.1:12501",
 		DirectDomains: []string{"LOCAL.example", "local.example."},
 		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64"},
@@ -32,7 +32,7 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 	if err := json.Unmarshal(got, &config); err != nil { t.Fatal(err) }
 	inbounds := config["inbounds"].([]any)
 	inbound := inbounds[0].(map[string]any)
-	if inbound["type"] != "socks" || inbound["listen"] != "192.0.2.1" || inbound["listen_port"] != float64(12500) {
+	if inbound["type"] != "socks" || inbound["listen"] != "192.168.5.2" || inbound["listen_port"] != float64(12500) {
 		t.Fatalf("unexpected inbound: %#v", inbound)
 	}
 	if _, exists := config["dns"]; exists {
@@ -68,6 +68,31 @@ func TestBuildSingBoxConfigRejectsInvalidOrAmbiguousInputs(t *testing.T) {
 		{"partial credentials", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", SOCKS5:[]singBoxSOCKS5Outbound{{ID:"p1",Server:"198.51.100.1",ServerPort:1080,Username:"u",Enabled:true}}}},
 	}
 	for _, tt := range tests { t.Run(tt.name,func(t *testing.T){ if _,err:=buildSingBoxConfig(tt.input); err==nil { t.Fatal("expected validation error") } }) }
+}
+
+func TestBuildSingBoxConfigRestrictsListenerAndCSQTTOutboundScope(t *testing.T) {
+	base := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12501"}
+	for _, address := range []string{"0.0.0.0:19180", "[::]:19180", "8.8.8.8:19180", "169.254.1.2:19180", "224.0.0.1:19180"} {
+		t.Run("reject inbound "+address, func(t *testing.T) {
+			input := base
+			input.ListenAddress = address
+			if _, err := buildSingBoxConfig(input); err == nil { t.Fatalf("unsafe inbound %q was accepted", address) }
+		})
+	}
+	for _, address := range []string{"192.168.5.1:12500", "8.8.8.8:12500", "0.0.0.0:12500"} {
+		t.Run("reject non-loopback CSQTT "+address, func(t *testing.T) {
+			input := base
+			input.CSQTTAddress = address
+			if _, err := buildSingBoxConfig(input); err == nil { t.Fatalf("non-loopback CSQTT endpoint %q was accepted", address) }
+		})
+	}
+	for _, address := range []string{"192.168.5.2:19180", "[fd00::2]:19180", "127.0.0.1:19180", "[::1]:19180"} {
+		t.Run("allow scoped inbound "+address, func(t *testing.T) {
+			input := base
+			input.ListenAddress = address
+			if _, err := buildSingBoxConfig(input); err != nil { t.Fatalf("safe inbound %q rejected: %v", address, err) }
+		})
+	}
 }
 
 func TestBuildSingBoxConfigDoesNotImplicitlyRouteUnmatchedTraffic(t *testing.T) {

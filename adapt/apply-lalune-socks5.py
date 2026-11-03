@@ -6,7 +6,7 @@ s = src.read_text()
 
 # Add SOCKS5 server ownership to App.
 old = "\trunner    *LinuxRunner\n"
-new = "\trunner    *LinuxRunner\n\tsocks      *Socks5Server\n"
+new = "\trunner    *LinuxRunner\n\tsocks      *Socks5Server\n\tsocksLocal *Socks5Server\n"
 if old not in s:
     raise SystemExit("missing App runner field")
 s = s.replace(old, new, 1)
@@ -35,7 +35,19 @@ start_method = '''func (t *LinuxTun) StartSocks() error {
 \t\t}
 \t\treturn fmt.Errorf("start SOCKS5 listener: %w", err)
 \t}
-\tt.app.core.AddLog("[SOCKS5] Address monitor started; waiting for eth1 private IPv4 or rebinding dynamically")
+\t// sing-box uses this stable loopback-only endpoint instead of the unauthenticated eth1 listener.
+\tif t.app.socksLocal != nil {
+\t\tif err := t.app.socksLocal.Start(); err != nil {
+\t\t\tt.app.socks.Stop()
+\t\t\tif cleanupErr := t.app.runSudo("ip rule del pref 22015 fwmark 0x4d53/0xffff lookup 202"); cleanupErr != nil {
+\t\t\t\tt.app.core.AddLog(fmt.Sprintf("[SOCKS5] Failed to rollback fwmark rule: %v", cleanupErr))
+\t\t\t} else {
+\t\t\t\tt.socksRuleCreated = false
+\t\t\t}
+\t\t\treturn fmt.Errorf("start loopback CSQTT SOCKS5 listener: %w", err)
+\t\t}
+\t}
+\tt.app.core.AddLog("[SOCKS5] Downstream eth1 and loopback CSQTT SOCKS5 listeners started")
 \treturn nil
 }
 
@@ -51,6 +63,7 @@ cleanup_replacement = '''func (t *LinuxTun) CleanupRoutes() {
 \tt.mu.Lock()
 \tdefer t.mu.Unlock()
 \tif t.app.socks != nil { t.app.socks.Stop() }
+\tif t.app.socksLocal != nil { t.app.socksLocal.Stop() }
 \tif t.socksRuleCreated {
 \t\tif err := t.app.runSudo("ip rule del pref 22015 fwmark 0x4d53/0xffff lookup 202"); err != nil {
 \t\t\tt.app.core.AddLog(fmt.Sprintf("[SOCKS5] Не удалось удалить fwmark rule: %v", err))
@@ -115,7 +128,9 @@ s = s.replace(new_app_marker, helper + new_app_marker, 1)
 
 # Initialize the dynamic eth1 listener in the App owner.
 old = '\tapp := &App{core: core, tun: tun}\n'
-new = """\tapp := &App{core: core, tun: tun}\n\t// Resolve eth1 dynamically when TUN starts and rebind after DHCP/address changes.\n\tapp.socks = NewSocks5Server("eth1:12500")\n"""
+new = """\tapp := &App{core: core, tun: tun}\n\t// Resolve eth1 dynamically when TUN starts and rebind after DHCP/address changes.\n\tapp.socks = NewSocks5Server("eth1:12500")
+\t// Stable local-only endpoint consumed by sing-box; it shares the marked CSQTT TUN dataplane.
+\tapp.socksLocal = NewSocks5Server("127.0.0.1:12501")\n"""
 if old not in s:
     raise SystemExit("missing NewApp marker")
 s = s.replace(old, new, 1)

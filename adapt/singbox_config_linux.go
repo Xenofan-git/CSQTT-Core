@@ -160,9 +160,17 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	listenIP := net.ParseIP(listenHost)
+	if listenIP == nil || listenIP.IsUnspecified() || listenIP.IsMulticast() || listenIP.IsLinkLocalUnicast() || (!listenIP.IsLoopback() && !listenIP.IsPrivate()) {
+		return nil, fmt.Errorf("listen address must be loopback or a specific private LAN address; wildcard/public binds are forbidden")
+	}
 	csqttHost, csqttPort, err := singBoxHostPort(input.CSQTTAddress, "CSQTT SOCKS address")
 	if err != nil {
 		return nil, err
+	}
+	csqttIP := net.ParseIP(csqttHost)
+	if csqttIP == nil || !csqttIP.IsLoopback() {
+		return nil, fmt.Errorf("CSQTT SOCKS outbound must use the local loopback listener")
 	}
 	if listenHost == csqttHost && listenPort == csqttPort {
 		return nil, fmt.Errorf("sing-box inbound and CSQTT SOCKS outbound must use different endpoints")
