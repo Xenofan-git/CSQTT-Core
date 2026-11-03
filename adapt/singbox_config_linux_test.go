@@ -47,7 +47,10 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 	outbounds := config["outbounds"].([]any)
 	if len(outbounds) != 3 { t.Fatalf("got %d outbounds, want direct + CSQTT + one user SOCKS5", len(outbounds)) }
 	rules := config["route"].(map[string]any)["rules"].([]any)
-	if len(rules) != 5 { t.Fatalf("got %d rules, want sniff + Direct + 2 enabled routes + reject", len(rules)) }
+	if len(rules) != 4 { t.Fatalf("got %d rules, want sniff + Direct + 2 enabled routes", len(rules)) }
+	if gotFinal := config["route"].(map[string]any)["final"]; gotFinal != singBoxCSQTTTag {
+		t.Fatalf("system fallback = %v, want CSQTT", gotFinal)
+	}
 	direct := rules[1].(map[string]any)
 	if direct["outbound"] != singBoxDirectTag { t.Fatalf("Direct bypass is not first: %#v", direct) }
 	if direct["domain"].([]any)[0] != "local.example" { t.Fatalf("domain normalization/dedup failed: %#v", direct) }
@@ -57,8 +60,7 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 	second := rules[3].(map[string]any)
 	if first["outbound"] != "socks-proxy-a" || first["domain"].([]any)[0] != "one.example" { t.Fatalf("first user route lost ordering: %#v", first) }
 	if second["outbound"] != singBoxCSQTTTag || second["domain_suffix"].([]any)[0] != ".example.net" || second["domain_keyword"].([]any)[0] != "stream" || second["domain_regex"].([]any)[0] != "video" || second["ip_cidr"].([]any)[0] != "198.51.100.9/32" { t.Fatalf("second user route malformed: %#v", second) }
-	last := rules[4].(map[string]any)
-	if last["action"] != "reject" { t.Fatalf("unmatched traffic must fail closed: %#v", last) }
+
 	encoded := string(got)
 	for _, forbidden := range []string{"auto_route", "auto_redirect", "\"type\": \"tun\""} {
 		if strings.Contains(encoded, forbidden) { t.Fatalf("config contains forbidden global capture field %q", forbidden) }
@@ -103,15 +105,14 @@ func TestBuildSingBoxConfigRestrictsListenerAndCSQTTOutboundScope(t *testing.T) 
 	}
 }
 
-func TestBuildSingBoxConfigDoesNotImplicitlyRouteUnmatchedTraffic(t *testing.T) {
+func TestBuildSingBoxConfigUsesCSQTTAsExplicitSystemFallback(t *testing.T) {
 	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:12500",CSQTTAddress:"127.0.0.1:12501"})
 	if err != nil { t.Fatal(err) }
 	var config map[string]any
 	if err:=json.Unmarshal(got,&config); err!=nil { t.Fatal(err) }
-	rules:=config["route"].(map[string]any)["rules"].([]any)
-	last:=rules[len(rules)-1].(map[string]any)
-	if last["action"]!="reject" { t.Fatalf("unexpected catch-all: %#v",last) }
-	if _,ok:=config["route"].(map[string]any)["final"];ok { t.Fatal("route.final would introduce an implicit outbound fallback") }
+	route:=config["route"].(map[string]any)
+	if route["final"] != singBoxCSQTTTag { t.Fatalf("route.final=%v, want CSQTT",route["final"]) }
+	if _,ok:=route["auto_route"];ok { t.Fatal("sing-box must not create system-wide route capture") }
 }
 
 type singBoxTestLogBuffer struct {
@@ -244,8 +245,7 @@ func TestSingBoxRoutesDomainThroughCSQTTOutbound(t *testing.T) {
 	}
 
 	_ = inbound.Close()
-	// The catch-all reject must not silently send unmatched traffic to the
-	// first outbound (DIRECT) or to CSQTT.
+	// Unmatched traffic must use the explicit CSQTT system fallback.
 	unmatched, err := net.DialTimeout("tcp", input.ListenAddress, time.Second)
 	if err != nil { t.Fatal(err) }
 	defer unmatched.Close()
@@ -258,7 +258,13 @@ func TestSingBoxRoutesDomainThroughCSQTTOutbound(t *testing.T) {
 	request = append(request, 0x01, 0xbb)
 	if _, err := unmatched.Write(request); err != nil { t.Fatal(err) }
 	if _, err := io.ReadFull(unmatched, reply[:]); err != nil { t.Fatalf("read unmatched SOCKS response: %v", err) }
-	if reply[1] == 0 { t.Fatalf("unmatched domain unexpectedly routed: %v", reply) }
+	if reply[1] != 0 { t.Fatalf("unmatched domain did not use CSQTT system fallback: %v; logs: %s", reply, output.String()) }
+	select {
+	case target := <-targets:
+		if target != "unmatched-route.test:443" { t.Fatalf("fallback target=%q, want unmatched domain", target) }
+	case <-time.After(3 * time.Second):
+		t.Fatal("unmatched traffic did not reach the CSQTT SOCKS5 outbound")
+	}
 }
 
 func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {

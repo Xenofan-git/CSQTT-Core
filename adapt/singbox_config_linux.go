@@ -319,9 +319,9 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		}
 		rules = append(rules, makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, item.Outbound))
 	}
-	// A catch-all reject prevents an implicit first-outbound/global fallback.
-	rules = append(rules, map[string]any{"action": "reject"})
-
+	// CSQTT is the explicit system fallback. Direct exclusions and enabled
+	// user rules above it retain priority; no implicit first-outbound fallback
+	// or system-wide traffic capture is introduced.
 	config := singBoxConfig{
 		Log: map[string]any{"level": "info", "timestamp": true},
 		Inbounds: []map[string]any{{
@@ -329,7 +329,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			"listen": listenHost, "listen_port": listenPort,
 		}},
 		Outbounds: outbounds,
-		Route: map[string]any{"rules": rules},
+		Route: map[string]any{"rules": rules, "final": singBoxCSQTTTag},
 	}
 	encoded, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
