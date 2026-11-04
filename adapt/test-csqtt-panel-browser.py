@@ -184,7 +184,7 @@ def main():
                     f"pageErrors={page_errors}; tabs={page.locator('.tabs').count()}; "
                     f"activePages={page.locator('.page.active').evaluate_all('(els) => els.map(el => el.id)')}; "
                     f"clickEvents={page.evaluate('window.__tabClickEvents')}; "
-                    f"onclick={page.locator(f'button[data-page=\"{name}\"]').evaluate('(el) => ({onclick: String(el.onclick), disabled: el.disabled, connected: el.isConnected})')}"
+                    f"onclick={page.locator(f'button[data-page=\"{name}\"]').evaluate('(el) => ({onclick: String(el.onclick), disabled: el.disabled, connected: el.isConnected, rect: (() => {const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,cx:r.x+r.width/2,cy:r.y+r.height/2}})(), hit: (() => {const r=el.getBoundingClientRect();const h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {tag:h?.tagName,page:h?.dataset?.page,className:h?.className}})(), nav: (() => {const r=el.parentElement.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,scrollWidth:el.parentElement.scrollWidth,clientWidth:el.parentElement.clientWidth}})()})')}"
                 )
                 assert page.locator(f'button[data-page="{name}"]').get_attribute("aria-current") == "page", (
                     f"active tab missing aria-current state: {name}"
