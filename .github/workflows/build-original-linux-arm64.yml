@@ -352,7 +352,10 @@ jobs:
         working-directory: upstream-lalune/Desktop/Linux
         run: |
           set -euxo pipefail
-          go test -count=1 -run '^TestBuildSingBoxConfigPassesPinnedBinaryCheck
+          go test -count=1 -run '^TestBuildSingBoxConfigPassesPinnedBinaryCheck$' -v .
+          go test -count=1 -run '^TestSingBoxRoutesDomainThroughRealCSQTTSocks5Server$' -v .
+          go test -count=1 -run '^TestSingBoxUDPAssociateRelaysThroughRealCSQTTSocks5Server$' -v .
+          go test -count=1 .
           go test -count=1 ./Libs
           go test -race -count=1 .
           # Compile the exact generated client TUN tests for execution inside the ARM64 guest.
