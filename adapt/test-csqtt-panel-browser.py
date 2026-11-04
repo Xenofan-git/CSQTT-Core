@@ -160,9 +160,17 @@ def main():
 
             for name in EXPECTED:
                 page.locator(f'button[data-page="{name}"]').click()
-                assert page.locator(f"#page-{name}").evaluate(
-                    "(el) => el.classList.contains('active')"
-                ), f"tab did not activate: {name}"
+                active_state = page.locator(f"#page-{name}").evaluate(
+                    "(el) => ({className: el.className, hidden: el.hidden, display: getComputedStyle(el).display})"
+                )
+                tab_state = page.locator(f'button[data-page="{name}"]').evaluate(
+                    "(el) => ({className: el.className, ariaCurrent: el.getAttribute('aria-current'), parent: el.parentElement?.className})"
+                )
+                assert "active" in active_state["className"].split(), (
+                    f"tab did not activate: {name}; page={active_state}; tab={tab_state}; "
+                    f"pageErrors={page_errors}; tabs={page.locator('.tabs').count()}; "
+                    f"activePages={page.locator('.page.active').evaluate_all('(els) => els.map(el => el.id)')}"
+                )
                 assert page.locator(f'button[data-page="{name}"]').get_attribute("aria-current") == "page", (
                     f"active tab missing aria-current state: {name}"
                 )
