@@ -172,3 +172,34 @@ func TestSingBoxManagerRejectsSymlinkedRuleSetDirectory(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(dir, "rule-sets")); err != nil { t.Fatal(err) }
 	if err := manager.validateRuleSetPaths([]singBoxRuleSet{{Type:"local", Tag:"rules", Format:"binary", Path:filepath.Join(dir, "rule-sets", "rules.srs")}}); err == nil { t.Fatal("symlinked managed directory was accepted") }
 }
+
+
+func TestSingBoxManagerStartRejectsTamperedPersistedRuleSetPathBeforeBinary(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.json")
+	outside := filepath.Join(dir, "outside.srs")
+	if err := os.WriteFile(outside, []byte("fixture"), 0600); err != nil { t.Fatal(err) }
+
+	encoded, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19080",
+		CSQTTAddress: "127.0.0.1:19081",
+		RuleSets: []singBoxRuleSet{{Type: "local", Tag: "tampered", Format: "binary", Path: outside}},
+	})
+	if err != nil { t.Fatalf("build persisted tampered config fixture: %v", err) }
+	// Write directly to disk to model post-save/manual config tampering and
+	// deliberately bypass SaveConfig's path-containment validation.
+	if err := os.WriteFile(config, encoded, 0600); err != nil { t.Fatal(err) }
+
+	marker := filepath.Join(dir, "binary-invoked")
+	binary := newFakeSingBox(t, "touch "+shellQuoteForTest(marker)+"\nexit 0")
+	manager := NewSingBoxManager(binary, config, filepath.Join(dir, "sing-box.log"))
+	if err := manager.Start(context.Background()); err == nil || !strings.Contains(err.Error(), "unsafe Rule Set path") {
+		t.Fatalf("expected persisted Rule Set path rejection, got %v", err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("sing-box binary was invoked before rejecting tampered config (stat error: %v)", err)
+	}
+	if got := manager.Status(); got.Running || got.PID != 0 {
+		t.Fatalf("manager started despite unsafe persisted Rule Set path: %+v", got)
+	}
+}

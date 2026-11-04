@@ -163,6 +163,11 @@ func (m *SingBoxManager) Start(ctx context.Context) error {
 
 	input, loadErr := m.LoadConfig()
 	if loadErr != nil { return fail(loadErr) }
+	// Revalidate persisted local Rule Set paths at startup as configs may be
+	// edited outside SaveConfig after they were originally written.
+	if err := m.validateRuleSetPaths(input.RuleSets); err != nil {
+		return fail(fmt.Errorf("unsafe Rule Set path: %w", err))
+	}
 	if err := validateSingBoxListenAddress(input.ListenAddress); err != nil {
 		return fail(fmt.Errorf("unsafe sing-box inbound: %w", err))
 	}
