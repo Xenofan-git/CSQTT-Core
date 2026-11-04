@@ -188,6 +188,17 @@ main{width:100%;max-width:100%}
  <div class="card"><h2>Direct exclusions</h2><div class="field"><label for="singboxDirectDomains">Домены (по одному в строке)</label><textarea id="singboxDirectDomains" placeholder="example.ru"></textarea></div><div class="field"><label for="singboxDirectSuffixes">Доменные суффиксы (включая поддомены)</label><textarea id="singboxDirectSuffixes" placeholder=".example.ru"></textarea></div><div class="field"><label for="singboxDirectCIDRs">IP / CIDR IPv4 и IPv6 (по одному в строке)</label><textarea id="singboxDirectCIDRs" placeholder="192.0.2.0/24&#10;2001:db8::/32"></textarea></div></div>
  <div class="card"><h2>Пользовательские SOCKS5 outbound</h2><p class="muted">JSON-массив. ID — латиница, цифры, дефис или подчёркивание; порт — число. Логин и пароль указываются вместе.</p><div class="field"><label for="singboxOutbounds">SOCKS5 серверы</label><textarea id="singboxOutbounds" rows="7" spellcheck="false">[]</textarea></div></div><div class="row"><button id="singboxSaveEngine">Проверить и сохранить настройки</button><button id="singboxLoadEngine" class="secondary">Загрузить настройки</button></div>
  
+ <div class="card"><h2>Маршруты и Rule Set</h2>
+ <p class="muted">Подключайте наборы sing-box в формате .srs (binary) или .json (source). Тег набора используется в правилах маршрутизации.</p>
+ <div class="field"><label for="singboxRuleSetFile">Загрузить локальный Rule Set (.srs / .json)</label><input id="singboxRuleSetFile" type="file" accept=".srs,.json,application/json,application/octet-stream"></div>
+ <div class="row"><button id="singboxRuleSetUpload">Загрузить файл</button><button id="singboxRuleSetRefresh" class="secondary">Обновить список</button></div>
+ <div class="field"><label for="singboxRuleSetRemoteTag">Тег удалённого набора</label><input id="singboxRuleSetRemoteTag" placeholder="geosite-category-ru"></div>
+ <div class="field"><label for="singboxRuleSetRemoteURL">HTTPS URL удалённого Rule Set (.srs или .json)</label><input id="singboxRuleSetRemoteURL" placeholder="https://example.org/rules/geosite-ru.srs"></div>
+ <div class="row"><button id="singboxRuleSetAddRemote">Добавить remote</button></div>
+ <div id="singboxRuleSetList" class="stack"><div class="notice">Список Rule Set ещё не загружен.</div></div>
+ <div class="field"><label for="singboxRules">Правила маршрутизации (JSON; поле rule_set содержит теги наборов)</label><textarea id="singboxRules" rows="7" spellcheck="false">[]</textarea></div>
+ <div id="singboxConfigMessage" class="notice" role="status" aria-live="polite">Настройки sing-box ещё не загружены.</div>
+ </div>
  <div class="card"><h2>Журнал sing-box</h2><pre id="singboxLogs" class="console">Журнал не загружен.</pre><button class="secondary" id="singboxLogsRefresh">Обновить журнал</button></div>
 </section>
 <section class="page" id="page-logs"><label class="mode logs-toggle"><span><b>Активное логирование</b></span><input type="checkbox" id="logsActive" checked></label><div class="card logs-card"><pre id="logs" class="console">Загрузка…</pre><div class="logs-actions"><button class="secondary" id="copyLogs" aria-label="Копировать журнал">▢</button><button class="secondary" id="clearLogs" aria-label="Очистить журнал">▤</button></div></div></section>
