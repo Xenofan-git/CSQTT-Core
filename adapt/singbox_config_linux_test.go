@@ -142,7 +142,7 @@ func TestCSQTTAndLoopbackListenersCanSharePort12500(t *testing.T) {
 }
 
 func TestBuildSingBoxConfigUsesCSQTTAsExplicitSystemFallback(t *testing.T) {
-	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:12500",CSQTTAddress:"127.0.0.1:12500"})
+	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500"})
 	if err != nil { t.Fatal(err) }
 	var config map[string]any
 	if err:=json.Unmarshal(got,&config); err!=nil { t.Fatal(err) }
@@ -310,7 +310,7 @@ func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
 	}
 
 	encoded, err := buildSingBoxConfig(singBoxConfigInput{
-		ListenAddress: "127.0.0.1:12500",
+		ListenAddress: "127.0.0.1:19180",
 		CSQTTAddress:  "127.0.0.1:12500",
 		DirectDomains: []string{"example.com"},
 		DirectIPCIDRs: []string{"192.0.2.0/24", "2001:db8::/32"},
