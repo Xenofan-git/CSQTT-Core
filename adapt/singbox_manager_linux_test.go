@@ -7,6 +7,7 @@ import (
 	"net"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -203,3 +204,172 @@ func TestSingBoxManagerStartRejectsTamperedPersistedRuleSetPathBeforeBinary(t *t
 		t.Fatalf("manager started despite unsafe persisted Rule Set path: %+v", got)
 	}
 }
+
+func ruleSetValidationFakeBinary(t *testing.T, mode string) string {
+	t.Helper()
+	script := "if [ \"$1\" = rule-set ] && [ \"$2\" = compile ]; then\n" +
+		"  if grep -q INVALID \"$5\"; then echo invalid-source >&2; exit 17; fi\n" +
+		"  if [ \"" + mode + "\" = timeout-source ]; then sleep 2; fi\n" +
+		"  printf 'compiled-srs' > \"$4\"\n  exit 0\nfi\n" +
+		"if [ \"$1\" = check ] && [ \"$2\" = -c ]; then\n" +
+		"  staged=$(sed -n 's/.*\"path\":\"\\([^\"]*\\)\".*/\\1/p' \"$3\")\n" +
+		"  if [ -z \"$staged\" ]; then echo missing-staged-path >&2; exit 18; fi\n" +
+		"  if grep -q INVALID \"$staged\"; then echo invalid-binary >&2; exit 19; fi\n" +
+		"  if [ \"" + mode + "\" = timeout-binary ]; then sleep 2; fi\n" +
+		"  exit 0\nfi\necho unexpected-command >&2\nexit 20"
+	return newFakeSingBox(t, script)
+}
+
+func TestSingBoxManagerUploadRuleSetRejectsInvalidSourceBeforeActivation(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSingBoxManager(ruleSetValidationFakeBinary(t, "normal"), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	_, err := manager.UploadRuleSet("bad-source", "rules.json", []byte("{\"version\":1,\"rules\":[INVALID]}"))
+	if err == nil || !strings.Contains(err.Error(), "invalid-source") {
+		t.Fatalf("expected pinned compiler rejection, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "rule-sets", "bad-source.json")); !os.IsNotExist(err) {
+		t.Fatalf("invalid source was activated (stat error: %v)", err)
+	}
+}
+
+func TestSingBoxManagerUploadRuleSetRejectsInvalidBinaryBeforeActivation(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSingBoxManager(ruleSetValidationFakeBinary(t, "normal"), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	_, err := manager.UploadRuleSet("bad-binary", "rules.srs", []byte("INVALID-SRS"))
+	if err == nil || !strings.Contains(err.Error(), "invalid-binary") {
+		t.Fatalf("expected sing-box binary check rejection, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "rule-sets", "bad-binary.srs")); !os.IsNotExist(err) {
+		t.Fatalf("invalid binary was activated (stat error: %v)", err)
+	}
+}
+
+func TestSingBoxManagerUploadRuleSetFailedReplacementPreservesActiveFile(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSingBoxManager(ruleSetValidationFakeBinary(t, "normal"), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	active, err := manager.UploadRuleSet("stable", "rules.json", []byte("{\"version\":1,\"rules\":[]}"))
+	if err != nil {
+		t.Fatalf("activate initial valid Rule Set: %v", err)
+	}
+	before, err := os.ReadFile(active.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.UploadRuleSet("stable", "rules.json", []byte("{\"version\":1,\"rules\":[INVALID]}"))
+	if err == nil {
+		t.Fatal("invalid replacement unexpectedly succeeded")
+	}
+	after, err := os.ReadFile(active.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("failed replacement changed active file: before=%q after=%q", before, after)
+	}
+}
+
+func TestSingBoxManagerUploadRuleSetActivatesValidSourceAndBinary(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		file       string
+		data       []byte
+		wantFormat string
+	}{
+		{name: "source", file: "rules.json", data: []byte("{\"version\":1,\"rules\":[{\"domain\":[\"example.com\"]}]}"), wantFormat: "source"},
+		{name: "binary", file: "rules.srs", data: []byte("VALID-SRS"), wantFormat: "binary"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			manager := NewSingBoxManager(ruleSetValidationFakeBinary(t, "normal"), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+			result, err := manager.UploadRuleSet("valid-"+tc.name, tc.file, tc.data)
+			if err != nil {
+				t.Fatalf("upload valid Rule Set: %v", err)
+			}
+			if result.Type != "local" || result.Format != tc.wantFormat {
+				t.Fatalf("unexpected Rule Set metadata: %+v", result)
+			}
+			got, err := os.ReadFile(result.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != string(tc.data) {
+				t.Fatalf("active payload changed: got %q want %q", got, tc.data)
+			}
+		})
+	}
+}
+
+func TestSingBoxManagerUploadRuleSetValidationTimeoutDoesNotActivate(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		file string
+		data []byte
+		mode string
+	}{
+		{name: "source", file: "rules.json", data: []byte("{\"version\":1,\"rules\":[]}"), mode: "timeout-source"},
+		{name: "binary", file: "rules.srs", data: []byte("VALID-SRS"), mode: "timeout-binary"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			manager := NewSingBoxManager(ruleSetValidationFakeBinary(t, tc.mode), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+			manager.checkTimeout = 50 * time.Millisecond
+			_, err := manager.UploadRuleSet("timeout-"+tc.name, tc.file, tc.data)
+			if err == nil || !strings.Contains(err.Error(), "timed out") {
+				t.Fatalf("expected validation timeout, got %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "rule-sets", "timeout-"+tc.name+filepath.Ext(tc.file))); !os.IsNotExist(err) {
+				t.Fatalf("timed-out Rule Set was activated (stat error: %v)", err)
+			}
+		})
+	}
+}
+
+func TestSingBoxManagerUploadRuleSetPassesPinnedBinary(t *testing.T) {
+	binary := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binary == "" {
+		t.Skip("requires pinned sing-box binary from CI")
+	}
+	dir := t.TempDir()
+	manager := NewSingBoxManager(binary, filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	sourceData := []byte("{\"version\":1,\"rules\":[{\"domain\":[\"example.com\"]}]}")
+	source, err := manager.UploadRuleSet("pinned-source", "rules.json", sourceData)
+	if err != nil {
+		t.Fatalf("pinned sing-box rejected valid source Rule Set: %v", err)
+	}
+	if got, err := os.ReadFile(source.Path); err != nil || string(got) != string(sourceData) {
+		t.Fatalf("source Rule Set was not preserved: %v", err)
+	}
+
+	binaryPath := filepath.Join(dir, "fixture.srs")
+	compile := exec.Command(binary, "rule-set", "compile", "--output", binaryPath, source.Path)
+	if output, err := compile.CombinedOutput(); err != nil {
+		t.Fatalf("create pinned binary Rule Set fixture: %v: %s", err, output)
+	}
+	binaryData, err := os.ReadFile(binaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploaded, err := manager.UploadRuleSet("pinned-binary", "rules.srs", binaryData)
+	if err != nil {
+		t.Fatalf("pinned sing-box rejected valid binary Rule Set using minimal route config: %v", err)
+	}
+	if got, err := os.ReadFile(uploaded.Path); err != nil || string(got) != string(binaryData) {
+		t.Fatalf("binary Rule Set was not preserved: %v", err)
+	}
+
+	if _, err := manager.UploadRuleSet("pinned-invalid-source", "invalid.json", []byte("{\"version\":1,\"rules\":[INVALID]}")); err == nil {
+		t.Fatal("pinned sing-box accepted malformed JSON Rule Set")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "rule-sets", "pinned-invalid-source.json")); !os.IsNotExist(err) {
+		t.Fatalf("malformed JSON Rule Set was activated (stat error: %v)", err)
+	}
+
+	if _, err := manager.UploadRuleSet("pinned-invalid", "invalid.srs", []byte("not-a-sing-box-rule-set")); err == nil {
+		t.Fatal("pinned sing-box accepted invalid binary Rule Set")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "rule-sets", "pinned-invalid.srs")); !os.IsNotExist(err) {
+		t.Fatalf("invalid binary Rule Set was activated (stat error: %v)", err)
+	}
+}
+
+[executed on device: localhost (17879439-4a56-4d90-b57f-fb1c9ba2934e)]

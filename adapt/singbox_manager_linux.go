@@ -369,17 +369,162 @@ func (m *SingBoxManager) validateRuleSetPaths(ruleSets []singBoxRuleSet) error {
 	return nil
 }
 
-func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singBoxRuleSet, error) {
- var result singBoxRuleSet
- if !singBoxIDPattern.MatchString(tag) { return result, fmt.Errorf("invalid Rule Set tag %q", tag) }
- if len(data)==0 || len(data)>16<<20 { return result, fmt.Errorf("Rule Set file must be between 1 byte and 16 MiB") }
- ext:=strings.ToLower(filepath.Ext(filename)); format:=""
- switch ext { case ".srs": format="binary"; case ".json": format="source"; default: return result, fmt.Errorf("Rule Set file extension must be .srs or .json") }
- dir:=filepath.Join(filepath.Dir(m.configPath),"rule-sets")
- if err:=os.MkdirAll(dir,0700); err!=nil { return result,fmt.Errorf("create Rule Set directory: %w",err) }
- info,err:=os.Lstat(dir); if err!=nil || !info.IsDir() || info.Mode()&os.ModeSymlink!=0 { return result,fmt.Errorf("Rule Set directory is not a safe directory") }
- path:=filepath.Join(dir,tag+ext); tmp,err:=os.CreateTemp(dir,".upload-*.tmp"); if err!=nil{return result,err}; tmpPath:=tmp.Name(); defer os.Remove(tmpPath)
- if err:=tmp.Chmod(0600); err!=nil {_=tmp.Close();return result,err}; if _,err:=tmp.Write(data);err!=nil{_=tmp.Close();return result,err}; if err:=tmp.Sync();err!=nil{_=tmp.Close();return result,err};if err:=tmp.Close();err!=nil{return result,err}
- if err:=os.Rename(tmpPath,path);err!=nil{return result,fmt.Errorf("activate Rule Set upload: %w",err)}
- return singBoxRuleSet{Type:"local",Tag:tag,Format:format,Path:path},nil
+func (m *SingBoxManager) validateRuleSetUpload(ctx context.Context, stagedPath, format string) error {
+	if m.binary == "" {
+		return fmt.Errorf("sing-box binary is required")
+	}
+	timeout := m.checkTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	switch format {
+	case "source":
+		outputFile, err := os.CreateTemp(filepath.Dir(stagedPath), ".validate-*.srs")
+		if err != nil {
+			return fmt.Errorf("create Rule Set validation output: %w", err)
+		}
+		outputPath := outputFile.Name()
+		if err := outputFile.Close(); err != nil {
+			_ = os.Remove(outputPath)
+			return fmt.Errorf("close Rule Set validation output: %w", err)
+		}
+		defer os.Remove(outputPath)
+
+		cmd := exec.CommandContext(checkCtx, m.binary, "rule-set", "compile", "--output", outputPath, stagedPath)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			if checkCtx.Err() != nil {
+				return fmt.Errorf("Rule Set source validation timed out: %w", checkCtx.Err())
+			}
+			return fmt.Errorf("sing-box Rule Set source compile failed: %w: %s", err, strings.TrimSpace(string(output)))
+		}
+		info, err := os.Stat(outputPath)
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+			return fmt.Errorf("sing-box Rule Set source compile produced no binary output")
+		}
+		return nil
+
+	case "binary":
+		configFile, err := os.CreateTemp(filepath.Dir(stagedPath), ".validate-*.json")
+		if err != nil {
+			return fmt.Errorf("create Rule Set validation config: %w", err)
+		}
+		configPath := configFile.Name()
+		defer os.Remove(configPath)
+
+		config := map[string]any{
+			"inbounds":  []any{},
+			"outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}},
+			"route": map[string]any{
+				"rule_set": []any{map[string]any{
+					"type": "local", "tag": "upload-validation",
+					"format": "binary", "path": stagedPath,
+				}},
+				"final": "direct",
+			},
+		}
+		encoded, err := json.Marshal(config)
+		if err != nil {
+			_ = configFile.Close()
+			return fmt.Errorf("encode Rule Set validation config: %w", err)
+		}
+		if err := configFile.Chmod(0600); err != nil {
+			_ = configFile.Close()
+			return fmt.Errorf("secure Rule Set validation config: %w", err)
+		}
+		if _, err := configFile.Write(encoded); err != nil {
+			_ = configFile.Close()
+			return fmt.Errorf("write Rule Set validation config: %w", err)
+		}
+		if err := configFile.Sync(); err != nil {
+			_ = configFile.Close()
+			return fmt.Errorf("sync Rule Set validation config: %w", err)
+		}
+		if err := configFile.Close(); err != nil {
+			return fmt.Errorf("close Rule Set validation config: %w", err)
+		}
+
+		cmd := exec.CommandContext(checkCtx, m.binary, "check", "-c", configPath)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			if checkCtx.Err() != nil {
+				return fmt.Errorf("Rule Set binary validation timed out: %w", checkCtx.Err())
+			}
+			return fmt.Errorf("sing-box Rule Set binary check failed: %w: %s", err, strings.TrimSpace(string(output)))
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported Rule Set format %q", format)
+	}
 }
+
+func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singBoxRuleSet, error) {
+	var result singBoxRuleSet
+	if !singBoxIDPattern.MatchString(tag) {
+		return result, fmt.Errorf("invalid Rule Set tag %q", tag)
+	}
+	if len(data) == 0 || len(data) > 16<<20 {
+		return result, fmt.Errorf("Rule Set file must be between 1 byte and 16 MiB")
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	format := ""
+	switch ext {
+	case ".srs":
+		format = "binary"
+	case ".json":
+		format = "source"
+	default:
+		return result, fmt.Errorf("Rule Set file extension must be .srs or .json")
+	}
+	if m.binary == "" || m.configPath == "" {
+		return result, fmt.Errorf("sing-box binary and config path are required")
+	}
+	dir := filepath.Join(filepath.Dir(m.configPath), "rule-sets")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return result, fmt.Errorf("create Rule Set directory: %w", err)
+	}
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return result, fmt.Errorf("Rule Set directory is not a safe directory")
+	}
+
+	activePath := filepath.Join(dir, tag+ext)
+	staging, err := os.CreateTemp(dir, ".upload-*.tmp")
+	if err != nil {
+		return result, fmt.Errorf("create Rule Set staging file: %w", err)
+	}
+	stagingPath := staging.Name()
+	defer os.Remove(stagingPath)
+	if err := staging.Chmod(0600); err != nil {
+		_ = staging.Close()
+		return result, fmt.Errorf("secure Rule Set staging file: %w", err)
+	}
+	if _, err := staging.Write(data); err != nil {
+		_ = staging.Close()
+		return result, fmt.Errorf("write Rule Set staging file: %w", err)
+	}
+	if err := staging.Sync(); err != nil {
+		_ = staging.Close()
+		return result, fmt.Errorf("sync Rule Set staging file: %w", err)
+	}
+	if err := staging.Close(); err != nil {
+		return result, fmt.Errorf("close Rule Set staging file: %w", err)
+	}
+
+	if err := m.validateRuleSetUpload(context.Background(), stagingPath, format); err != nil {
+		return result, fmt.Errorf("refusing invalid Rule Set upload: %w", err)
+	}
+	if err := os.Rename(stagingPath, activePath); err != nil {
+		return result, fmt.Errorf("activate Rule Set upload: %w", err)
+	}
+	if dirFile, err := os.Open(dir); err == nil {
+		_ = dirFile.Sync()
+		_ = dirFile.Close()
+	}
+	return singBoxRuleSet{Type: "local", Tag: tag, Format: format, Path: activePath}, nil
+}
+
+[executed on device: localhost (17879439-4a56-4d90-b57f-fb1c9ba2934e)]
