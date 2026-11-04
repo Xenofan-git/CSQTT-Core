@@ -527,4 +527,3 @@ func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singB
 	return singBoxRuleSet{Type: "local", Tag: tag, Format: format, Path: activePath}, nil
 }
 
-[executed on device: localhost (17879439-4a56-4d90-b57f-fb1c9ba2934e)]
