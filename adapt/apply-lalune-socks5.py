@@ -130,7 +130,7 @@ s = s.replace(new_app_marker, helper + new_app_marker, 1)
 old = '\tapp := &App{core: core, tun: tun}\n'
 new = """\tapp := &App{core: core, tun: tun}\n\t// Resolve eth1 dynamically when TUN starts and rebind after DHCP/address changes.\n\tapp.socks = NewSocks5Server("eth1:12500")
 \t// Stable local-only endpoint consumed by sing-box; it shares the marked CSQTT TUN dataplane.
-\tapp.socksLocal = NewSocks5Server("127.0.0.1:12501")\n"""
+\tapp.socksLocal = NewSocks5Server("127.0.0.1:12500")\n"""
 if old not in s:
     raise SystemExit("missing NewApp marker")
 s = s.replace(old, new, 1)

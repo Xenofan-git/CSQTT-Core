@@ -715,15 +715,10 @@ func main() {
     configuredPanelListen, listenErr := panelListenAddress()
     if listenErr != nil { panic(listenErr) }
     app := NewApp()
-    // sing-box talks to this loopback endpoint. The bridge forwards the SOCKS5
-    // stream to the existing unauthenticated eth1:12500 CSQTT listener without
-    // rewriting domain names or UDP ASSOCIATE replies.
-    socksBridge := NewSocks5Bridge("127.0.0.1:12501")
-    if err := socksBridge.Start(); err != nil {
-        panic(fmt.Sprintf("start CSQTT SOCKS5 loopback bridge: %v", err))
-    }
+    // The CSQTT Linux runner owns both eth1 and loopback SOCKS5 listeners.
+    // The loopback listener is started only after the TUN packet bridge is ready;
+    // sing-box connects to it directly, with no extra TCP forwarding process.
     app.startup(context.Background())
-    app.core.AddLog("[sing-box] CSQTT SOCKS5 bridge listening on 127.0.0.1:12501 -> eth1:12500")
 
     api := apiHandler(app)
     apiRoutes := panelAPIHandler(api)
@@ -759,7 +754,6 @@ func main() {
     if err := defaultSingBoxManager().Stop(); err != nil {
         app.core.AddLog(fmt.Sprintf("[sing-box] Shutdown error: %v", err))
     }
-    socksBridge.Stop()
     _ = app.Disconnect()
     _ = srv.Shutdown(context.Background())
     _ = panelSrv.Shutdown(context.Background())

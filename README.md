@@ -28,7 +28,7 @@
 
 Планируемые функции:
 - локальный SOCKS5 inbound, привязанный только к loopback или конкретному частному LAN IP (без wildcard/public bind);
-- отдельный loopback-only CSQTT SOCKS5 listener на `127.0.0.1:12501`, использующий существующий `SO_MARK=0x4d53` и policy table `202`;
+- отдельный loopback-only CSQTT SOCKS5 listener на `127.0.0.1:12500`, использующий существующий `SO_MARK=0x4d53` и policy table `202`;
 - несколько SOCKS5 outbound с добавлением, редактированием, включением и отключением;
 - доменные и IP-правила: `domain`, `domain_suffix`, `domain_keyword`, `domain_regex`, `ip_cidr`;
 - выбор outbound и DIRECT;

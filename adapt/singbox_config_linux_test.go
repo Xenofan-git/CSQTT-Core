@@ -21,7 +21,7 @@ import (
 func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T) {
 	got, err := buildSingBoxConfig(singBoxConfigInput{
 		ListenAddress: "192.168.5.2:12500",
-		CSQTTAddress: "127.0.0.1:12501",
+		CSQTTAddress: "127.0.0.1:12500",
 		DirectDomains: []string{"LOCAL.example", "local.example."},
 		DirectDomainSuffixes: []string{".example.org", "example.org"},
 		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
@@ -69,19 +69,19 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 
 func TestBuildSingBoxConfigRejectsInvalidOrAmbiguousInputs(t *testing.T) {
 	tests := []struct{name string; input singBoxConfigInput}{
-		{"missing inbound address", singBoxConfigInput{CSQTTAddress:"127.0.0.1:12501"}},
-		{"same inbound and CSQTT endpoint", singBoxConfigInput{ListenAddress:"127.0.0.1:12501", CSQTTAddress:"127.0.0.1:12501"}},
-		{"invalid domain", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", DirectDomains:[]string{"https://bad.example"}}},
-		{"invalid CIDR", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", DirectIPCIDRs:[]string{"not-a-cidr"}}},
-		{"invalid route regex", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", Rules:[]singBoxRouteRule{{ID:"r1",DomainRegexes:[]string{"["},Outbound:singBoxCSQTTTag,Enabled:true}}}},
-		{"unknown outbound", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", Rules:[]singBoxRouteRule{{ID:"r1",Domains:[]string{"a.example"},Outbound:"missing",Enabled:true}}}},
-		{"partial credentials", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12501", SOCKS5:[]singBoxSOCKS5Outbound{{ID:"p1",Server:"198.51.100.1",ServerPort:1080,Username:"u",Enabled:true}}}},
+		{"missing inbound address", singBoxConfigInput{CSQTTAddress:"127.0.0.1:12500"}},
+		{"same inbound and CSQTT endpoint", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12500"}},
+		{"invalid domain", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12500", DirectDomains:[]string{"https://bad.example"}}},
+		{"invalid CIDR", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12500", DirectIPCIDRs:[]string{"not-a-cidr"}}},
+		{"invalid route regex", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12500", Rules:[]singBoxRouteRule{{ID:"r1",DomainRegexes:[]string{"["},Outbound:singBoxCSQTTTag,Enabled:true}}}},
+		{"unknown outbound", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12500", Rules:[]singBoxRouteRule{{ID:"r1",Domains:[]string{"a.example"},Outbound:"missing",Enabled:true}}}},
+		{"partial credentials", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12500", SOCKS5:[]singBoxSOCKS5Outbound{{ID:"p1",Server:"198.51.100.1",ServerPort:1080,Username:"u",Enabled:true}}}},
 	}
 	for _, tt := range tests { t.Run(tt.name,func(t *testing.T){ if _,err:=buildSingBoxConfig(tt.input); err==nil { t.Fatal("expected validation error") } }) }
 }
 
 func TestBuildSingBoxConfigRestrictsListenerAndCSQTTOutboundScope(t *testing.T) {
-	base := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12501"}
+	base := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500"}
 	for _, address := range []string{"0.0.0.0:19180", "[::]:19180", "8.8.8.8:19180", "169.254.1.2:19180", "224.0.0.1:19180"} {
 		t.Run("reject inbound "+address, func(t *testing.T) {
 			input := base
@@ -108,7 +108,7 @@ func TestBuildSingBoxConfigRestrictsListenerAndCSQTTOutboundScope(t *testing.T) 
 func TestBuildSingBoxConfigAllowsIPOnlyRouteRule(t *testing.T) {
 	got, err := buildSingBoxConfig(singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19180",
-		CSQTTAddress: "127.0.0.1:12501",
+		CSQTTAddress: "127.0.0.1:12500",
 		Rules: []singBoxRouteRule{{ID: "ip-only", IPCIDRs: []string{"203.0.113.0/24"}, Outbound: singBoxCSQTTTag, Enabled: true}},
 	})
 	if err != nil { t.Fatalf("IP-only route rule rejected: %v", err) }
@@ -122,8 +122,27 @@ func TestBuildSingBoxConfigAllowsIPOnlyRouteRule(t *testing.T) {
 	}
 }
 
+func TestCSQTTAndLoopbackListenersCanSharePort12500(t *testing.T) {
+    // Linux permits the same TCP port on distinct local addresses. This models
+    // eth1's assigned address and the private loopback endpoint used by sing-box.
+    downstream := NewSocks5Server("127.0.0.2:12500")
+    if err := downstream.Start(); err != nil { t.Fatalf("start downstream listener: %v", err) }
+    defer downstream.Stop()
+
+    local := NewSocks5Server("127.0.0.1:12500")
+    if err := local.Start(); err != nil { t.Fatalf("start loopback listener on the same port: %v", err) }
+    defer local.Stop()
+
+    if got := downstream.Status().Address; got != "127.0.0.2:12500" {
+        t.Fatalf("downstream listener = %q", got)
+    }
+    if got := local.Status().Address; got != "127.0.0.1:12500" {
+        t.Fatalf("loopback listener = %q", got)
+    }
+}
+
 func TestBuildSingBoxConfigUsesCSQTTAsExplicitSystemFallback(t *testing.T) {
-	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:12500",CSQTTAddress:"127.0.0.1:12501"})
+	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:12500",CSQTTAddress:"127.0.0.1:12500"})
 	if err != nil { t.Fatal(err) }
 	var config map[string]any
 	if err:=json.Unmarshal(got,&config); err!=nil { t.Fatal(err) }
@@ -292,7 +311,7 @@ func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
 
 	encoded, err := buildSingBoxConfig(singBoxConfigInput{
 		ListenAddress: "127.0.0.1:12500",
-		CSQTTAddress:  "127.0.0.1:12501",
+		CSQTTAddress:  "127.0.0.1:12500",
 		DirectDomains: []string{"example.com"},
 		DirectIPCIDRs: []string{"192.0.2.0/24", "2001:db8::/32"},
 		SOCKS5: []singBoxSOCKS5Outbound{{
