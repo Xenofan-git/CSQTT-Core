@@ -371,5 +371,3 @@ func TestSingBoxManagerUploadRuleSetPassesPinnedBinary(t *testing.T) {
 		t.Fatalf("invalid binary Rule Set was activated (stat error: %v)", err)
 	}
 }
-
-[executed on device: localhost (17879439-4a56-4d90-b57f-fb1c9ba2934e)]
