@@ -7,6 +7,7 @@ import (
     "crypto/subtle"
     "context"
     "embed"
+    "io"
     "io/fs"
     "encoding/json"
     "fmt"
@@ -488,6 +489,16 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
             w.Header().Set("Allow", "GET, PUT")
             http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
         }
+    })
+    mux.HandleFunc("/singbox/rulesets/upload", func(w http.ResponseWriter, r *http.Request) {
+        if !method(w, r, http.MethodPost) { return }
+        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
+        r.Body = http.MaxBytesReader(w, r.Body, (16<<20)+(1<<20))
+        if err := r.ParseMultipartForm(16 << 20); err != nil { http.Error(w, "invalid Rule Set upload or file exceeds 16 MiB", http.StatusBadRequest); return }
+        file, header, err := r.FormFile("file"); if err != nil { http.Error(w, "missing Rule Set file", http.StatusBadRequest); return }; defer file.Close()
+        data, err := io.ReadAll(io.LimitReader(file, (16<<20)+1)); if err != nil || len(data)>16<<20 { http.Error(w, "unable to read Rule Set file or file exceeds 16 MiB", http.StatusBadRequest); return }
+        result, err := singBox.UploadRuleSet(strings.TrimSpace(r.FormValue("tag")), header.Filename, data); if err != nil { http.Error(w, err.Error(), http.StatusUnprocessableEntity); return }
+        writeJSON(w, result)
     })
     mux.HandleFunc("/singbox/start", func(w http.ResponseWriter, r *http.Request) {
         if !method(w, r, http.MethodPost) { return }

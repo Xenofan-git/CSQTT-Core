@@ -333,3 +333,18 @@ func (m *SingBoxManager) CopyLogs(w io.Writer) error {
 	_, err = io.Copy(w, f)
 	return err
 }
+
+func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singBoxRuleSet, error) {
+ var result singBoxRuleSet
+ if !singBoxIDPattern.MatchString(tag) { return result, fmt.Errorf("invalid Rule Set tag %q", tag) }
+ if len(data)==0 || len(data)>16<<20 { return result, fmt.Errorf("Rule Set file must be between 1 byte and 16 MiB") }
+ ext:=strings.ToLower(filepath.Ext(filename)); format:=""
+ switch ext { case ".srs": format="binary"; case ".json": format="source"; default: return result, fmt.Errorf("Rule Set file extension must be .srs or .json") }
+ dir:=filepath.Join(filepath.Dir(m.configPath),"rule-sets")
+ if err:=os.MkdirAll(dir,0700); err!=nil { return result,fmt.Errorf("create Rule Set directory: %w",err) }
+ info,err:=os.Lstat(dir); if err!=nil || !info.IsDir() || info.Mode()&os.ModeSymlink!=0 { return result,fmt.Errorf("Rule Set directory is not a safe directory") }
+ path:=filepath.Join(dir,tag+ext); tmp,err:=os.CreateTemp(dir,".upload-*.tmp"); if err!=nil{return result,err}; tmpPath:=tmp.Name(); defer os.Remove(tmpPath)
+ if err:=tmp.Chmod(0600); err!=nil {_=tmp.Close();return result,err}; if _,err:=tmp.Write(data);err!=nil{_=tmp.Close();return result,err}; if err:=tmp.Sync();err!=nil{_=tmp.Close();return result,err};if err:=tmp.Close();err!=nil{return result,err}
+ if err:=os.Rename(tmpPath,path);err!=nil{return result,fmt.Errorf("activate Rule Set upload: %w",err)}
+ return singBoxRuleSet{Type:"local",Tag:tag,Format:format,Path:path},nil
+}
