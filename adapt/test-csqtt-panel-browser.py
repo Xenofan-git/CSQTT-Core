@@ -158,6 +158,19 @@ def main():
             assert page.locator("#topHeart").count() == 1 and page.locator("#topSwitch").count() == 1 and page.locator("#topSettings").count() == 1
             assert page.locator("#topQr, #qrImage").count() == 0, "QR controls must remain absent"
 
+            click_events = []
+            page.evaluate("""() => {
+                window.__tabClickEvents = [];
+                document.addEventListener('click', event => {
+                    const button = event.target.closest('button[data-page]');
+                    window.__tabClickEvents.push({
+                        target: event.target.tagName,
+                        page: button?.dataset.page || null,
+                        defaultPreventedAtDocument: event.defaultPrevented,
+                        path: event.composedPath().slice(0, 5).map(node => node?.tagName || node?.nodeName)
+                    });
+                }, true);
+            }""")
             for name in EXPECTED:
                 page.locator(f'button[data-page="{name}"]').click()
                 active_state = page.locator(f"#page-{name}").evaluate(
@@ -169,7 +182,9 @@ def main():
                 assert "active" in active_state["className"].split(), (
                     f"tab did not activate: {name}; page={active_state}; tab={tab_state}; "
                     f"pageErrors={page_errors}; tabs={page.locator('.tabs').count()}; "
-                    f"activePages={page.locator('.page.active').evaluate_all('(els) => els.map(el => el.id)')}"
+                    f"activePages={page.locator('.page.active').evaluate_all('(els) => els.map(el => el.id)')}; "
+                    f"clickEvents={page.evaluate('window.__tabClickEvents')}; "
+                    f"onclick={page.locator(f'button[data-page=\"{name}\"]').evaluate('(el) => ({onclick: String(el.onclick), disabled: el.disabled, connected: el.isConnected})')}"
                 )
                 assert page.locator(f'button[data-page="{name}"]').get_attribute("aria-current") == "page", (
                     f"active tab missing aria-current state: {name}"
