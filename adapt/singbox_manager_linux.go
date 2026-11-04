@@ -291,12 +291,22 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		username, _ := entry["username"].(string); password, _ := entry["password"].(string)
 		input.SOCKS5 = append(input.SOCKS5, singBoxSOCKS5Outbound{ID:strings.TrimPrefix(tag,"socks-"), Server:host, ServerPort:int(port), Username:username, Password:password, Enabled:true})
 	}
-	route, _ := raw["route"].(map[string]any); rules, _ := route["rules"].([]any)
+	route, _ := raw["route"].(map[string]any)
+	for _, rawSet := range anySlice(route["rule_set"]) {
+		set, ok := rawSet.(map[string]any); if !ok { continue }
+		item := singBoxRuleSet{}
+		item.Type, _ = set["type"].(string); item.Tag, _ = set["tag"].(string)
+		item.Format, _ = set["format"].(string); item.Path, _ = set["path"].(string)
+		item.URL, _ = set["url"].(string); item.UpdateInterval, _ = set["update_interval"].(string)
+		input.RuleSets = append(input.RuleSets, item)
+	}
+	rules, _ := route["rules"].([]any)
 	for _, item := range rules {
 		rule, ok := item.(map[string]any); if !ok || rule["action"] != "route" { continue }
 		outbound, _ := rule["outbound"].(string)
 		domains, suffixes := stringSlice(rule["domain"]), stringSlice(rule["domain_suffix"])
 		keywords, regexes, cidrs := stringSlice(rule["domain_keyword"]), stringSlice(rule["domain_regex"]), stringSlice(rule["ip_cidr"])
+		ruleSets := stringSlice(rule["rule_set"])
 		if outbound == singBoxDirectTag {
 			input.DirectDomains=append(input.DirectDomains,domains...)
 			input.DirectDomainSuffixes=append(input.DirectDomainSuffixes,suffixes...)
@@ -304,10 +314,12 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 			continue
 		}
 		if outbound == "" || known[outbound] == nil { return input, fmt.Errorf("route references missing outbound %q", outbound) }
-		input.Rules=append(input.Rules,singBoxRouteRule{ID:fmt.Sprintf("loaded-%d",len(input.Rules)+1),Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,Outbound:outbound,Enabled:true})
+		input.Rules=append(input.Rules,singBoxRouteRule{ID:fmt.Sprintf("loaded-%d",len(input.Rules)+1),Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Outbound:outbound,Enabled:true})
 	}
 	return input,nil
 }
+func anySlice(value any) []any { items, _ := value.([]any); return items }
+
 func stringSlice(value any) []string {
 	items, _ := value.([]any); out := make([]string,0,len(items))
 	for _, item := range items { if s,ok:=item.(string); ok { out=append(out,s) } }

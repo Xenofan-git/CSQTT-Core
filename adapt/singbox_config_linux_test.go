@@ -307,7 +307,7 @@ func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
 }
 
 func TestSingBoxRuleSetConfigAndRouteReferences(t *testing.T) {
-	input := validSingBoxConfigInput()
+	input := singBoxConfigInput{ListenAddress:"127.0.0.1:19180", CSQTTAddress:"127.0.0.1:12500"}
 	input.RuleSets = []singBoxRuleSet{{Type:"local", Tag:"geosite-ru", Format:"binary", Path:"/var/lib/csqtt/sing-box/rule-sets/geosite-ru.srs"}}
 	input.Rules = []singBoxRouteRule{{ID:"ru", RuleSets:[]string{"geosite-ru"}, Outbound:"direct", Enabled:true}}
 	got, err := buildSingBoxConfig(input)
@@ -327,7 +327,7 @@ func TestSingBoxRuleSetRejectsUnknownAndInsecureSources(t *testing.T) {
 	input := validSingBoxConfigInput()
 	input.Rules = []singBoxRouteRule{{ID:"bad", RuleSets:[]string{"missing"}, Outbound:"direct", Enabled:true}}
 	if _, err := buildSingBoxConfig(input); err == nil { t.Fatal("expected unknown Rule Set rejection") }
-	input = validSingBoxConfigInput()
+	input = singBoxConfigInput{ListenAddress:"127.0.0.1:19180", CSQTTAddress:"127.0.0.1:12500"}
 	input.RuleSets = []singBoxRuleSet{{Type:"remote",Tag:"remote",Format:"binary",URL:"http://example.com/rules.srs"}}
 	if _, err := buildSingBoxConfig(input); err == nil { t.Fatal("expected HTTP Rule Set rejection") }
 }
