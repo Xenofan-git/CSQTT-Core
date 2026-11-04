@@ -43,16 +43,13 @@ js = "\n".join(scripts)
 
 parser = PanelParser()
 parser.feed(html)
-if len(parser.tabs) != 6 or set(parser.tabs) != {
-    "connect", "settings", "deploy", "route", "logs", "singbox"
-}:
+if len(parser.tabs) != 7 or parser.tabs != ["connect", "settings", "deploy", "logs", "direct", "route", "singbox"]:
     raise SystemExit(f"unexpected CSQTT tab contract: {parser.tabs}")
-if len(parser.pages) != 6 or set(parser.pages) != set(parser.tabs):
+if len(parser.pages) != 7 or set(parser.pages) != set(parser.tabs):
     raise SystemExit(f"tab/page mismatch: tabs={parser.tabs}, pages={parser.pages}")
 
-# Navigation order is intentionally not a contract. All six functional
-# pages must exist exactly once and each tab must map to a page.
-if len(parser.tabs) != 6 or set(parser.tabs) != {"connect", "settings", "deploy", "route", "logs", "singbox"}:
+# Seven-tab navigation order is a product contract; Sing-Box must be seventh.
+if parser.tabs != ["connect", "settings", "deploy", "logs", "direct", "route", "singbox"]:
     raise SystemExit(f"unexpected CSQTT tab set: {parser.tabs}")
 
 # Keep the browser port on the native CSQTT brand palette and floating-tab
@@ -80,7 +77,7 @@ for token in (
 if "background:linear-gradient(145deg,#ddfff0,#fff)" in html:
     raise SystemExit("connected power button uses a light-only hardcoded gradient")
 
-# CSQTT 2.5.0 visual adaptation: retain the native six-tab navigation while
+# CSQTT 2.5.0 visual adaptation: retain the native seven-tab navigation while
 # using the newer Material-style surfaces and outlined controls.
 for token in (
     "CSQTT 2.5.0 visual adaptation",
@@ -112,7 +109,7 @@ for token in (
 
 # Direct is represented by two independent lists. Do not regress to the old
 # domain-only contract or merge IP literals into the domain textarea.
-route_html = html.split('id="page-route"', 1)[1].split("</section>", 1)[0]
+route_html = html.split('id="page-direct"', 1)[1].split("</section>", 1)[0]
 for control in ('id="directDomains"', 'id="directIPs"'):
     if control not in route_html:
         raise SystemExit("Route tab is missing separate Direct control: " + control)

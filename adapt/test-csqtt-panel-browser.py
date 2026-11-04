@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(".").resolve()
 HTML = ROOT / "adapt" / "csqtt-panel-preview.html"
-EXPECTED = {"connect", "settings", "deploy", "logs", "route", "singbox"}
+EXPECTED = ["connect", "settings", "deploy", "logs", "direct", "route", "singbox"]
 WIDTHS = [390, 768, 1280]
 
 
@@ -379,7 +379,7 @@ def main():
             saved_after_invalid = [raw for method, path, raw in calls if method == "POST" and path == "/settings" and raw]
             assert len(saved_after_invalid) == prior_saves, "invalid Direct IP input reached the settings API"
 
-            assert page.locator("#page-route").is_visible()
+            assert page.locator("#page-direct").is_visible()
             assert not page.locator("#deploySecretsOverlay").is_visible()
             page.locator("#routeClose").click()
 
@@ -563,7 +563,7 @@ def main():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
-    print("CSQTT_CHROMIUM_UI_SMOKE_PASS widths=320,360,390,768,1280 tabs=6 singbox-config-api=PASS profile-api=PASS connect-disconnect=PASS tunnel-settings=PASS direct-settings-api=PASS deploy-api=PASS socks5-live-status=PASS socks5-address-hidden-when-inactive=PASS logs=PASS captcha-bridge-trusted-origin=PASS captcha-bridge-fail-closed=PASS")
+    print("CSQTT_CHROMIUM_UI_SMOKE_PASS widths=320,360,390,768,1280 tabs=7 singbox-config-api=PASS profile-api=PASS connect-disconnect=PASS tunnel-settings=PASS direct-settings-api=PASS deploy-api=PASS socks5-live-status=PASS socks5-address-hidden-when-inactive=PASS logs=PASS captcha-bridge-trusted-origin=PASS captcha-bridge-fail-closed=PASS")
 
 
 if __name__ == "__main__":
