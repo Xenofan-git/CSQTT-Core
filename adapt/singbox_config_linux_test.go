@@ -324,7 +324,7 @@ func TestSingBoxRuleSetConfigAndRouteReferences(t *testing.T) {
 }
 
 func TestSingBoxRuleSetRejectsUnknownAndInsecureSources(t *testing.T) {
-	input := validSingBoxConfigInput()
+	input := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500"}
 	input.Rules = []singBoxRouteRule{{ID:"bad", RuleSets:[]string{"missing"}, Outbound:"direct", Enabled:true}}
 	if _, err := buildSingBoxConfig(input); err == nil { t.Fatal("expected unknown Rule Set rejection") }
 	input = singBoxConfigInput{ListenAddress:"127.0.0.1:19180", CSQTTAddress:"127.0.0.1:12500"}
