@@ -380,9 +380,10 @@ def main():
             captcha_state.update({"pending": False, "mode": "", "sessionToken": "", "redirectUri": ""})
 
             # Direct rules are validated and persisted through the settings API.
-            page.locator('button[data-page="route"]').click()
-            assert page.locator("#directDomains").count() == 1
-            assert page.locator("#directIPs").count() == 1, "Route tab must expose a separate IP list"
+            page.locator('button[data-page="direct"]').click()
+            assert page.locator("#page-direct").is_visible(), "Direct tab did not activate"
+            assert page.locator("#directDomains").is_visible(), "Direct domains field is not visible"
+            assert page.locator("#directIPs").is_visible(), "Direct IP field is not visible"
             page.locator("#directDomains").fill("example.com\napi.example.com")
             page.locator("#directIPs").fill("192.0.2.1\n2001:db8::1")
             page.locator("#saveDirectRules").click()
