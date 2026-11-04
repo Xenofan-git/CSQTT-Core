@@ -283,7 +283,7 @@ if "Не удалось получить фактическое состояни
 if "Переподключите туннель CSQTT" not in html:
     raise SystemExit("Direct rules must explain that reconnect is required to apply changes")
 
-for token in ('id="page-singbox"', 'id="singboxStart"', 'id="singboxStop"', 'id="singboxSave"', "req('/singbox/config')", "req('/singbox/status')", "req('/singbox/logs')"):
+for token in ('id="page-singbox"', 'id="singboxStart"', 'id="singboxStop"', 'id="singboxSave"', 'id="singboxSaveEngine"', 'id="singboxLoadEngine"', "req('/singbox/config')", "req('/singbox/status')", "req('/singbox/logs')"):
     if token not in html:
         raise SystemExit("sing-box panel contract missing: " + token)
 

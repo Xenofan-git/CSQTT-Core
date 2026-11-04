@@ -152,7 +152,7 @@ def main():
 
             tabs = page.locator("button[data-page]")
             actual = [tabs.nth(i).get_attribute("data-page") for i in range(tabs.count())]
-            assert len(actual) == 6 and set(actual) == EXPECTED, f"six-tab set mismatch: {actual}"
+            assert actual == EXPECTED, f"seven-tab order mismatch: {actual}"
             assert page.locator("#page-connect > .connect-hero").count() == 1
             assert page.locator("#page-connect > .card").count() == 1, "Connect must retain the clean 2.5.0 single-card composition"
             assert page.locator("#topHeart").count() == 1 and page.locator("#topSwitch").count() == 1 and page.locator("#topSettings").count() == 1
