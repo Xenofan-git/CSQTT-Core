@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,8 +29,18 @@ type singBoxSOCKS5Outbound struct {
 	Enabled    bool
 }
 
+type singBoxRuleSet struct {
+	Type           string
+	Tag            string
+	Format         string
+	Path           string
+	URL            string
+	UpdateInterval string
+}
+
 type singBoxRouteRule struct {
 	ID             string
+	RuleSets       []string
 	Domains        []string
 	DomainSuffixes []string
 	DomainKeywords []string
@@ -45,6 +57,7 @@ type singBoxConfigInput struct {
 	DirectDomainSuffixes []string
 	DirectIPCIDRs        []string
 	SOCKS5        []singBoxSOCKS5Outbound
+	RuleSets      []singBoxRuleSet
 	Rules         []singBoxRouteRule
 }
 
@@ -278,6 +291,39 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		knownOutbounds[tag] = struct{}{}
 	}
 
+	// Rule Set definitions use the modern sing-box 1.14 schema. Local
+	// paths must be absolute and remain in the managed rule-set directory;
+	// remote sources are HTTPS-only to avoid cleartext downloads.
+	ruleSetConfigs := make([]map[string]any, 0, len(input.RuleSets))
+	knownRuleSets := make(map[string]struct{}, len(input.RuleSets))
+	for _, set := range input.RuleSets {
+		if !singBoxIDPattern.MatchString(set.Tag) { return nil, fmt.Errorf("invalid Rule Set tag %q", set.Tag) }
+		if _, exists := knownRuleSets[set.Tag]; exists { return nil, fmt.Errorf("duplicate Rule Set tag %q", set.Tag) }
+		knownRuleSets[set.Tag] = struct{}{}
+		format := set.Format
+		if format != "binary" && format != "source" { return nil, fmt.Errorf("Rule Set %q format must be binary or source", set.Tag) }
+		entry := map[string]any{"tag": set.Tag, "format": format}
+		switch set.Type {
+		case "local":
+			if !filepath.IsAbs(set.Path) || filepath.Clean(set.Path) != set.Path || filepath.Base(set.Path) == "." {
+				return nil, fmt.Errorf("Rule Set %q local path must be an absolute managed file path", set.Tag)
+			}
+			if set.URL != "" { return nil, fmt.Errorf("local Rule Set %q cannot have a URL", set.Tag) }
+			entry["type"], entry["path"] = "local", set.Path
+		case "remote":
+			u, err := url.ParseRequestURI(set.URL)
+			if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+				return nil, fmt.Errorf("Rule Set %q requires an HTTPS URL without embedded credentials", set.Tag)
+			}
+			if set.Path != "" { return nil, fmt.Errorf("remote Rule Set %q cannot have a local path", set.Tag) }
+			entry["type"], entry["url"] = "remote", set.URL
+			if set.UpdateInterval != "" { entry["update_interval"] = set.UpdateInterval }
+		default:
+			return nil, fmt.Errorf("Rule Set %q type must be local or remote", set.Tag)
+		}
+		ruleSetConfigs = append(ruleSetConfigs, entry)
+	}
+
 	rules := make([]map[string]any, 0, 2+len(input.Rules))
 	rules = append(rules, map[string]any{
 		"inbound": []string{singBoxInboundTag},
@@ -311,13 +357,21 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		if err != nil { return nil, fmt.Errorf("route rule %q regexes: %w", item.ID, err) }
 		cidrs, err := normalizeSingBoxCIDRs(item.IPCIDRs)
 		if err != nil { return nil, fmt.Errorf("route rule %q IP/CIDR: %w", item.ID, err) }
-		if len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs) == 0 {
+		if len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs)+len(item.RuleSets) == 0 {
 			return nil, fmt.Errorf("route rule %q has no matchers", item.ID)
+		}
+		seenTags := make(map[string]struct{}, len(item.RuleSets))
+		for _, tag := range item.RuleSets {
+			if _, ok := knownRuleSets[tag]; !ok { return nil, fmt.Errorf("route rule %q references unknown Rule Set %q", item.ID, tag) }
+			if _, ok := seenTags[tag]; ok { return nil, fmt.Errorf("route rule %q contains duplicate Rule Set %q", item.ID, tag) }
+			seenTags[tag] = struct{}{}
 		}
 		if _, exists := knownOutbounds[item.Outbound]; !exists {
 			return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound)
 		}
-		rules = append(rules, makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, item.Outbound))
+		rule := makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, item.Outbound)
+		if len(item.RuleSets) > 0 { rule["rule_set"] = item.RuleSets }
+		rules = append(rules, rule)
 	}
 	// CSQTT is the explicit system fallback. Direct exclusions and enabled
 	// user rules above it retain priority; no implicit first-outbound fallback
@@ -329,7 +383,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			"listen": listenHost, "listen_port": listenPort,
 		}},
 		Outbounds: outbounds,
-		Route: map[string]any{"rules": rules, "final": singBoxCSQTTTag},
+		Route: map[string]any{"rules": rules, "rule_set": ruleSetConfigs, "final": singBoxCSQTTTag},
 	}
 	encoded, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {

@@ -305,3 +305,29 @@ func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
 		t.Fatalf("pinned sing-box config check failed: %v\n%s", err, output)
 	}
 }
+
+func TestSingBoxRuleSetConfigAndRouteReferences(t *testing.T) {
+	input := validSingBoxConfigInput()
+	input.RuleSets = []singBoxRuleSet{{Type:"local", Tag:"geosite-ru", Format:"binary", Path:"/var/lib/csqtt/sing-box/rule-sets/geosite-ru.srs"}}
+	input.Rules = []singBoxRouteRule{{ID:"ru", RuleSets:[]string{"geosite-ru"}, Outbound:"direct", Enabled:true}}
+	got, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatalf("build config with Rule Set: %v", err) }
+	var config map[string]any
+	if err := json.Unmarshal(got, &config); err != nil { t.Fatal(err) }
+	route := config["route"].(map[string]any)
+	sets := route["rule_set"].([]any)
+	if len(sets) != 1 || sets[0].(map[string]any)["tag"] != "geosite-ru" { t.Fatalf("unexpected Rule Set config: %#v", sets) }
+	rules := route["rules"].([]any)
+	found := false
+	for _, raw := range rules { rule:=raw.(map[string]any); if rule["outbound"]=="direct" { tags,_:=rule["rule_set"].([]any); if len(tags)==1 && tags[0]=="geosite-ru" { found=true } } }
+	if !found { t.Fatalf("route rule does not reference Rule Set: %#v", rules) }
+}
+
+func TestSingBoxRuleSetRejectsUnknownAndInsecureSources(t *testing.T) {
+	input := validSingBoxConfigInput()
+	input.Rules = []singBoxRouteRule{{ID:"bad", RuleSets:[]string{"missing"}, Outbound:"direct", Enabled:true}}
+	if _, err := buildSingBoxConfig(input); err == nil { t.Fatal("expected unknown Rule Set rejection") }
+	input = validSingBoxConfigInput()
+	input.RuleSets = []singBoxRuleSet{{Type:"remote",Tag:"remote",Format:"binary",URL:"http://example.com/rules.srs"}}
+	if _, err := buildSingBoxConfig(input); err == nil { t.Fatal("expected HTTP Rule Set rejection") }
+}
