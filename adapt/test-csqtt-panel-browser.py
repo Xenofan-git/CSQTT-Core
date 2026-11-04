@@ -181,8 +181,8 @@ def main():
                     assert page.locator("#copySocks5Address").is_disabled()
                     socks5_state["listening"] = True
                     socks5_state["address"] = "192.168.4.26:12500"
-                if name == "route":
-                    # Route is a full-screen dialog; close it before using bottom navigation again.
+                if name == "direct":
+                    # Direct editor is a full-screen dialog; close it before using bottom navigation again.
                     page.locator("#routeClose").click()
                     assert page.locator("#page-connect").evaluate("el => el.classList.contains('active')")
 
