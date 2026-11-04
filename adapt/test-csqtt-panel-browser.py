@@ -214,7 +214,7 @@ def main():
             assert page.locator("#singboxListen").input_value() == "127.0.0.1:19180"
             assert page.locator("#singboxDirectDomains").input_value() == "example.ru"
             page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
-            page.locator("#singboxSave").click()
+            page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
             assert page.locator("#singboxLogs").inner_text() == "fixture sing-box log"
