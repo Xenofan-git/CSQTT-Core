@@ -105,6 +105,23 @@ func TestBuildSingBoxConfigRestrictsListenerAndCSQTTOutboundScope(t *testing.T) 
 	}
 }
 
+func TestBuildSingBoxConfigAllowsIPOnlyRouteRule(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180",
+		CSQTTAddress: "127.0.0.1:12501",
+		Rules: []singBoxRouteRule{{ID: "ip-only", IPCIDRs: []string{"203.0.113.0/24"}, Outbound: singBoxCSQTTTag, Enabled: true}},
+	})
+	if err != nil { t.Fatalf("IP-only route rule rejected: %v", err) }
+	var config map[string]any
+	if err := json.Unmarshal(got, &config); err != nil { t.Fatal(err) }
+	rules := config["route"].(map[string]any)["rules"].([]any)
+	if len(rules) != 2 { t.Fatalf("route rules=%d, want sniff + IP-only rule", len(rules)) }
+	ipRule := rules[1].(map[string]any)
+	if ipRule["ip_cidr"].([]any)[0] != "203.0.113.0/24" || ipRule["outbound"] != singBoxCSQTTTag {
+		t.Fatalf("IP-only rule malformed: %#v", ipRule)
+	}
+}
+
 func TestBuildSingBoxConfigUsesCSQTTAsExplicitSystemFallback(t *testing.T) {
 	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:12500",CSQTTAddress:"127.0.0.1:12501"})
 	if err != nil { t.Fatal(err) }
