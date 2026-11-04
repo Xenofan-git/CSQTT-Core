@@ -353,8 +353,8 @@ jobs:
         run: |
           set -euxo pipefail
           go test -count=1 -run '^TestBuildSingBoxConfigPassesPinnedBinaryCheck$' -v .
-          go test -count=1 -run '^TestSingBoxRoutesDomainThroughRealCSQTTSocks5Server$' -v .
-          go test -count=1 -run '^TestSingBoxUDPAssociateRelaysThroughRealCSQTTSocks5Server$' -v .
+          go test -count=1 -run TestSingBoxRoutesDomainThroughRealCSQTTSocks5Server -v .
+          go test -count=1 -run TestSingBoxUDPAssociateRelaysThroughRealCSQTTSocks5Server -v .
           go test -count=1 .
           go test -count=1 ./Libs
           go test -race -count=1 .
