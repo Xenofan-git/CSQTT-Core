@@ -104,6 +104,7 @@ func (m *SingBoxManager) checkConfigPath(ctx context.Context, configPath string)
 func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	encoded, err := buildSingBoxConfig(input)
 	if err != nil { return fmt.Errorf("build sing-box config: %w", err) }
+	if err := m.validateRuleSetPaths(input.RuleSets); err != nil { return fmt.Errorf("unsafe Rule Set path: %w", err) }
 	if err := validateSingBoxListenAddress(input.ListenAddress); err != nil {
 		return fmt.Errorf("unsafe sing-box inbound: %w", err)
 	}
@@ -332,6 +333,35 @@ func (m *SingBoxManager) CopyLogs(w io.Writer) error {
 	defer f.Close()
 	_, err = io.Copy(w, f)
 	return err
+}
+
+// validateRuleSetPaths confines local Rule Set files to the manager-owned directory.
+// It rejects symlinks and non-regular files so a config cannot make sing-box read
+// arbitrary host files through a crafted path or symlink.
+func (m *SingBoxManager) validateRuleSetPaths(ruleSets []singBoxRuleSet) error {
+	needsLocal := false
+	for _, set := range ruleSets { if set.Type == "local" { needsLocal = true; break } }
+	if !needsLocal { return nil }
+	root := filepath.Join(filepath.Dir(m.configPath), "rule-sets")
+	rootInfo, err := os.Lstat(root)
+	if err != nil { return fmt.Errorf("inspect managed Rule Set directory: %w", err) }
+	if !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 { return fmt.Errorf("managed Rule Set path is not a real directory") }
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil { return fmt.Errorf("resolve managed Rule Set directory: %w", err) }
+	for _, set := range ruleSets {
+		if set.Type != "local" { continue }
+		if !filepath.IsAbs(set.Path) || filepath.Clean(set.Path) != set.Path { return fmt.Errorf("Rule Set %q path must be a clean absolute path", set.Tag) }
+		info, err := os.Lstat(set.Path)
+		if err != nil { return fmt.Errorf("inspect Rule Set %q: %w", set.Tag, err) }
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() { return fmt.Errorf("Rule Set %q must be a regular non-symlink file", set.Tag) }
+		resolved, err := filepath.EvalSymlinks(set.Path)
+		if err != nil { return fmt.Errorf("resolve Rule Set %q: %w", set.Tag, err) }
+		rel, err := filepath.Rel(rootReal, resolved)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+			return fmt.Errorf("Rule Set %q must remain inside the managed Rule Set directory", set.Tag)
+		}
+	}
+	return nil
 }
 
 func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singBoxRuleSet, error) {

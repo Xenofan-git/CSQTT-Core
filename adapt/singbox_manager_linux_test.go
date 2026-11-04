@@ -145,3 +145,30 @@ func TestSingBoxManagerSaveConfigIsAtomicAndValidated(t *testing.T) {
 	info, err := os.Stat(config); if err != nil { t.Fatal(err) }
 	if info.Mode().Perm() != 0600 { t.Fatalf("config permissions = %o, want 0600", info.Mode().Perm()) }
 }
+
+
+func TestSingBoxManagerRuleSetPathsStayInsideManagedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	managed := filepath.Join(dir, "rule-sets")
+	if err := os.MkdirAll(managed, 0700); err != nil { t.Fatal(err) }
+	inside := filepath.Join(managed, "trusted.srs")
+	if err := os.WriteFile(inside, []byte("fixture"), 0600); err != nil { t.Fatal(err) }
+	if err := manager.validateRuleSetPaths([]singBoxRuleSet{{Type:"local", Tag:"trusted", Format:"binary", Path:inside}}); err != nil { t.Fatalf("managed regular file rejected: %v", err) }
+	outside := filepath.Join(dir, "outside.srs")
+	if err := os.WriteFile(outside, []byte("fixture"), 0600); err != nil { t.Fatal(err) }
+	if err := manager.validateRuleSetPaths([]singBoxRuleSet{{Type:"local", Tag:"outside", Format:"binary", Path:outside}}); err == nil { t.Fatal("Rule Set outside managed directory was accepted") }
+	link := filepath.Join(managed, "linked.srs")
+	if err := os.Symlink(outside, link); err != nil { t.Fatal(err) }
+	if err := manager.validateRuleSetPaths([]singBoxRuleSet{{Type:"local", Tag:"linked", Format:"binary", Path:link}}); err == nil { t.Fatal("symlinked Rule Set file was accepted") }
+}
+
+func TestSingBoxManagerRejectsSymlinkedRuleSetDirectory(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	outside := filepath.Join(dir, "outside")
+	if err := os.Mkdir(outside, 0700); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(filepath.Join(outside, "rules.srs"), []byte("fixture"), 0600); err != nil { t.Fatal(err) }
+	if err := os.Symlink(outside, filepath.Join(dir, "rule-sets")); err != nil { t.Fatal(err) }
+	if err := manager.validateRuleSetPaths([]singBoxRuleSet{{Type:"local", Tag:"rules", Format:"binary", Path:filepath.Join(dir, "rule-sets", "rules.srs")}}); err == nil { t.Fatal("symlinked managed directory was accepted") }
+}
