@@ -286,6 +286,11 @@ func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
 			ID: "route-a", DomainSuffixes: []string{".example.net"}, DomainKeywords: []string{"stream"},
 			DomainRegexes: []string{"video"}, IPCIDRs: []string{"198.51.100.0/24"},
 			Outbound: "socks-proxy-a", Enabled: true,
+			Advanced: map[string]json.RawMessage{
+				"logical": json.RawMessage(`{"mode":"or","rules":[{"domain_suffix":["example.org"]},{"protocol":["quic"]}]}`),
+				"network": json.RawMessage(`["tcp","udp"]`),
+				"invert": json.RawMessage(`true`),
+			},
 		}},
 	})
 	if err != nil {
