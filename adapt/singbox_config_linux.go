@@ -416,6 +416,15 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound)
 		}
 		rule := makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, item.Outbound)
+		// sing-box logical route rules use the logical-rule schema and do not
+		// accept the ordinary rule-level inbound selector. This CSQTT instance
+		// has a single managed inbound, so the selector is redundant here.
+		if item.Advanced["type"] != nil {
+			var ruleType string
+			if err := json.Unmarshal(item.Advanced["type"], &ruleType); err == nil && ruleType == "logical" {
+				delete(rule, "inbound")
+			}
+		}
 		if len(item.RuleSets) > 0 { rule["rule_set"] = item.RuleSets }
 		for key,raw:=range item.Advanced { if _,managed:=singBoxManagedRouteFields[key]; managed {return nil,fmt.Errorf("route rule %q advanced field %q conflicts with managed routing",item.ID,key)}; var value any; if err:=json.Unmarshal(raw,&value); err!=nil{return nil,fmt.Errorf("route rule %q advanced field %q: %w",item.ID,key,err)}; rule[key]=value }
 		rules = append(rules, rule)
