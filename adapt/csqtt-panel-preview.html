@@ -288,10 +288,12 @@ function renderRouteRuleEditor(){
 function collectRouteRuleEditor(){
  const raw=$('singboxRules');if(raw?.closest('details')?.open)return;
  const root=$('singboxRouteRuleEditor');if(!root)return;
- const rules=[...root.querySelectorAll('.route-rule')].map(card=>{
+ const previous=routeJSON('singboxRules');
+ const rules=[...root.querySelectorAll('.route-rule')].map((card,index)=>{
+  const existing=previous[index]&&typeof previous[index]==='object'?previous[index]:{};
   const get=name=>card.querySelector('[data-field="'+name+'"]');
   const lines=name=>(get(name)?.value||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-  return {ID:get('ID')?.value.trim()||'',Enabled:!!get('Enabled')?.checked,RuleSets:[...(get('RuleSets')?.selectedOptions||[])].map(x=>x.value),Domains:lines('Domains'),DomainSuffixes:lines('DomainSuffixes'),DomainKeywords:lines('DomainKeywords'),DomainRegexes:lines('DomainRegexes'),IPCIDRs:lines('IPCIDRs'),Outbound:get('Outbound')?.value||'csqtt'};
+  return {...existing,ID:get('ID')?.value.trim()||'',Enabled:!!get('Enabled')?.checked,RuleSets:[...(get('RuleSets')?.selectedOptions||[])].map(x=>x.value),Domains:lines('Domains'),DomainSuffixes:lines('DomainSuffixes'),DomainKeywords:lines('DomainKeywords'),DomainRegexes:lines('DomainRegexes'),IPCIDRs:lines('IPCIDRs'),Outbound:get('Outbound')?.value||'csqtt'};
  });
  $('singboxRules').value=JSON.stringify(rules,null,2);
 }
