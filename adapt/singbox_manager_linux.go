@@ -485,12 +485,49 @@ func (m *SingBoxManager) ListRuleSets() ([]singBoxRuleSet, error) {
  sort.Slice(result,func(i,j int)bool{return result[i].Tag<result[j].Tag})
  return result,nil
 }
+
+func singBoxValueReferencesRuleSet(value any, tag string) bool {
+ switch item := value.(type) {
+ case map[string]any:
+  for key, child := range item {
+   if key == "rule_set" {
+    switch refs := child.(type) {
+    case string:
+     if refs == tag { return true }
+    case []any:
+     for _, ref := range refs { if text, ok := ref.(string); ok && text == tag { return true } }
+    }
+   }
+   if singBoxValueReferencesRuleSet(child, tag) { return true }
+  }
+ case []any:
+  for _, child := range item { if singBoxValueReferencesRuleSet(child, tag) { return true } }
+ }
+ return false
+}
+
+// Inspect persisted route JSON, including nested advanced/logical rule objects
+// that the simplified panel model does not expose.
+func singBoxConfigRouteReferencesRuleSet(configPath, tag string) (bool, error) {
+ data, err := os.ReadFile(configPath)
+ if errors.Is(err, os.ErrNotExist) { return false, nil }
+ if err != nil { return false, err }
+ var raw map[string]any
+ if err := json.Unmarshal(data, &raw); err != nil { return false, err }
+ route, _ := raw["route"].(map[string]any)
+ return singBoxValueReferencesRuleSet(route["rules"], tag), nil
+}
+
 func (m *SingBoxManager) DeleteRuleSet(tag string) error {
  if !singBoxIDPattern.MatchString(tag){return fmt.Errorf("invalid Rule Set tag %q",tag)}
  m.mu.Lock();defer m.mu.Unlock()
  if m.cmd!=nil||m.starting||m.configuring{return fmt.Errorf("cannot delete Rule Set while sing-box is running, starting, or configuring")}
  input,err:=m.LoadConfig();if err!=nil&&!errors.Is(err, os.ErrNotExist){return fmt.Errorf("load sing-box config before deletion: %w",err)}
- for _,rule:=range input.Rules{for _,ref:=range rule.RuleSets{if ref==tag{return fmt.Errorf("Rule Set %q is referenced by route rule %q; remove the reference and save first",tag,rule.ID)}}}
+ if referenced, err := singBoxConfigRouteReferencesRuleSet(m.configPath, tag); err != nil {
+  return fmt.Errorf("inspect sing-box Rule Set references: %w", err)
+ } else if referenced {
+  return fmt.Errorf("Rule Set %q is referenced by a route rule; remove the reference and save first", tag)
+ }
  for _,set:=range input.RuleSets{if set.Tag==tag{return fmt.Errorf("Rule Set %q is still registered in sing-box config; remove it from the registry and save first",tag)}}
  dir:=filepath.Join(filepath.Dir(m.configPath),"rule-sets");info,err:=os.Lstat(dir);if errors.Is(err, os.ErrNotExist){return nil}
  if err!=nil||!info.IsDir()||info.Mode()&os.ModeSymlink!=0{return fmt.Errorf("managed Rule Set path is not a safe directory")}

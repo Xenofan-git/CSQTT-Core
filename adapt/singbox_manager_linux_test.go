@@ -465,3 +465,36 @@ func TestSingBoxManagerUploadRuleSetRejectsRegisteredRemoteAndFormatChange(t *te
 		})
 	}
 }
+
+func TestSingBoxManagerDeleteRuleSetRejectsAdvancedNestedRouteReference(t *testing.T) {
+ dir := t.TempDir()
+ config := filepath.Join(dir, "config.json")
+ manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), config, filepath.Join(dir, "sing-box.log"))
+ ruleSetDir := filepath.Join(dir, "rule-sets")
+ if err := os.MkdirAll(ruleSetDir, 0700); err != nil { t.Fatal(err) }
+ path := filepath.Join(ruleSetDir, "hidden-ref.srs")
+ if err := os.WriteFile(path, []byte("managed ruleset"), 0600); err != nil { t.Fatal(err) }
+ encoded, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080", CSQTTAddress:"127.0.0.1:19081"})
+ if err != nil { t.Fatal(err) }
+ var raw map[string]any
+ if err := json.Unmarshal(encoded, &raw); err != nil { t.Fatal(err) }
+ route := raw["route"].(map[string]any)
+ route["rules"] = append(route["rules"].([]any), map[string]any{
+  "action":"reject", "any":[]any{map[string]any{"rule_set":[]any{"hidden-ref"}}},
+ })
+ encoded, err = json.Marshal(raw)
+ if err != nil { t.Fatal(err) }
+ if err := os.WriteFile(config, encoded, 0600); err != nil { t.Fatal(err) }
+ if err := manager.DeleteRuleSet("hidden-ref"); err == nil || !strings.Contains(err.Error(), "referenced by a route rule") {
+  t.Fatalf("expected nested advanced route reference rejection, got %v", err)
+ }
+ if got, err := os.ReadFile(path); err != nil || string(got) != "managed ruleset" {
+  t.Fatalf("referenced Rule Set was changed: %q, %v", got, err)
+ }
+}
+
+func TestSingBoxValueReferencesRuleSetRecursive(t *testing.T) {
+ value := []any{map[string]any{"logical":map[string]any{"any":[]any{map[string]any{"rule_set":[]any{"target"}}}}}}
+ if !singBoxValueReferencesRuleSet(value, "target") { t.Fatal("nested Rule Set reference was not detected") }
+ if singBoxValueReferencesRuleSet(value, "missing") { t.Fatal("unrelated Rule Set tag was reported") }
+}
