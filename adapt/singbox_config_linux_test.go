@@ -345,6 +345,20 @@ func TestSingBoxAdvancedRouteFieldsRoundTripThroughLoadAndSave(t *testing.T) {
  logical:=advanced["logical"].(map[string]any);if logical["mode"]!="or"||len(logical["rules"].([]any))!=2{t.Fatalf("logical matcher changed: %#v",logical)}
 }
 
+func TestSingBoxAdvancedInvertAloneIsNotAMatcher(t *testing.T) {
+	input := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180",
+		CSQTTAddress:  "127.0.0.1:12500",
+		Rules: []singBoxRouteRule{{
+			ID: "invert-only", Outbound: singBoxCSQTTTag, Enabled: true,
+			Advanced: map[string]json.RawMessage{"invert": json.RawMessage("true")},
+		}},
+	}
+	if _, err := buildSingBoxConfig(input); err == nil || !strings.Contains(err.Error(), "has no matchers") {
+		t.Fatalf("invert-only route must be rejected as matcherless, got %v", err)
+	}
+}
+
 func TestSingBoxAdvancedRouteFieldsRejectControlPlaneOverrides(t *testing.T) {
  for _,key:=range []string{"action","outbound","inbound","auto_route","final"}{input:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500",Rules:[]singBoxRouteRule{{ID:"safe",Domains:[]string{"example.org"},Outbound:singBoxCSQTTTag,Enabled:true,Advanced:map[string]json.RawMessage{key:json.RawMessage(`"unsafe"`)}}}};if _,err:=buildSingBoxConfig(input);err==nil{t.Fatalf("unsafe advanced field %q accepted",key)}}
 }
