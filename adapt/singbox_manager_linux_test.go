@@ -381,6 +381,18 @@ func TestSingBoxManagerDeleteRuleSetRejectsReferencedSet(t *testing.T) {
  if err:=manager.DeleteRuleSet("used");err==nil||!strings.Contains(err.Error(),"referenced"){t.Fatalf("expected referenced guard, got %v",err)}
  if _,err:=os.Stat(path);err!=nil{t.Fatalf("referenced Rule Set was deleted: %v",err)}
 }
+func TestSingBoxManagerUploadRuleSetRejectsConcurrentLifecycle(t *testing.T) {
+	dir:=t.TempDir()
+	manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
+	manager.configuring=true
+	if _,err:=manager.UploadRuleSet("demo","demo.json",[]byte(`{"version":3,"rules":[]}`));err==nil||!strings.Contains(err.Error(),"configuring"){
+		t.Fatalf("expected upload to be rejected during configuration, got %v",err)
+	}
+	if _,err:=os.Stat(filepath.Join(dir,"rule-sets"));!os.IsNotExist(err){
+		t.Fatalf("upload created managed directory while rejected: %v",err)
+	}
+}
+
 func TestSingBoxManagerDeleteRuleSetRejectsConfiguredSet(t *testing.T) {
  dir:=t.TempDir();manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
  if err:=os.MkdirAll(filepath.Join(dir,"rule-sets"),0700);err!=nil{t.Fatal(err)}

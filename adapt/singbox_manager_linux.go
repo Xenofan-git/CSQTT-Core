@@ -521,6 +521,30 @@ func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singB
 	if m.binary == "" || m.configPath == "" {
 		return result, fmt.Errorf("sing-box binary and config path are required")
 	}
+	// Upload/activation must not race with Start, SaveConfig, or deletion.
+	// Keep the manager in its configuring state for the complete staged
+	// validation and atomic activation window.
+	m.mu.Lock()
+	if m.cmd != nil || m.starting || m.configuring {
+		m.mu.Unlock()
+		return result, fmt.Errorf("cannot upload Rule Set while sing-box is running, starting, or configuring")
+	}
+	m.configuring = true
+	m.mu.Unlock()
+	defer func() { m.mu.Lock(); m.configuring = false; m.mu.Unlock() }()
+
+	// A tag identifies one registry entry. Refuse type/format changes under
+	// an existing tag rather than leaving a stale path or hidden sibling file.
+	if input, err := m.LoadConfig(); err == nil {
+		for _, existing := range input.RuleSets {
+			if existing.Tag != tag { continue }
+			if existing.Type != "local" || filepath.Ext(existing.Path) != ext {
+				return result, fmt.Errorf("Rule Set tag %q is already registered with a different source or format", tag)
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return result, fmt.Errorf("load sing-box config before upload: %w", err)
+	}
 	dir := filepath.Join(filepath.Dir(m.configPath), "rule-sets")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return result, fmt.Errorf("create Rule Set directory: %w", err)
