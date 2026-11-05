@@ -1349,7 +1349,18 @@ jobs:
         timeout-minutes: 15
         run: |
           set -euxo pipefail
-          ssh -i vm/id_ed25519 -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 'sudo apt-get update -qq && sudo apt-get install -y -qq coturn iproute2 iputils-ping python3'
+          ssh -i vm/id_ed25519 -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 'set -eu
+            apt_retry() {
+              for attempt in $(seq 1 18); do
+                if sudo apt-get -o DPkg::Lock::Timeout=300 "$@"; then return 0; fi
+                echo "apt is busy or temporarily unavailable (attempt $attempt/18); waiting 5 seconds" >&2
+                sleep 5
+              done
+              echo "apt did not become available after 90 seconds" >&2
+              return 1
+            }
+            apt_retry update -qq
+            apt_retry install -y -qq coturn iproute2 iputils-ping python3'
           SCP=(scp -i vm/id_ed25519 -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
           SSH=(ssh -i vm/id_ed25519 -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1)
           # GitHub Actions artifacts do not preserve Unix executable mode.
@@ -1381,7 +1392,18 @@ jobs:
           tar -xzf vm/clean-runtime.tar.gz -C vm/clean-runtime-roundtrip
           (cd vm/clean-runtime-roundtrip && sha256sum -c SHA256SUMS)
           scp -i vm/id_ed25519 -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null vm/clean-runtime.tar.gz tester@127.0.0.1:/home/tester/clean-runtime.tar.gz
-          ssh -i vm/id_ed25519 -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 'sudo apt-get update -qq && sudo apt-get install -y -qq unzip curl binutils'
+          ssh -i vm/id_ed25519 -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 'set -eu
+            apt_retry() {
+              for attempt in $(seq 1 18); do
+                if sudo apt-get -o DPkg::Lock::Timeout=300 "$@"; then return 0; fi
+                echo "apt is busy or temporarily unavailable (attempt $attempt/18); waiting 5 seconds" >&2
+                sleep 5
+              done
+              echo "apt did not become available after 90 seconds" >&2
+              return 1
+            }
+            apt_retry update -qq
+            apt_retry install -y -qq unzip curl binutils'
           ssh -i vm/id_ed25519 -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null tester@127.0.0.1 'set -eu
             mkdir -p /home/tester/clean-runtime
             tar -xzf /home/tester/clean-runtime.tar.gz -C /home/tester/clean-runtime
