@@ -412,3 +412,56 @@ func TestSingBoxManagerDeleteRuleSetRejectsUnsafeFileAndDeletesUnreferenced(t *t
  if err:=os.Symlink(filepath.Join(dir,"outside"),filepath.Join(setsDir,"unsafe.srs"));err!=nil{t.Fatal(err)}
  if err:=manager.DeleteRuleSet("unsafe");err==nil{t.Fatal("expected symlink rejection")}
 }
+
+func TestSingBoxManagerUploadRuleSetRejectsNonCanonicalRegisteredPath(t *testing.T) {
+	dir := t.TempDir()
+	setsDir := filepath.Join(dir, "rule-sets")
+	if err := os.MkdirAll(setsDir, 0700); err != nil { t.Fatal(err) }
+	config := filepath.Join(dir, "config.json")
+	nonCanonical := filepath.Join(setsDir, "other.json")
+	if err := os.WriteFile(nonCanonical, []byte(`{"version":3,"rules":[]}`), 0600); err != nil { t.Fatal(err) }
+	encoded, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19080", CSQTTAddress: "127.0.0.1:19081",
+		RuleSets: []singBoxRuleSet{{Type:"local", Tag:"stable", Format:"source", Path:nonCanonical}},
+	})
+	if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(config, encoded, 0600); err != nil { t.Fatal(err) }
+	manager := NewSingBoxManager(ruleSetValidationFakeBinary(t, "normal"), config, filepath.Join(dir, "sing-box.log"))
+	if _, err := manager.UploadRuleSet("stable", "stable.json", []byte(`{"version":3,"rules":[]}`)); err == nil || !strings.Contains(err.Error(), "managed path") {
+		t.Fatalf("expected non-canonical configured path rejection, got %v", err)
+	}
+	got, err := os.ReadFile(nonCanonical)
+	if err != nil || string(got) != `{"version":3,"rules":[]}` { t.Fatalf("existing configured path changed: %q, %v", got, err) }
+}
+
+func TestSingBoxManagerUploadRuleSetRejectsStaleSiblingFormat(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSingBoxManager(ruleSetValidationFakeBinary(t, "normal"), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	setsDir := filepath.Join(dir, "rule-sets")
+	if err := os.MkdirAll(setsDir, 0700); err != nil { t.Fatal(err) }
+	stale := filepath.Join(setsDir, "ambiguous.srs")
+	if err := os.WriteFile(stale, []byte("stale"), 0600); err != nil { t.Fatal(err) }
+	if _, err := manager.UploadRuleSet("ambiguous", "ambiguous.json", []byte(`{"version":3,"rules":[]}`)); err == nil || !strings.Contains(err.Error(), "stale sibling") {
+		t.Fatalf("expected stale sibling rejection, got %v", err)
+	}
+	if got, err := os.ReadFile(stale); err != nil || string(got) != "stale" { t.Fatalf("stale sibling changed: %q, %v", got, err) }
+}
+
+func TestSingBoxManagerUploadRuleSetRejectsRegisteredRemoteAndFormatChange(t *testing.T) {
+	for _, tc := range []struct{name string; set singBoxRuleSet; filename string; want string}{
+		{name:"remote", set:singBoxRuleSet{Type:"remote",Tag:"shared",Format:"source",URL:"https://example.com/rules.json"}, filename:"shared.json", want:"different source"},
+		{name:"format", set:singBoxRuleSet{Type:"local",Tag:"shared",Format:"binary",Path:"/tmp/rule-sets/shared.srs"}, filename:"shared.json", want:"different source"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir:=t.TempDir()
+			config:=filepath.Join(dir,"config.json")
+			encoded,err:=buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081",RuleSets:[]singBoxRuleSet{tc.set}})
+			if err!=nil { t.Fatal(err) }
+			if err:=os.WriteFile(config,encoded,0600);err!=nil { t.Fatal(err) }
+			manager:=NewSingBoxManager(ruleSetValidationFakeBinary(t,"normal"),config,filepath.Join(dir,"sing-box.log"))
+			if _,err:=manager.UploadRuleSet("shared",tc.filename,[]byte(`{"version":3,"rules":[]}`));err==nil||!strings.Contains(err.Error(),tc.want) {
+				t.Fatalf("expected source/format conflict, got %v",err)
+			}
+		})
+	}
+}

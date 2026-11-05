@@ -533,19 +533,21 @@ func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singB
 	m.mu.Unlock()
 	defer func() { m.mu.Lock(); m.configuring = false; m.mu.Unlock() }()
 
-	// A tag identifies one registry entry. Refuse type/format changes under
-	// an existing tag rather than leaving a stale path or hidden sibling file.
+	// A tag identifies one registry entry. It must resolve to the canonical
+	// manager-owned filename; extension-only matches could otherwise overwrite
+	// an unrelated path while leaving the configured Rule Set unchanged.
+	dir := filepath.Join(filepath.Dir(m.configPath), "rule-sets")
+	activePath := filepath.Join(dir, tag+ext)
 	if input, err := m.LoadConfig(); err == nil {
 		for _, existing := range input.RuleSets {
 			if existing.Tag != tag { continue }
-			if existing.Type != "local" || filepath.Ext(existing.Path) != ext {
-				return result, fmt.Errorf("Rule Set tag %q is already registered with a different source or format", tag)
+			if existing.Type != "local" || existing.Format != format || filepath.Clean(existing.Path) != activePath {
+				return result, fmt.Errorf("Rule Set tag %q is already registered with a different source, format, or managed path", tag)
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return result, fmt.Errorf("load sing-box config before upload: %w", err)
 	}
-	dir := filepath.Join(filepath.Dir(m.configPath), "rule-sets")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return result, fmt.Errorf("create Rule Set directory: %w", err)
 	}
@@ -554,7 +556,27 @@ func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singB
 		return result, fmt.Errorf("Rule Set directory is not a safe directory")
 	}
 
-	activePath := filepath.Join(dir, tag+ext)
+	// Do not leave a stale sibling format for the same tag. The registry
+	// intentionally presents one entry per tag, so two physical formats would
+	// make its effective source ambiguous.
+	otherExt := ".srs"
+	if ext == ".srs" { otherExt = ".json" }
+	otherPath := filepath.Join(dir, tag+otherExt)
+	if otherInfo, otherErr := os.Lstat(otherPath); otherErr == nil {
+		if otherInfo.Mode()&os.ModeSymlink != 0 || !otherInfo.Mode().IsRegular() {
+			return result, fmt.Errorf("existing Rule Set sibling for tag %q is not a regular managed file", tag)
+		}
+		return result, fmt.Errorf("Rule Set tag %q has a stale sibling file in the other format; remove it before uploading", tag)
+	} else if !errors.Is(otherErr, os.ErrNotExist) {
+		return result, fmt.Errorf("inspect alternate Rule Set format for %q: %w", tag, otherErr)
+	}
+	if activeInfo, activeErr := os.Lstat(activePath); activeErr == nil {
+		if activeInfo.Mode()&os.ModeSymlink != 0 || !activeInfo.Mode().IsRegular() {
+			return result, fmt.Errorf("existing Rule Set %q is not a regular managed file", tag)
+		}
+	} else if !errors.Is(activeErr, os.ErrNotExist) {
+		return result, fmt.Errorf("inspect existing Rule Set %q: %w", tag, activeErr)
+	}
 	staging, err := os.CreateTemp(dir, ".upload-*.tmp")
 	if err != nil {
 		return result, fmt.Errorf("create Rule Set staging file: %w", err)
