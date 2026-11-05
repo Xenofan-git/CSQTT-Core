@@ -322,7 +322,7 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 			continue
 		}
 		if outbound == "" || known[outbound] == nil { return input, fmt.Errorf("route references missing outbound %q", outbound) }
-		input.Rules=append(input.Rules,singBoxRouteRule{ID:fmt.Sprintf("loaded-%d",len(input.Rules)+1),Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Outbound:outbound,Enabled:true})
+		input.Rules=append(input.Rules,singBoxRouteRule{ID:fmt.Sprintf("loaded-%d",len(input.Rules)+1),Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Advanced:singBoxAdvancedFieldsFromRule(rule),Outbound:outbound,Enabled:true})
 	}
 	return input,nil
 }

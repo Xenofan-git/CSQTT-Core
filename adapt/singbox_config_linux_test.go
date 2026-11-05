@@ -331,3 +331,20 @@ func TestSingBoxRuleSetRejectsUnknownAndInsecureSources(t *testing.T) {
 	input.RuleSets = []singBoxRuleSet{{Type:"remote",Tag:"remote",Format:"binary",URL:"http://example.com/rules.srs"}}
 	if _, err := buildSingBoxConfig(input); err == nil { t.Fatal("expected HTTP Rule Set rejection") }
 }
+
+
+func TestSingBoxAdvancedRouteFieldsRoundTripThroughLoadAndSave(t *testing.T) {
+ dir:=t.TempDir(); config:=filepath.Join(dir,"config.json"); manager:=NewSingBoxManager(newFakeSingBox(t,"exit 0"),config,filepath.Join(dir,"sing-box.log"))
+ original:=`{"log":{"level":"info"},"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19180}],"outbounds":[{"type":"socks","tag":"csqtt","server":"127.0.0.1","server_port":12500,"version":"5"},{"type":"direct","tag":"direct"}],"route":{"rules":[{"inbound":["csqtt-route-in"],"action":"route","outbound":"csqtt","logical":{"mode":"or","rules":[{"domain_suffix":["example.org"]},{"protocol":["quic"]}]},"network":["tcp","udp"],"invert":true}],"final":"csqtt","rule_set":[]}}`
+ if err:=os.WriteFile(config,[]byte(original),0600);err!=nil{t.Fatal(err)}
+ loaded,err:=manager.LoadConfig();if err!=nil{t.Fatal(err)};if len(loaded.Rules)!=1||len(loaded.Rules[0].Advanced)!=3{t.Fatalf("advanced fields not loaded: %#v",loaded.Rules)}
+ if err:=manager.SaveConfig(loaded);err!=nil{t.Fatal(err)};data,err:=os.ReadFile(config);if err!=nil{t.Fatal(err)}
+ var got map[string]any;if err:=json.Unmarshal(data,&got);err!=nil{t.Fatal(err)};rules:=got["route"].(map[string]any)["rules"].([]any);var advanced map[string]any
+ for _,candidate:=range rules{rule:=candidate.(map[string]any);if rule["logical"]!=nil{advanced=rule;break}}
+ if advanced==nil||advanced["network"]==nil||advanced["invert"]!=true{t.Fatalf("advanced fields lost: %#v",rules)}
+ logical:=advanced["logical"].(map[string]any);if logical["mode"]!="or"||len(logical["rules"].([]any))!=2{t.Fatalf("logical matcher changed: %#v",logical)}
+}
+
+func TestSingBoxAdvancedRouteFieldsRejectControlPlaneOverrides(t *testing.T) {
+ for _,key:=range []string{"action","outbound","inbound","auto_route","final"}{input:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500",Rules:[]singBoxRouteRule{{ID:"safe",Domains:[]string{"example.org"},Outbound:singBoxCSQTTTag,Enabled:true,Advanced:map[string]json.RawMessage{key:json.RawMessage(`"unsafe"`)}}}};if _,err:=buildSingBoxConfig(input);err==nil{t.Fatalf("unsafe advanced field %q accepted",key)}}
+}

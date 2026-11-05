@@ -40,6 +40,7 @@ type singBoxRuleSet struct {
 
 type singBoxRouteRule struct {
 	ID             string
+	Advanced       map[string]json.RawMessage
 	RuleSets       []string
 	Domains        []string
 	DomainSuffixes []string
@@ -66,6 +67,23 @@ type singBoxConfig struct {
 	Inbounds []map[string]any    `json:"inbounds"`
 	Outbounds []map[string]any   `json:"outbounds"`
 	Route    map[string]any      `json:"route"`
+}
+
+// Only matcher fields are accepted here; routing control remains generated.
+var singBoxAdvancedRouteFields = map[string]struct{}{
+ "logical": {}, "invert": {}, "network": {}, "auth_user": {}, "protocol": {}, "client": {},
+ "source_ip_cidr": {}, "source_ip_is_private": {}, "ip_is_private": {}, "ip_version": {},
+ "port": {}, "port_range": {}, "source_port": {}, "source_port_range": {},
+ "process_name": {}, "process_path": {}, "process_path_regex": {}, "package_name": {},
+ "user": {}, "user_id": {}, "wifi_ssid": {}, "wifi_bssid": {}, "network_type": {},
+ "network_is_expensive": {}, "network_is_constrained": {}, "interface_address": {}, "preferred_by": {},
+}
+var singBoxManagedRouteFields = map[string]struct{}{ "inbound": {}, "action": {}, "outbound": {}, "domain": {}, "domain_suffix": {}, "domain_keyword": {}, "domain_regex": {}, "ip_cidr": {}, "rule_set": {}, }
+func validateSingBoxAdvancedRouteFields(fields map[string]json.RawMessage) error {
+ for key, raw := range fields { if _,ok:=singBoxAdvancedRouteFields[key]; !ok { return fmt.Errorf("advanced route field %q is not an allowed matcher",key) }; if len(raw)==0 || !json.Valid(raw) { return fmt.Errorf("advanced route field %q contains invalid JSON",key) } }; return nil
+}
+func singBoxAdvancedFieldsFromRule(rule map[string]any) map[string]json.RawMessage {
+ fields:=make(map[string]json.RawMessage); for key,value:=range rule { if _,managed:=singBoxManagedRouteFields[key]; managed {continue}; if _,allowed:=singBoxAdvancedRouteFields[key]; !allowed {continue}; encoded,err:=json.Marshal(value); if err==nil {fields[key]=encoded} }; if len(fields)==0{return nil}; return fields
 }
 
 var singBoxIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,32}$`)
@@ -369,8 +387,10 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		if _, exists := knownOutbounds[item.Outbound]; !exists {
 			return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound)
 		}
+		if err := validateSingBoxAdvancedRouteFields(item.Advanced); err != nil { return nil, fmt.Errorf("route rule %q advanced fields: %w",item.ID,err) }
 		rule := makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, item.Outbound)
 		if len(item.RuleSets) > 0 { rule["rule_set"] = item.RuleSets }
+		for key,raw:=range item.Advanced { if _,managed:=singBoxManagedRouteFields[key]; managed {return nil,fmt.Errorf("route rule %q advanced field %q conflicts with managed routing",item.ID,key)}; var value any; if err:=json.Unmarshal(raw,&value); err!=nil{return nil,fmt.Errorf("route rule %q advanced field %q: %w",item.ID,key,err)}; rule[key]=value }
 		rules = append(rules, rule)
 	}
 	// CSQTT is the explicit system fallback. Direct exclusions and enabled
