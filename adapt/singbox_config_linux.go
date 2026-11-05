@@ -71,7 +71,7 @@ type singBoxConfig struct {
 
 // Only matcher fields are accepted here; routing control remains generated.
 var singBoxAdvancedRouteFields = map[string]struct{}{
- "logical": {}, "invert": {}, "network": {}, "auth_user": {}, "protocol": {}, "client": {},
+ "type": {}, "mode": {}, "rules": {}, "invert": {}, "network": {}, "auth_user": {}, "protocol": {}, "client": {},
  "source_ip_cidr": {}, "source_ip_is_private": {}, "ip_is_private": {}, "ip_version": {},
  "port": {}, "port_range": {}, "source_port": {}, "source_port_range": {},
  "process_name": {}, "process_path": {}, "process_path_regex": {}, "package_name": {},
@@ -80,13 +80,28 @@ var singBoxAdvancedRouteFields = map[string]struct{}{
 }
 var singBoxManagedRouteFields = map[string]struct{}{ "inbound": {}, "action": {}, "outbound": {}, "domain": {}, "domain_suffix": {}, "domain_keyword": {}, "domain_regex": {}, "ip_cidr": {}, "rule_set": {}, }
 func validateSingBoxAdvancedRouteFields(fields map[string]json.RawMessage) error {
- for key, raw := range fields { if _,ok:=singBoxAdvancedRouteFields[key]; !ok { return fmt.Errorf("advanced route field %q is not an allowed matcher",key) }; if len(raw)==0 || !json.Valid(raw) { return fmt.Errorf("advanced route field %q contains invalid JSON",key) } }; return nil
+ for key, raw := range fields {
+  if _,ok:=singBoxAdvancedRouteFields[key]; !ok { return fmt.Errorf("advanced route field %q is not an allowed matcher",key) }
+  if len(raw)==0 || !json.Valid(raw) { return fmt.Errorf("advanced route field %q contains invalid JSON",key) }
+ }
+ _, hasType := fields["type"]
+ _, hasMode := fields["mode"]
+ _, hasRules := fields["rules"]
+ if hasType || hasMode || hasRules {
+  var ruleType, mode string
+  if !hasType || !hasMode || !hasRules { return fmt.Errorf("logical route matcher requires type, mode, and rules") }
+  if err:=json.Unmarshal(fields["type"], &ruleType); err!=nil || ruleType!="logical" { return fmt.Errorf("advanced route type must be logical") }
+  if err:=json.Unmarshal(fields["mode"], &mode); err!=nil || (mode!="and" && mode!="or") { return fmt.Errorf("logical route mode must be and or or") }
+  var rules []json.RawMessage
+  if err:=json.Unmarshal(fields["rules"], &rules); err!=nil || len(rules)==0 { return fmt.Errorf("logical route rules must be a non-empty array") }
+ }
+ return nil
 }
 
 // invert modifies a matcher; by itself it does not define one.
 func singBoxAdvancedHasMatcher(fields map[string]json.RawMessage) bool {
 	for key := range fields {
-		if key != "invert" {
+		if key != "invert" && key != "type" && key != "mode" {
 			return true
 		}
 	}
