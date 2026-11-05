@@ -273,7 +273,8 @@ async function refreshSingBoxLogs(){try{$('singboxLogs').textContent=await req('
 function routeJSON(id){try{const value=JSON.parse($(id).value||'[]');return Array.isArray(value)?value:[]}catch(_){return []}}
 function renderRouteRuleEditor(){
  const root=$('singboxRouteRuleEditor');if(!root)return;
- let rules=routeJSON('singboxRules'),sets=routeJSON('singboxRuleSets'),proxies=routeJSON('singboxOutbounds');
+ let rules;try{rules=JSON.parse($('singboxRules').value||'[]');if(!Array.isArray(rules))throw new Error('ожидается JSON-массив')}catch(e){toast('JSON правил: '+e.message,true);return}
+ const sets=routeJSON('singboxRuleSets'),proxies=routeJSON('singboxOutbounds');
  const tags=sets.map(x=>x.Tag||x.tag).filter(Boolean);
  const outs=['direct','csqtt',...proxies.filter(x=>x.Enabled??x.enabled).map(x=>'socks-'+(x.ID||x.id)).filter(x=>x!=='socks-')];
  root.innerHTML=rules.length?rules.map((r,i)=>{
@@ -285,6 +286,7 @@ function renderRouteRuleEditor(){
  root.querySelectorAll('[data-remove-route-rule]').forEach(b=>b.addEventListener('click',()=>{const idx=Number(b.dataset.removeRouteRule);const rules=routeJSON('singboxRules');rules.splice(idx,1);$('singboxRules').value=JSON.stringify(rules,null,2);renderRouteRuleEditor()}));
 }
 function collectRouteRuleEditor(){
+ const raw=$('singboxRules');if(raw?.closest('details')?.open)return;
  const root=$('singboxRouteRuleEditor');if(!root)return;
  const rules=[...root.querySelectorAll('.route-rule')].map(card=>{
   const get=name=>card.querySelector('[data-field="'+name+'"]');

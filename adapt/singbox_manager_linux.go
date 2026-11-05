@@ -490,6 +490,7 @@ func (m *SingBoxManager) DeleteRuleSet(tag string) error {
  m.mu.Lock();defer m.mu.Unlock()
  if m.cmd!=nil||m.starting||m.configuring{return fmt.Errorf("cannot delete Rule Set while sing-box is running, starting, or configuring")}
  input,err:=m.LoadConfig();if err!=nil&&!errors.Is(err, os.ErrNotExist){return fmt.Errorf("load sing-box config before deletion: %w",err)}
+ for _,set:=range input.RuleSets{if set.Tag==tag{return fmt.Errorf("Rule Set %q is still registered in sing-box config; remove it from the registry and save first",tag)}}
  for _,rule:=range input.Rules{for _,ref:=range rule.RuleSets{if ref==tag{return fmt.Errorf("Rule Set %q is referenced by route rule %q; remove the reference and save first",tag,rule.ID)}}}
  dir:=filepath.Join(filepath.Dir(m.configPath),"rule-sets");info,err:=os.Lstat(dir);if errors.Is(err, os.ErrNotExist){return nil}
  if err!=nil||!info.IsDir()||info.Mode()&os.ModeSymlink!=0{return fmt.Errorf("managed Rule Set path is not a safe directory")}
