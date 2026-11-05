@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sort"
 	"fmt"
 	"io"
 	"os"
@@ -459,6 +460,42 @@ func (m *SingBoxManager) validateRuleSetUpload(ctx context.Context, stagedPath, 
 	default:
 		return fmt.Errorf("unsupported Rule Set format %q", format)
 	}
+}
+
+
+func (m *SingBoxManager) ListRuleSets() ([]singBoxRuleSet, error) {
+ byTag:=make(map[string]singBoxRuleSet)
+ input,err:=m.LoadConfig()
+ if err==nil { for _,set:=range input.RuleSets { byTag[set.Tag]=set } } else if !os.IsNotExist(err) { return nil,fmt.Errorf("load Rule Set registry: %w",err) }
+ dir:=filepath.Join(filepath.Dir(m.configPath),"rule-sets")
+ entries,err:=os.ReadDir(dir)
+ if err!=nil&&!os.IsNotExist(err){return nil,fmt.Errorf("read managed Rule Set directory: %w",err)}
+ if err==nil {
+  info,e:=os.Lstat(dir);if e!=nil||!info.IsDir()||info.Mode()&os.ModeSymlink!=0{return nil,fmt.Errorf("managed Rule Set path is not a safe directory")}
+  for _,entry:=range entries {
+   name:=entry.Name();ext:=strings.ToLower(filepath.Ext(name));if ext!=".srs"&&ext!=".json"{continue}
+   tag:=strings.TrimSuffix(name,filepath.Ext(name));if !singBoxIDPattern.MatchString(tag){continue}
+   info,e:=os.Lstat(filepath.Join(dir,name));if e!=nil||info.Mode()&os.ModeSymlink!=0||!info.Mode().IsRegular(){continue}
+   format:="binary";if ext==".json"{format="source"}
+   if _,ok:=byTag[tag];!ok{byTag[tag]=singBoxRuleSet{Type:"local",Tag:tag,Format:format,Path:filepath.Join(dir,name)}}
+  }
+ }
+ result:=make([]singBoxRuleSet,0,len(byTag));for _,set:=range byTag{result=append(result,set)}
+ sort.Slice(result,func(i,j int)bool{return result[i].Tag<result[j].Tag})
+ return result,nil
+}
+func (m *SingBoxManager) DeleteRuleSet(tag string) error {
+ if !singBoxIDPattern.MatchString(tag){return fmt.Errorf("invalid Rule Set tag %q",tag)}
+ m.mu.Lock();defer m.mu.Unlock()
+ if m.cmd!=nil||m.starting||m.configuring{return fmt.Errorf("cannot delete Rule Set while sing-box is running, starting, or configuring")}
+ input,err:=m.LoadConfig();if err!=nil&&!os.IsNotExist(err){return fmt.Errorf("load sing-box config before deletion: %w",err)}
+ for _,rule:=range input.Rules{for _,ref:=range rule.RuleSets{if ref==tag{return fmt.Errorf("Rule Set %q is referenced by route rule %q; remove the reference and save first",tag,rule.ID)}}}
+ dir:=filepath.Join(filepath.Dir(m.configPath),"rule-sets");info,err:=os.Lstat(dir);if os.IsNotExist(err){return nil}
+ if err!=nil||!info.IsDir()||info.Mode()&os.ModeSymlink!=0{return fmt.Errorf("managed Rule Set path is not a safe directory")}
+ removed:=false
+ for _,ext:=range []string{".srs",".json"}{path:=filepath.Join(dir,tag+ext);info,err:=os.Lstat(path);if os.IsNotExist(err){continue};if err!=nil{return fmt.Errorf("inspect Rule Set %q: %w",tag,err)};if info.Mode()&os.ModeSymlink!=0||!info.Mode().IsRegular(){return fmt.Errorf("Rule Set %q is not a regular managed file",tag)};if err:=os.Remove(path);err!=nil{return fmt.Errorf("delete Rule Set %q: %w",tag,err)};removed=true}
+ if removed{if d,err:=os.Open(dir);err==nil{_ = d.Sync();_ = d.Close()}}
+ return nil
 }
 
 func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singBoxRuleSet, error) {

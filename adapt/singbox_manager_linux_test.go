@@ -371,3 +371,22 @@ func TestSingBoxManagerUploadRuleSetPassesPinnedBinary(t *testing.T) {
 		t.Fatalf("invalid binary Rule Set was activated (stat error: %v)", err)
 	}
 }
+
+func TestSingBoxManagerDeleteRuleSetRejectsReferencedSet(t *testing.T) {
+ dir:=t.TempDir();manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
+ if err:=os.MkdirAll(filepath.Join(dir,"rule-sets"),0700);err!=nil{t.Fatal(err)}
+ path:=filepath.Join(dir,"rule-sets","used.srs");if err:=os.WriteFile(path,[]byte("fixture"),0600);err!=nil{t.Fatal(err)}
+ raw:=`{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19180}],"outbounds":[{"type":"socks","tag":"csqtt","server":"127.0.0.1","server_port":12500}],"route":{"rule_set":[{"type":"local","tag":"used","format":"binary","path":"`+path+`"}],"rules":[{"action":"route","rule_set":["used"],"outbound":"csqtt"}]}}`
+ if err:=os.WriteFile(manager.configPath,[]byte(raw),0600);err!=nil{t.Fatal(err)}
+ if err:=manager.DeleteRuleSet("used");err==nil||!strings.Contains(err.Error(),"referenced"){t.Fatalf("expected referenced guard, got %v",err)}
+ if _,err:=os.Stat(path);err!=nil{t.Fatalf("referenced Rule Set was deleted: %v",err)}
+}
+func TestSingBoxManagerDeleteRuleSetRejectsUnsafeFileAndDeletesUnreferenced(t *testing.T) {
+ dir:=t.TempDir();manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"));setsDir:=filepath.Join(dir,"rule-sets")
+ if err:=os.MkdirAll(setsDir,0700);err!=nil{t.Fatal(err)}
+ path:=filepath.Join(setsDir,"free.json");if err:=os.WriteFile(path,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+ if err:=manager.DeleteRuleSet("free");err!=nil{t.Fatal(err)}
+ if _,err:=os.Stat(path);!os.IsNotExist(err){t.Fatalf("file remains: %v",err)}
+ if err:=os.Symlink(filepath.Join(dir,"outside"),filepath.Join(setsDir,"unsafe.srs"));err!=nil{t.Fatal(err)}
+ if err:=manager.DeleteRuleSet("unsafe");err==nil{t.Fatal("expected symlink rejection")}
+}

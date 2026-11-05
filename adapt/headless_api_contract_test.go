@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -122,4 +124,25 @@ func TestSensitiveEndpointsDenyPublicPeers(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSingBoxRuleSetRegistryEndpoints(t *testing.T) {
+ dir:=t.TempDir();manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
+ if err:=os.MkdirAll(filepath.Join(dir,"rule-sets"),0700);err!=nil{t.Fatal(err)}
+ if err:=os.WriteFile(filepath.Join(dir,"rule-sets","orphan.srs"),[]byte("fixture"),0600);err!=nil{t.Fatal(err)}
+ handler:=apiHandlerWithSingBox(&App{},manager)
+ req:=httptest.NewRequest(http.MethodGet,"/singbox/rulesets",nil);req.RemoteAddr="192.168.1.2:12345";rec:=httptest.NewRecorder();handler.ServeHTTP(rec,req)
+ if rec.Code!=http.StatusOK{t.Fatalf("GET registry status=%d body=%q",rec.Code,rec.Body.String())}
+ var payload struct{RuleSets []singBoxRuleSet `json:"rule_sets"`};if err:=json.Unmarshal(rec.Body.Bytes(),&payload);err!=nil{t.Fatal(err)}
+ if len(payload.RuleSets)!=1||payload.RuleSets[0].Tag!="orphan"{t.Fatalf("unexpected registry: %+v",payload.RuleSets)}
+ req=httptest.NewRequest(http.MethodDelete,"/singbox/rulesets/orphan",nil);req.RemoteAddr="192.168.1.2:12345";rec=httptest.NewRecorder();handler.ServeHTTP(rec,req)
+ if rec.Code!=http.StatusOK{t.Fatalf("DELETE registry status=%d body=%q",rec.Code,rec.Body.String())}
+ if _,err:=os.Stat(filepath.Join(dir,"rule-sets","orphan.srs"));!os.IsNotExist(err){t.Fatalf("Rule Set file remains: %v",err)}
+}
+func TestSingBoxRuleSetRegistryEndpointsRequirePrivatePeer(t *testing.T) {
+ dir:=t.TempDir();manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
+ for _,tc:=range []struct{method,path string}{{http.MethodGet,"/singbox/rulesets"},{http.MethodDelete,"/singbox/rulesets/demo"}} {
+  req:=httptest.NewRequest(tc.method,tc.path,nil);req.RemoteAddr="203.0.113.9:1234";rec:=httptest.NewRecorder();apiHandlerWithSingBox(&App{},manager).ServeHTTP(rec,req)
+  if rec.Code!=http.StatusForbidden{t.Fatalf("%s %s status=%d",tc.method,tc.path,rec.Code)}
+ }
 }

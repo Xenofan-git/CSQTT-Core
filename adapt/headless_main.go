@@ -490,6 +490,21 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
             http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
         }
     })
+    mux.HandleFunc("/singbox/rulesets", func(w http.ResponseWriter, r *http.Request) {
+        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
+        if !method(w, r, http.MethodGet) { return }
+        sets, err := singBox.ListRuleSets()
+        if err != nil { http.Error(w, "unable to list Rule Sets: "+err.Error(), http.StatusInternalServerError); return }
+        writeJSON(w, map[string]any{"rule_sets": sets})
+    })
+    mux.HandleFunc("/singbox/rulesets/", func(w http.ResponseWriter, r *http.Request) {
+        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
+        if !method(w, r, http.MethodDelete) { return }
+        tag := strings.TrimPrefix(r.URL.Path, "/singbox/rulesets/")
+        if tag == "" || strings.Contains(tag, "/") { http.Error(w, "invalid Rule Set tag", http.StatusBadRequest); return }
+        if err := singBox.DeleteRuleSet(tag); err != nil { http.Error(w, err.Error(), http.StatusConflict); return }
+        writeJSON(w, map[string]bool{"ok": true})
+    })
     mux.HandleFunc("/singbox/rulesets/upload", func(w http.ResponseWriter, r *http.Request) {
         if !method(w, r, http.MethodPost) { return }
         if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
