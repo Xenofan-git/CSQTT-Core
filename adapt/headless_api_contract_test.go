@@ -126,6 +126,15 @@ func TestSensitiveEndpointsDenyPublicPeers(t *testing.T) {
 	}
 }
 
+func TestSingBoxConfigGetReturnsUnconfiguredWithoutFile(t *testing.T) {
+ dir:=t.TempDir();manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
+ req:=httptest.NewRequest(http.MethodGet,"/singbox/config",nil);req.RemoteAddr="192.168.1.2:12345";rec:=httptest.NewRecorder()
+ apiHandlerWithSingBox(&App{},manager).ServeHTTP(rec,req)
+ if rec.Code!=http.StatusOK{t.Fatalf("GET config status=%d body=%q",rec.Code,rec.Body.String())}
+ var payload map[string]any;if err:=json.Unmarshal(rec.Body.Bytes(),&payload);err!=nil{t.Fatal(err)}
+ if payload["configured"]!=false{t.Fatalf("expected configured=false, got %v",payload)}
+}
+
 func TestSingBoxRuleSetRegistryEndpoints(t *testing.T) {
  dir:=t.TempDir();manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
  if err:=os.MkdirAll(filepath.Join(dir,"rule-sets"),0700);err!=nil{t.Fatal(err)}

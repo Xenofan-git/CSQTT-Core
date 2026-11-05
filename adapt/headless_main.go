@@ -6,6 +6,7 @@ import (
     "sync"
     "crypto/subtle"
     "context"
+    "errors"
     "embed"
     "io"
     "io/fs"
@@ -474,7 +475,7 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
         case http.MethodGet:
             input, err := singBox.LoadConfig()
             if err != nil {
-                if os.IsNotExist(err) { writeJSON(w, map[string]any{"configured": false}); return }
+                if errors.Is(err, os.ErrNotExist) { writeJSON(w, map[string]any{"configured": false}); return }
                 http.Error(w, "unable to load sing-box config: "+err.Error(), http.StatusInternalServerError); return
             }
             writeJSON(w, map[string]any{"configured": true, "config": input})
