@@ -82,6 +82,16 @@ var singBoxManagedRouteFields = map[string]struct{}{ "inbound": {}, "action": {}
 func validateSingBoxAdvancedRouteFields(fields map[string]json.RawMessage) error {
  for key, raw := range fields { if _,ok:=singBoxAdvancedRouteFields[key]; !ok { return fmt.Errorf("advanced route field %q is not an allowed matcher",key) }; if len(raw)==0 || !json.Valid(raw) { return fmt.Errorf("advanced route field %q contains invalid JSON",key) } }; return nil
 }
+
+// invert modifies a matcher; by itself it does not define one.
+func singBoxAdvancedHasMatcher(fields map[string]json.RawMessage) bool {
+	for key := range fields {
+		if key != "invert" {
+			return true
+		}
+	}
+	return false
+}
 func singBoxAdvancedFieldsFromRule(rule map[string]any) map[string]json.RawMessage {
  fields:=make(map[string]json.RawMessage); for key,value:=range rule { if _,managed:=singBoxManagedRouteFields[key]; managed {continue}; if _,allowed:=singBoxAdvancedRouteFields[key]; !allowed {continue}; encoded,err:=json.Marshal(value); if err==nil {fields[key]=encoded} }; if len(fields)==0{return nil}; return fields
 }
@@ -375,7 +385,10 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		if err != nil { return nil, fmt.Errorf("route rule %q regexes: %w", item.ID, err) }
 		cidrs, err := normalizeSingBoxCIDRs(item.IPCIDRs)
 		if err != nil { return nil, fmt.Errorf("route rule %q IP/CIDR: %w", item.ID, err) }
-		if len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs)+len(item.RuleSets) == 0 {
+		if err := validateSingBoxAdvancedRouteFields(item.Advanced); err != nil {
+			return nil, fmt.Errorf("route rule %q advanced fields: %w", item.ID, err)
+		}
+		if len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs)+len(item.RuleSets) == 0 && !singBoxAdvancedHasMatcher(item.Advanced) {
 			return nil, fmt.Errorf("route rule %q has no matchers", item.ID)
 		}
 		seenTags := make(map[string]struct{}, len(item.RuleSets))
@@ -387,7 +400,6 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		if _, exists := knownOutbounds[item.Outbound]; !exists {
 			return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound)
 		}
-		if err := validateSingBoxAdvancedRouteFields(item.Advanced); err != nil { return nil, fmt.Errorf("route rule %q advanced fields: %w",item.ID,err) }
 		rule := makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, item.Outbound)
 		if len(item.RuleSets) > 0 { rule["rule_set"] = item.RuleSets }
 		for key,raw:=range item.Advanced { if _,managed:=singBoxManagedRouteFields[key]; managed {return nil,fmt.Errorf("route rule %q advanced field %q conflicts with managed routing",item.ID,key)}; var value any; if err:=json.Unmarshal(raw,&value); err!=nil{return nil,fmt.Errorf("route rule %q advanced field %q: %w",item.ID,key,err)}; rule[key]=value }
