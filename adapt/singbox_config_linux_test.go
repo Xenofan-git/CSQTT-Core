@@ -564,3 +564,285 @@ func TestSingBoxRoutesDomainThroughAuthenticatedExternalSOCKS5WithoutCSQTT(t *te
 		t.Fatal("external SOCKS5 did not receive the routed destination")
 	}
 }
+
+
+// TestSingBoxUDPAssociateRelaysThroughAuthenticatedExternalSOCKS5 verifies
+// that the pinned sing-box build negotiates RFC 1929 credentials, establishes
+// an upstream UDP ASSOCIATE, and relays an actual datagram in both directions.
+func TestSingBoxUDPAssociateRelaysThroughAuthenticatedExternalSOCKS5(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" {
+		t.Skip("requires pinned sing-box binary from CI")
+	}
+
+	relay, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+
+	upstream, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upstream.Close()
+
+	authenticated := make(chan bool, 1)
+	associate := make(chan bool, 1)
+	relayErrors := make(chan error, 1)
+	go func() {
+		conn, acceptErr := upstream.Accept()
+		if acceptErr != nil {
+			relayErrors <- acceptErr
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(12 * time.Second))
+
+		var greeting [2]byte
+		if _, e := io.ReadFull(conn, greeting[:]); e != nil {
+			relayErrors <- e
+			return
+		}
+		methods := make([]byte, int(greeting[1]))
+		if _, e := io.ReadFull(conn, methods); e != nil {
+			relayErrors <- e
+			return
+		}
+		if greeting[0] != 5 {
+			_, _ = conn.Write([]byte{5, 255})
+			relayErrors <- fmt.Errorf("unexpected SOCKS version %d", greeting[0])
+			return
+		}
+		if _, e := conn.Write([]byte{5, 2}); e != nil {
+			relayErrors <- e
+			return
+		}
+
+		var authHead [2]byte
+		if _, e := io.ReadFull(conn, authHead[:]); e != nil {
+			relayErrors <- e
+			return
+		}
+		user := make([]byte, int(authHead[1]))
+		if _, e := io.ReadFull(conn, user); e != nil {
+			relayErrors <- e
+			return
+		}
+		var passLen [1]byte
+		if _, e := io.ReadFull(conn, passLen[:]); e != nil {
+			relayErrors <- e
+			return
+		}
+		pass := make([]byte, int(passLen[0]))
+		if _, e := io.ReadFull(conn, pass); e != nil {
+			relayErrors <- e
+			return
+		}
+		ok := authHead[0] == 1 && string(user) == "udp-user" && string(pass) == "udp-pass"
+		authenticated <- ok
+		if ok {
+			_, _ = conn.Write([]byte{1, 0})
+		} else {
+			_, _ = conn.Write([]byte{1, 1})
+			return
+		}
+
+		var request [4]byte
+		if _, e := io.ReadFull(conn, request[:]); e != nil {
+			relayErrors <- e
+			return
+		}
+		if request[0] != 5 || request[1] != 3 || request[2] != 0 {
+			_, _ = conn.Write([]byte{5, 7, 0, 1, 0, 0, 0, 0, 0, 0})
+			associate <- false
+			return
+		}
+		switch request[3] {
+		case 1:
+			var address [4]byte
+			if _, e := io.ReadFull(conn, address[:]); e != nil {
+				relayErrors <- e
+				return
+			}
+		case 3:
+			var size [1]byte
+			if _, e := io.ReadFull(conn, size[:]); e != nil {
+				relayErrors <- e
+				return
+			}
+			name := make([]byte, int(size[0]))
+			if _, e := io.ReadFull(conn, name); e != nil {
+				relayErrors <- e
+				return
+			}
+		case 4:
+			var address [16]byte
+			if _, e := io.ReadFull(conn, address[:]); e != nil {
+				relayErrors <- e
+				return
+			}
+		default:
+			relayErrors <- fmt.Errorf("unsupported upstream UDP ASSOCIATE address type %d", request[3])
+			return
+		}
+		var port [2]byte
+		if _, e := io.ReadFull(conn, port[:]); e != nil {
+			relayErrors <- e
+			return
+		}
+
+		bound := relay.LocalAddr().(*net.UDPAddr)
+		response := []byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0}
+		binary.BigEndian.PutUint16(response[8:10], uint16(bound.Port))
+		if _, e := conn.Write(response); e != nil {
+			relayErrors <- e
+			return
+		}
+		associate <- true
+
+		buffer := make([]byte, 2048)
+		n, source, readErr := relay.ReadFromUDP(buffer)
+		if readErr != nil {
+			relayErrors <- readErr
+			return
+		}
+		packet := append([]byte(nil), buffer[:n]...)
+		if len(packet) < 10 || packet[0] != 0 || packet[1] != 0 || packet[2] != 0 {
+			relayErrors <- fmt.Errorf("invalid upstream SOCKS UDP packet: %v", packet)
+			return
+		}
+		if packet[3] == 3 {
+			if len(packet) < 5 || int(packet[4])+7 > len(packet) {
+				relayErrors <- fmt.Errorf("truncated upstream domain UDP packet")
+				return
+			}
+			host := string(packet[5 : 5+int(packet[4])])
+			if host != "udp-external-route.test" {
+				relayErrors <- fmt.Errorf("upstream UDP destination = %q", host)
+				return
+			}
+		}
+		if _, e := relay.WriteToUDP(packet, source); e != nil {
+			relayErrors <- e
+			return
+		}
+	}()
+
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		FinalOutbound: "socks-udp",
+		SOCKS5: []singBoxSOCKS5Outbound{{
+			ID: "udp", Server: "127.0.0.1",
+			ServerPort: upstream.Addr().(*net.TCPAddr).Port,
+			Username: "udp-user", Password: "udp-pass", Enabled: true,
+		}},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "sing-box-external-socks-udp.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start sing-box: %v", err)
+	}
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	var control net.Conn
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		control, err = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+		if err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if control == nil {
+		t.Fatalf("sing-box inbound not ready: %v; logs: %s", err, output.String())
+	}
+	defer control.Close()
+	_ = control.SetDeadline(time.Now().Add(12 * time.Second))
+	if _, err := control.Write([]byte{5, 1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	var greeting [2]byte
+	if _, err := io.ReadFull(control, greeting[:]); err != nil {
+		t.Fatal(err)
+	}
+	if greeting != [2]byte{5, 0} {
+		t.Fatalf("inbound greeting = %v", greeting)
+	}
+	if _, err := control.Write([]byte{5, 3, 0, 1, 0, 0, 0, 0, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	var response [10]byte
+	if _, err := io.ReadFull(control, response[:]); err != nil {
+		t.Fatalf("inbound UDP ASSOCIATE: %v; sing-box logs: %s", err, output.String())
+	}
+	if response[1] != 0 {
+		t.Fatalf("inbound UDP ASSOCIATE reply = %v; sing-box logs: %s", response, output.String())
+	}
+
+	select {
+	case ok := <-authenticated:
+		if !ok {
+			t.Fatal("external SOCKS5 received incorrect UDP credentials")
+		}
+	case e := <-relayErrors:
+		t.Fatalf("upstream authentication failed: %v", e)
+	case <-time.After(4 * time.Second):
+		t.Fatal("external SOCKS5 authentication was not observed")
+	}
+	select {
+	case ok := <-associate:
+		if !ok {
+			t.Fatal("external SOCKS5 rejected UDP ASSOCIATE")
+		}
+	case e := <-relayErrors:
+		t.Fatalf("upstream UDP ASSOCIATE failed: %v; logs: %s", e, output.String())
+	case <-time.After(4 * time.Second):
+		t.Fatal("external SOCKS5 UDP ASSOCIATE was not observed")
+	}
+
+	relayIP := net.IP(response[4:8])
+	if relayIP.IsUnspecified() {
+		relayIP = net.ParseIP("127.0.0.1")
+	}
+	client, err := net.DialUDP("udp4", nil, &net.UDPAddr{
+		IP: relayIP, Port: int(binary.BigEndian.Uint16(response[8:10])),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	_ = client.SetDeadline(time.Now().Add(8 * time.Second))
+
+	host := "udp-external-route.test"
+	payload := []byte("authenticated-external-socks5-udp-associate")
+	packet := []byte{0, 0, 0, 3, byte(len(host))}
+	packet = append(packet, []byte(host)...)
+	packet = append(packet, 0x01, 0xbb)
+	packet = append(packet, payload...)
+	if _, err := client.Write(packet); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, 2048)
+	n, err := client.Read(got)
+	if err != nil {
+		select {
+		case relayErr := <-relayErrors:
+			t.Fatalf("upstream UDP relay: %v; sing-box logs: %s", relayErr, output.String())
+		default:
+			t.Fatalf("UDP response: %v; sing-box logs: %s", err, output.String())
+		}
+	}
+	if n < len(payload) || string(got[n-len(payload):n]) != string(payload) {
+		t.Fatalf("UDP payload = %q, want %q; sing-box logs: %s", got[:n], payload, output.String())
+	}
+}
