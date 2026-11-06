@@ -790,27 +790,6 @@ func TestSingBoxUDPAssociateRelaysThroughAuthenticatedExternalSOCKS5(t *testing.
 		t.Fatalf("inbound UDP ASSOCIATE reply = %v; sing-box logs: %s", response, output.String())
 	}
 
-	select {
-	case ok := <-authenticated:
-		if !ok {
-			t.Fatal("external SOCKS5 received incorrect UDP credentials")
-		}
-	case e := <-relayErrors:
-		t.Fatalf("upstream authentication failed: %v", e)
-	case <-time.After(4 * time.Second):
-		t.Fatal("external SOCKS5 authentication was not observed")
-	}
-	select {
-	case ok := <-associate:
-		if !ok {
-			t.Fatal("external SOCKS5 rejected UDP ASSOCIATE")
-		}
-	case e := <-relayErrors:
-		t.Fatalf("upstream UDP ASSOCIATE failed: %v; logs: %s", e, output.String())
-	case <-time.After(4 * time.Second):
-		t.Fatal("external SOCKS5 UDP ASSOCIATE was not observed")
-	}
-
 	relayIP := net.IP(response[4:8])
 	if relayIP.IsUnspecified() {
 		relayIP = net.ParseIP("127.0.0.1")
@@ -832,6 +811,29 @@ func TestSingBoxUDPAssociateRelaysThroughAuthenticatedExternalSOCKS5(t *testing.
 	packet = append(packet, payload...)
 	if _, err := client.Write(packet); err != nil {
 		t.Fatal(err)
+	}
+
+	// sing-box opens the upstream SOCKS5 UDP association lazily, when the
+	// first datagram arrives. Trigger traffic before waiting for auth/ASSOCIATE.
+	select {
+	case ok := <-authenticated:
+		if !ok {
+			t.Fatal("external SOCKS5 received incorrect UDP credentials")
+		}
+	case e := <-relayErrors:
+		t.Fatalf("upstream authentication failed: %v", e)
+	case <-time.After(4 * time.Second):
+		t.Fatalf("external SOCKS5 authentication was not observed; sing-box logs: %s", output.String())
+	}
+	select {
+	case ok := <-associate:
+		if !ok {
+			t.Fatal("external SOCKS5 rejected UDP ASSOCIATE")
+		}
+	case e := <-relayErrors:
+		t.Fatalf("upstream UDP ASSOCIATE failed: %v; logs: %s", e, output.String())
+	case <-time.After(4 * time.Second):
+		t.Fatalf("external SOCKS5 UDP ASSOCIATE was not observed; sing-box logs: %s", output.String())
 	}
 	got := make([]byte, 2048)
 	n, err := client.Read(got)
