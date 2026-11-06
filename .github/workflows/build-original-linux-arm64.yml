@@ -354,7 +354,7 @@ jobs:
           set -euxo pipefail
           go test -count=1 -run '^TestBuildSingBoxConfigPassesPinnedBinaryCheck$' -v .
           go test -count=1 .
-          go test -count=1 -run 'TestSingBox.*RealCSQTTSocks5Server' -v .
+          go test -count=1 -run 'TestSingBox.*(RealCSQTTSocks5Server|AuthenticatedExternalSOCKS5WithoutCSQTT)' -v .
           go test -count=1 ./Libs
           go test -race -count=1 .
           # Compile the exact generated client TUN tests for execution inside the ARM64 guest.
