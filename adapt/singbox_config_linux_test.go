@@ -22,6 +22,7 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 	got, err := buildSingBoxConfig(singBoxConfigInput{
 		ListenAddress: "192.168.5.2:12500",
 		CSQTTAddress: "127.0.0.1:12500",
+		FinalOutbound: singBoxDirectTag,
 		DirectDomains: []string{"LOCAL.example", "local.example."},
 		DirectDomainSuffixes: []string{".example.org", "example.org"},
 		DirectIPCIDRs: []string{"192.0.2.7/24", "2001:db8::1/64", "203.0.113.8"},
@@ -81,7 +82,7 @@ func TestBuildSingBoxConfigRejectsInvalidOrAmbiguousInputs(t *testing.T) {
 }
 
 func TestBuildSingBoxConfigRestrictsListenerAndCSQTTOutboundScope(t *testing.T) {
-	base := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500"}
+	base := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500", FinalOutbound: singBoxDirectTag}
 	for _, address := range []string{"0.0.0.0:19180", "[::]:19180", "8.8.8.8:19180", "169.254.1.2:19180", "224.0.0.1:19180"} {
 		t.Run("reject inbound "+address, func(t *testing.T) {
 			input := base
@@ -225,7 +226,7 @@ func TestSingBoxRoutesDomainThroughRealCSQTTSocks5Server(t *testing.T) {
 	csqtt.dialTCPOverride=func(target string)(net.Conn,error){select{case targets<-target:default:};return net.DialTimeout("tcp",echo.Addr().String(),2*time.Second)}
 	if err:=csqtt.Start();err!=nil{t.Fatalf("start real CSQTT SOCKS5: %v",err)}
 	defer csqtt.Stop()
-	input:=singBoxConfigInput{ListenAddress:reserveSingBoxTestAddress(t),CSQTTAddress:csqtt.Status().Address,Rules:[]singBoxRouteRule{{ID:"csqtt-domain",Domains:[]string{"route-csqtt.test"},Outbound:singBoxCSQTTTag,Enabled:true}}}
+	input:=singBoxConfigInput{ListenAddress:reserveSingBoxTestAddress(t),CSQTTAddress:csqtt.Status().Address,FinalOutbound:singBoxDirectTag,Rules:[]singBoxRouteRule{{ID:"csqtt-domain",Domains:[]string{"route-csqtt.test"},Outbound:singBoxCSQTTTag,Enabled:true}}}
 	config,err:=buildSingBoxConfig(input);if err!=nil{t.Fatal(err)}
 	path:=filepath.Join(t.TempDir(),"sing-box.json");if err=os.WriteFile(path,config,0600);err!=nil{t.Fatal(err)}
 	cmd:=exec.Command(binaryPath,"run","-c",path);output:=&singBoxTestLogBuffer{};cmd.Stdout,cmd.Stderr=output,output
@@ -256,7 +257,7 @@ func TestSingBoxUDPAssociateRelaysThroughRealCSQTTSocks5Server(t *testing.T) {
 	csqtt:=NewSocks5Server("127.0.0.1:0")
 	csqtt.dialUDPOverride=func()(*net.UDPConn,error){return net.ListenUDP("udp4",&net.UDPAddr{IP:net.ParseIP("127.0.0.1")})}
 	if err=csqtt.Start();err!=nil{t.Fatalf("start real CSQTT SOCKS5: %v",err)};defer csqtt.Stop()
-	input:=singBoxConfigInput{ListenAddress:reserveSingBoxTestAddress(t),CSQTTAddress:csqtt.Status().Address}
+	input:=singBoxConfigInput{ListenAddress:reserveSingBoxTestAddress(t),CSQTTAddress:csqtt.Status().Address,FinalOutbound:singBoxDirectTag}
 	config,err:=buildSingBoxConfig(input);if err!=nil{t.Fatal(err)}
 	path:=filepath.Join(t.TempDir(),"sing-box-udp.json");if err=os.WriteFile(path,config,0600);err!=nil{t.Fatal(err)}
 	cmd:=exec.Command(binaryPath,"run","-c",path);output:=&singBoxTestLogBuffer{};cmd.Stdout,cmd.Stderr=output,output
