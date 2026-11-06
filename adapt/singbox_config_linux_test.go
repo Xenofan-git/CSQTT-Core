@@ -399,3 +399,144 @@ func TestBuildSingBoxConfigRejectsMissingFallbackWhenCSQTTDisabled(t *testing.T)
 	_, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19180"})
 	if err == nil || !strings.Contains(err.Error(), "select a default outbound") { t.Fatalf("missing explicit fallback error = %v", err) }
 }
+
+
+func TestSingBoxRoutesDomainThroughAuthenticatedExternalSOCKS5WithoutCSQTT(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" { t.Skip("requires pinned sing-box binary from CI") }
+
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer echo.Close()
+	go func() {
+		for {
+			conn, acceptErr := echo.Accept()
+			if acceptErr != nil { return }
+			go func(c net.Conn) { defer c.Close(); _, _ = io.Copy(c, c) }(conn)
+		}
+	}()
+
+	upstream, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer upstream.Close()
+	authenticated := make(chan bool, 1)
+	targets := make(chan string, 1)
+	go func() {
+		conn, acceptErr := upstream.Accept()
+		if acceptErr != nil { return }
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
+		var greeting [2]byte
+		if _, e := io.ReadFull(conn, greeting[:]); e != nil { return }
+		methods := make([]byte, int(greeting[1]))
+		if _, e := io.ReadFull(conn, methods); e != nil { return }
+		if greeting[0] != 5 { _, _ = conn.Write([]byte{5, 255}); return }
+		if _, e := conn.Write([]byte{5, 2}); e != nil { return }
+		var authHead [2]byte
+		if _, e := io.ReadFull(conn, authHead[:]); e != nil { return }
+		user := make([]byte, int(authHead[1]))
+		if _, e := io.ReadFull(conn, user); e != nil { return }
+		var passLen [1]byte
+		if _, e := io.ReadFull(conn, passLen[:]); e != nil { return }
+		pass := make([]byte, int(passLen[0]))
+		if _, e := io.ReadFull(conn, pass); e != nil { return }
+		ok := authHead[0] == 1 && string(user) == "hydra-user" && string(pass) == "hydra-pass"
+		authenticated <- ok
+		if ok { _, _ = conn.Write([]byte{1, 0}) } else { _, _ = conn.Write([]byte{1, 1}); return }
+
+		var request [4]byte
+		if _, e := io.ReadFull(conn, request[:]); e != nil { return }
+		var host string
+		switch request[3] {
+		case 1:
+			var ip [4]byte
+			if _, e := io.ReadFull(conn, ip[:]); e != nil { return }
+			host = net.IP(ip[:]).String()
+		case 3:
+			var size [1]byte
+			if _, e := io.ReadFull(conn, size[:]); e != nil { return }
+			name := make([]byte, int(size[0]))
+			if _, e := io.ReadFull(conn, name); e != nil { return }
+			host = string(name)
+		default:
+			return
+		}
+		var portBytes [2]byte
+		if _, e := io.ReadFull(conn, portBytes[:]); e != nil { return }
+		target := net.JoinHostPort(host, strconv.Itoa(int(binary.BigEndian.Uint16(portBytes[:]))))
+		targets <- target
+		if request[0] != 5 || request[1] != 1 { return }
+		remote, dialErr := net.DialTimeout("tcp", echo.Addr().String(), 2*time.Second)
+		if dialErr != nil { _, _ = conn.Write([]byte{5, 5, 0, 1, 0, 0, 0, 0, 0, 0}); return }
+		defer remote.Close()
+		if _, e := conn.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0}); e != nil { return }
+		done := make(chan struct{}, 2)
+		go func() { _, _ = io.Copy(remote, conn); done <- struct{}{} }()
+		go func() { _, _ = io.Copy(conn, remote); done <- struct{}{} }()
+		<-done
+	}()
+
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		FinalOutbound: "socks-hydra",
+		SOCKS5: []singBoxSOCKS5Outbound{{ID: "hydra", Server: "127.0.0.1", ServerPort: upstream.Addr().(*net.TCPAddr).Port, Username: "hydra-user", Password: "hydra-pass", Enabled: true}},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatal(err) }
+	var decoded map[string]any
+	if err := json.Unmarshal(config, &decoded); err != nil { t.Fatal(err) }
+	for _, raw := range decoded["outbounds"].([]any) {
+		if raw.(map[string]any)["tag"] == singBoxCSQTTTag { t.Fatal("CSQTT outbound unexpectedly present") }
+	}
+	if got := decoded["route"].(map[string]any)["final"]; got != "socks-hydra" { t.Fatalf("route.final=%v", got) }
+
+	configPath := filepath.Join(t.TempDir(), "sing-box-external-socks.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil { t.Fatalf("start sing-box: %v", err) }
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	var client net.Conn
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		client, err = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+		if err == nil { break }
+		time.Sleep(50 * time.Millisecond)
+	}
+	if client == nil { t.Fatalf("sing-box inbound not ready: %v; logs: %s", err, output.String()) }
+	defer client.Close()
+	_ = client.SetDeadline(time.Now().Add(8 * time.Second))
+	if _, err := client.Write([]byte{5, 1, 0}); err != nil { t.Fatal(err) }
+	var greeting [2]byte
+	if _, err := io.ReadFull(client, greeting[:]); err != nil { t.Fatal(err) }
+	if greeting != [2]byte{5, 0} { t.Fatalf("inbound greeting=%v", greeting) }
+
+	host := "external-socks-route.test"
+	request := []byte{5, 1, 0, 3, byte(len(host))}
+	request = append(request, []byte(host)...)
+	request = append(request, 1, 187)
+	if _, err := client.Write(request); err != nil { t.Fatal(err) }
+	var reply [10]byte
+	if _, err := io.ReadFull(client, reply[:]); err != nil { t.Fatalf("external SOCKS CONNECT: %v; logs: %s", err, output.String()) }
+	if reply[1] != 0 { t.Fatalf("external SOCKS CONNECT reply=%v; logs: %s", reply, output.String()) }
+	payload := []byte("authenticated-external-socks5-without-csqtt")
+	if _, err := client.Write(payload); err != nil { t.Fatal(err) }
+	got := make([]byte, len(payload))
+	if _, err := io.ReadFull(client, got); err != nil { t.Fatal(err) }
+	if string(got) != string(payload) { t.Fatalf("echo=%q want=%q", got, payload) }
+
+	select {
+	case ok := <-authenticated:
+		if !ok { t.Fatal("external SOCKS5 did not receive configured username/password") }
+	case <-time.After(3 * time.Second):
+		t.Fatal("external SOCKS5 authentication handshake was not observed")
+	}
+	select {
+	case target := <-targets:
+		if target != "external-socks-route.test:443" { t.Fatalf("external SOCKS5 received target %q", target) }
+	case <-time.After(3 * time.Second):
+		t.Fatal("external SOCKS5 did not receive the routed destination")
+	}
+}
