@@ -70,7 +70,7 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 
 func TestBuildSingBoxConfigRejectsInvalidOrAmbiguousInputs(t *testing.T) {
 	tests := []struct{name string; input singBoxConfigInput}{
-		{"missing inbound address", singBoxConfigInput{CSQTTAddress:"127.0.0.1:12500"}},
+		{"missing inbound address", singBoxConfigInput{CSQTTAddress:"127.0.0.1:12500",FinalOutbound:singBoxDirectTag}},
 		{"same inbound and CSQTT endpoint", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12500"}},
 		{"invalid domain", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12500", DirectDomains:[]string{"https://bad.example"}}},
 		{"invalid CIDR", singBoxConfigInput{ListenAddress:"127.0.0.1:12500", CSQTTAddress:"127.0.0.1:12500", DirectIPCIDRs:[]string{"not-a-cidr"}}},
@@ -288,6 +288,7 @@ func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
 	encoded, err := buildSingBoxConfig(singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19180",
 		CSQTTAddress:  "127.0.0.1:12500",
+		FinalOutbound: singBoxDirectTag,
 		DirectDomains: []string{"example.com"},
 		DirectIPCIDRs: []string{"192.0.2.0/24", "2001:db8::/32"},
 		SOCKS5: []singBoxSOCKS5Outbound{{
@@ -347,7 +348,7 @@ func TestSingBoxRuleSetConfigAndRouteReferences(t *testing.T) {
 }
 
 func TestSingBoxRuleSetRejectsUnknownAndInsecureSources(t *testing.T) {
-	input := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500"}
+	input := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500", FinalOutbound: singBoxDirectTag}
 	input.Rules = []singBoxRouteRule{{ID:"bad", RuleSets:[]string{"missing"}, Outbound:"direct", Enabled:true}}
 	if _, err := buildSingBoxConfig(input); err == nil { t.Fatal("expected unknown Rule Set rejection") }
 	input = singBoxConfigInput{ListenAddress:"127.0.0.1:19180", CSQTTAddress:"127.0.0.1:12500"}
