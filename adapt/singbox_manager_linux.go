@@ -286,12 +286,14 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		entry, ok := item.(map[string]any); if !ok { continue }
 		tag, _ := entry["tag"].(string); known[tag] = entry
 	}
-	csqtt := known[singBoxCSQTTTag]
-	if csqtt == nil || csqtt["type"] != "socks" { return input, fmt.Errorf("missing CSQTT SOCKS outbound") }
-	csqttHost, _ := csqtt["server"].(string)
-	csqttPort, ok := csqtt["server_port"].(float64)
-	if csqttHost == "" || !ok || csqttPort < 1 || csqttPort > 65535 { return input, fmt.Errorf("invalid CSQTT SOCKS endpoint") }
-	input.CSQTTAddress = net.JoinHostPort(csqttHost, strconv.Itoa(int(csqttPort)))
+	if csqtt := known[singBoxCSQTTTag]; csqtt != nil {
+		if csqtt["type"] != "socks" { return input, fmt.Errorf("invalid CSQTT outbound type") }
+		csqttHost, _ := csqtt["server"].(string)
+		csqttPort, ok := csqtt["server_port"].(float64)
+		if csqttHost == "" || !ok || csqttPort < 1 || csqttPort > 65535 { return input, fmt.Errorf("invalid CSQTT SOCKS endpoint") }
+		input.CSQTTAddress = net.JoinHostPort(csqttHost, strconv.Itoa(int(csqttPort)))
+		input.CSQTTEnabled = true
+	}
 	for tag, entry := range known {
 		if !strings.HasPrefix(tag, "socks-") { continue }
 		host, _ := entry["server"].(string); port, ok := entry["server_port"].(float64)
@@ -300,6 +302,7 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		input.SOCKS5 = append(input.SOCKS5, singBoxSOCKS5Outbound{ID:strings.TrimPrefix(tag,"socks-"), Server:host, ServerPort:int(port), Username:username, Password:password, Enabled:true})
 	}
 	route, _ := raw["route"].(map[string]any)
+	input.FinalOutbound, _ = route["final"].(string)
 	for _, rawSet := range anySlice(route["rule_set"]) {
 		set, ok := rawSet.(map[string]any); if !ok { continue }
 		item := singBoxRuleSet{}
