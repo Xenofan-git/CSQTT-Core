@@ -26,7 +26,7 @@ func writeValidSingBoxConfigForTest(t *testing.T, path string) {
 	t.Helper()
 	encoded, err := buildSingBoxConfig(singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19080",
-		CSQTTAddress: "127.0.0.1:19081",
+		CSQTTAddress: "127.0.0.1:19081", FinalOutbound: singBoxDirectTag,
 	})
 	if err != nil { t.Fatal(err) }
 	if err := os.WriteFile(path, encoded, 0600); err != nil { t.Fatal(err) }
@@ -456,7 +456,7 @@ func TestSingBoxManagerUploadRuleSetRejectsRegisteredRemoteAndFormatChange(t *te
 		t.Run(tc.name, func(t *testing.T) {
 			dir:=t.TempDir()
 			config:=filepath.Join(dir,"config.json")
-			encoded,err:=buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081",RuleSets:[]singBoxRuleSet{tc.set}})
+			encoded,err:=buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081",FinalOutbound:singBoxDirectTag,RuleSets:[]singBoxRuleSet{tc.set}})
 			if err!=nil { t.Fatal(err) }
 			if err:=os.WriteFile(config,encoded,0600);err!=nil { t.Fatal(err) }
 			manager:=NewSingBoxManager(ruleSetValidationFakeBinary(t,"normal"),config,filepath.Join(dir,"sing-box.log"))
