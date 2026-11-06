@@ -141,14 +141,25 @@ func TestCSQTTAndLoopbackListenersCanSharePort12500(t *testing.T) {
     }
 }
 
-func TestBuildSingBoxConfigUsesCSQTTAsExplicitSystemFallback(t *testing.T) {
-	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500"})
+func TestBuildSingBoxConfigDoesNotImplicitlyUseCSQTTAsFallback(t *testing.T) {
+	input := singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500",CSQTTEnabled:true,FinalOutbound:singBoxDirectTag}
+	got, err := buildSingBoxConfig(input)
 	if err != nil { t.Fatal(err) }
 	var config map[string]any
 	if err:=json.Unmarshal(got,&config); err!=nil { t.Fatal(err) }
 	route:=config["route"].(map[string]any)
-	if route["final"] != singBoxCSQTTTag { t.Fatalf("route.final=%v, want CSQTT",route["final"]) }
+	if route["final"] != singBoxDirectTag { t.Fatalf("route.final=%v, want explicit Direct",route["final"]) }
+	foundCSQTT := false
+	for _, raw := range config["outbounds"].([]any) {
+		if raw.(map[string]any)["tag"] == singBoxCSQTTTag { foundCSQTT = true }
+	}
+	if !foundCSQTT { t.Fatal("enabled CSQTT must remain available as an independently selectable outbound") }
 	if _,ok:=route["auto_route"];ok { t.Fatal("sing-box must not create system-wide route capture") }
+}
+
+func TestBuildSingBoxConfigRequiresExplicitFallbackEvenWhenCSQTTEnabled(t *testing.T) {
+	_, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500",CSQTTEnabled:true})
+	if err == nil || !strings.Contains(err.Error(), "select a default outbound") { t.Fatalf("missing explicit fallback error = %v", err) }
 }
 
 type singBoxTestLogBuffer struct {
