@@ -128,7 +128,7 @@ func TestSingBoxManagerSaveConfigIsAtomicAndValidated(t *testing.T) {
 	binary := newFakeSingBox(t, "if [ \"$1\" = check ]; then grep -q 'invalid-marker' \"$3\" && { echo invalid >&2; exit 9; }; exit 0; fi\nexit 0")
 	manager := NewSingBoxManager(binary, config, filepath.Join(dir, "sing-box.log"))
 	input := singBoxConfigInput{
-		ListenAddress: "127.0.0.1:19080", CSQTTAddress: "127.0.0.1:19081",
+		ListenAddress: "127.0.0.1:19080", CSQTTAddress: "127.0.0.1:19081", FinalOutbound: singBoxDirectTag,
 		DirectDomainSuffixes: []string{".example.org"},
 		Rules: []singBoxRouteRule{{ID:"route-a", DomainKeywords:[]string{"stream"}, DomainRegexes:[]string{"video"}, IPCIDRs:[]string{"198.51.100.0/24"}, Outbound:singBoxCSQTTTag, Enabled:true}},
 	}
@@ -185,6 +185,7 @@ func TestSingBoxManagerStartRejectsTamperedPersistedRuleSetPathBeforeBinary(t *t
 	encoded, err := buildSingBoxConfig(singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19080",
 		CSQTTAddress: "127.0.0.1:19081",
+		FinalOutbound: singBoxDirectTag,
 		RuleSets: []singBoxRuleSet{{Type: "local", Tag: "tampered", Format: "binary", Path: outside}},
 	})
 	if err != nil { t.Fatalf("build persisted tampered config fixture: %v", err) }
@@ -475,7 +476,7 @@ func TestSingBoxManagerDeleteRuleSetRejectsAdvancedNestedRouteReference(t *testi
  if err := os.MkdirAll(ruleSetDir, 0700); err != nil { t.Fatal(err) }
  path := filepath.Join(ruleSetDir, "hidden-ref.srs")
  if err := os.WriteFile(path, []byte("managed ruleset"), 0600); err != nil { t.Fatal(err) }
- encoded, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080", CSQTTAddress:"127.0.0.1:19081"})
+ encoded, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080", CSQTTAddress:"127.0.0.1:19081",FinalOutbound:singBoxDirectTag})
  if err != nil { t.Fatal(err) }
  var raw map[string]any
  if err := json.Unmarshal(encoded, &raw); err != nil { t.Fatal(err) }
