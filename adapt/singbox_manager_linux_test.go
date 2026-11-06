@@ -423,7 +423,7 @@ func TestSingBoxManagerUploadRuleSetRejectsNonCanonicalRegisteredPath(t *testing
 	nonCanonical := filepath.Join(setsDir, "other.json")
 	if err := os.WriteFile(nonCanonical, []byte(`{"version":3,"rules":[]}`), 0600); err != nil { t.Fatal(err) }
 	encoded, err := buildSingBoxConfig(singBoxConfigInput{
-		ListenAddress: "127.0.0.1:19080", CSQTTAddress: "127.0.0.1:19081",
+		ListenAddress: "127.0.0.1:19080", CSQTTAddress: "127.0.0.1:19081", FinalOutbound: singBoxDirectTag,
 		RuleSets: []singBoxRuleSet{{Type:"local", Tag:"stable", Format:"source", Path:nonCanonical}},
 	})
 	if err != nil { t.Fatal(err) }
