@@ -49,8 +49,8 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 	if len(outbounds) != 3 { t.Fatalf("got %d outbounds, want direct + CSQTT + one user SOCKS5", len(outbounds)) }
 	rules := config["route"].(map[string]any)["rules"].([]any)
 	if len(rules) != 4 { t.Fatalf("got %d rules, want sniff + Direct + 2 enabled routes", len(rules)) }
-	if gotFinal := config["route"].(map[string]any)["final"]; gotFinal != singBoxCSQTTTag {
-		t.Fatalf("system fallback = %v, want CSQTT", gotFinal)
+	if gotFinal := config["route"].(map[string]any)["final"]; gotFinal != singBoxDirectTag {
+		t.Fatalf("system fallback = %v, want explicitly selected Direct", gotFinal)
 	}
 	direct := rules[1].(map[string]any)
 	if direct["outbound"] != singBoxDirectTag { t.Fatalf("Direct bypass is not first: %#v", direct) }
