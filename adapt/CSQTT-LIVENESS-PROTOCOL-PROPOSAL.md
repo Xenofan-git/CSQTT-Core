@@ -1,6 +1,6 @@
 # CSQTT authenticated liveness protocol — design gate
 
-Status: protocol remains **CI-fixture-only / not production-ready**. No production wire behavior, runtime binary, or production timeout has been changed.
+Status (2026-11-06): negotiated WIRE-4 liveness is now applied by the release workflow to the pinned production-source ARM64 client/server build and is included in the packaged ARM64 runtime. The production client marker is audited, and same-process recovery is exercised in the Debian 13 ARM64 system VM using the production server plus a CI-only instrumented WIRE-4 client. **Not yet hardware-validated or deployed to NanoPi.**
 
 ## Verified isolated CI evidence (2026-10-15; commit `bac67d662877b49a5e4a8b7aa007eb38e7575cde`)
 
@@ -10,9 +10,21 @@ The disposable pinned Rust client/server clones receive a test-only negotiated-l
 - The no-watchdog leg exercises the test-only negotiated authenticated PING/PONG exchange; it does **not** mean the untouched stock receive loop independently recovers. The disposable pinned sources are patched for this experiment.
 - The separate experimental AArch64 client/server artifacts were checked for architecture, provenance and the `CSQTT_LIVENESS_V1` marker, then run in a full Debian ARM64 system VM. The quiet tunnel survived multiple PING/PONG periods; after server restart the same client process restored TUN traffic. The pre-restart probe received 3/3 packets and the post-restart probe received 5/5 (0% loss). See [run #235, ARM64 VM job](https://github.com/Xenofan-git/LaLune-NanoPi-ARM64/actions/runs/38801699589).
 - [Pinned original LaLune ARM64 build and deployment E2E, run #700](https://github.com/Xenofan-git/LaLune-NanoPi-ARM64/actions/runs/38801700145) passed separately, including the real packaged artifact's ARM64 VM lifecycle and Deploy API install/uninstall checks.
-- The stock packaged ARM64 runtime client audit did **not** find `CSQTT_LIVENESS_V1`. The experimental artifact is separate and uses CI-only credentials. Real VK authentication and end-to-end recovery for Manual, Auto API and Auto VK hash-acquisition modes have not been demonstrated by this run.
+- The upstream unmodified baseline does not contain `CSQTT_LIVENESS_V1`; the release pipeline now builds a separately provenance-tracked patched production artifact. The CI-only test client is separate and uses disposable TURN credentials. Real VK authentication and end-to-end recovery for Manual, Auto API and Auto VK hash-acquisition modes have not been demonstrated by the recovery E2E.
 
 **Interpretation:** same-process recovery with negotiated liveness is demonstrated in patched disposable pinned sources, including a full ARM64 system VM. Production readiness, stock-artifact behavior and VK-auth compatibility remain unproven.
+
+## Current release-build status (2026-11-06)
+
+The current workflow `.github/workflows/build-original-linux-arm64.yml` no longer treats negotiated liveness as a disposable fixture only:
+
+- It pins `Endlad2/csqtt-core` commit `3eafb7ee868f5f2690edf3b0326153813f88eb5f` and CSQTT server tag `v2.1.9`.
+- It applies `scripts/ci/patch-csqtt-negotiated-liveness.py` to the matching client/server source trees before building the production ARM64 client and server.
+- It verifies `CSQTT_LIVENESS_V1` and `CSQTT-WIRE-4` markers and checks that CI-only TURN credentials/counters are absent from the production client artifact.
+- The separate test-only ARM64 client is instrumented after the production client has been built. The system-VM test uses that disposable client with the production server binary to test same-process recovery; it does not inject test credentials into the production artifact.
+- The actual packaged ARM64 runtime is separately accepted in a clean Debian 13 ARM64 guest. CI run #1297 passed both jobs, including `Exercise same-process recovery with the ARM64 WIRE-4 client and production server`.
+
+**Limits:** the system-VM recovery E2E is strong integration evidence, but it is not a real NanoPi hardware run and does not prove live VK authentication for Manual, Auto API, and Auto VK modes. Do not deploy automatically or change production network configuration based on CI alone.
 
 ## What the pinned sources establish
 
@@ -57,7 +69,7 @@ Use a new, versioned control message family; do not overload legacy `SESSION_LEA
 
 ## Current gate
 
-Keep the production/runtime artifact, deployment workflow, production services, and device network configuration unchanged. The current CI patch is useful as a test fixture but is not a substitute for a reviewed upstream implementation. Before considering production adoption:
+Keep the production/runtime artifact on the NanoPi, deployment workflow, production services, and device network configuration unchanged until a separate hardware acceptance is authorized. The WIRE-4 patch is now part of the CI release build, but still requires hardware validation and review of the patch source. Before considering device deployment:
 
 1. Port the protocol to the actual maintained client/server source trees (not a scripted disposable-clone patch) and obtain code review for the wire encoding and negotiation.
 2. Add endpoint-level unit tests for malformed frames, nonce/sequence matching, replay, overflow, timeout/cancellation and WIRE-3 fallback; keep the model tests as supplemental coverage.
