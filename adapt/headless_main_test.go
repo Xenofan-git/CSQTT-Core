@@ -632,7 +632,7 @@ func TestSingBoxAPIControlsIndependentManager(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 		return rec
 	}
-	config := `{"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:19181"}`
+	config := `{"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:19181","FinalOutbound":"direct"}`
 	if got := request(http.MethodPut, "/singbox/config", config); got.Code != http.StatusOK { t.Fatalf("save config status=%d body=%s",got.Code,got.Body.String()) }
 	loaded := request(http.MethodGet, "/singbox/config", "")
 	if loaded.Code != http.StatusOK { t.Fatalf("load config status=%d body=%s", loaded.Code, loaded.Body.String()) }
