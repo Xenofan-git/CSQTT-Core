@@ -499,3 +499,37 @@ func TestSingBoxValueReferencesRuleSetRecursive(t *testing.T) {
  if !singBoxValueReferencesRuleSet(value, "target") { t.Fatal("nested Rule Set reference was not detected") }
  if singBoxValueReferencesRuleSet(value, "missing") { t.Fatal("unrelated Rule Set tag was reported") }
 }
+
+
+func TestSingBoxManagerRoundTripsExternalDefaultWithoutCSQTT(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.json")
+	manager := NewSingBoxManager(newFakeSingBox(t, "if [ \"$1\" = check ]; then exit 0; fi\nexit 0"), config, filepath.Join(dir, "sing-box.log"))
+	input := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19080",
+		FinalOutbound: "socks-hydra",
+		SOCKS5: []singBoxSOCKS5Outbound{{
+			ID: "hydra", Server: "192.0.2.20", ServerPort: 1080,
+			Username: "route-user", Password: "route-pass", Enabled: true,
+		}},
+	}
+	if err := manager.SaveConfig(input); err != nil {
+		t.Fatalf("SaveConfig external-only config: %v", err)
+	}
+	loaded, err := manager.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig external-only config: %v", err)
+	}
+	if loaded.CSQTTEnabled || loaded.CSQTTAddress != "" {
+		t.Fatalf("CSQTT should remain disabled, got enabled=%v address=%q", loaded.CSQTTEnabled, loaded.CSQTTAddress)
+	}
+	if loaded.FinalOutbound != "socks-hydra" {
+		t.Fatalf("default outbound = %q, want socks-hydra", loaded.FinalOutbound)
+	}
+	if len(loaded.SOCKS5) != 1 || loaded.SOCKS5[0].ID != "hydra" || loaded.SOCKS5[0].Server != "192.0.2.20" || loaded.SOCKS5[0].ServerPort != 1080 {
+		t.Fatalf("external SOCKS5 did not round-trip: %#v", loaded.SOCKS5)
+	}
+	if loaded.SOCKS5[0].Username != "route-user" || loaded.SOCKS5[0].Password != "route-pass" {
+		t.Fatalf("SOCKS5 credentials did not round-trip: %#v", loaded.SOCKS5[0])
+	}
+}
