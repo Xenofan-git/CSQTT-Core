@@ -110,6 +110,7 @@ func TestBuildSingBoxConfigAllowsIPOnlyRouteRule(t *testing.T) {
 	got, err := buildSingBoxConfig(singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19180",
 		CSQTTAddress: "127.0.0.1:12500",
+		FinalOutbound: singBoxDirectTag,
 		Rules: []singBoxRouteRule{{ID: "ip-only", IPCIDRs: []string{"203.0.113.0/24"}, Outbound: singBoxCSQTTTag, Enabled: true}},
 	})
 	if err != nil { t.Fatalf("IP-only route rule rejected: %v", err) }
@@ -373,6 +374,7 @@ func TestSingBoxAdvancedInvertAloneIsNotAMatcher(t *testing.T) {
 	input := singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19180",
 		CSQTTAddress:  "127.0.0.1:12500",
+		FinalOutbound: singBoxDirectTag,
 		Rules: []singBoxRouteRule{{
 			ID: "invert-only", Outbound: singBoxCSQTTTag, Enabled: true,
 			Advanced: map[string]json.RawMessage{"invert": json.RawMessage("true")},
