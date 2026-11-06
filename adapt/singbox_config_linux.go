@@ -54,6 +54,8 @@ type singBoxRouteRule struct {
 type singBoxConfigInput struct {
 	ListenAddress string
 	CSQTTAddress  string
+	CSQTTEnabled  bool
+	FinalOutbound string
 	DirectDomains        []string
 	DirectDomainSuffixes []string
 	DirectIPCIDRs        []string
@@ -278,16 +280,17 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	if listenIP == nil || listenIP.IsUnspecified() || listenIP.IsMulticast() || listenIP.IsLinkLocalUnicast() || (!listenIP.IsLoopback() && !listenIP.IsPrivate()) {
 		return nil, fmt.Errorf("listen address must be loopback or a specific private LAN address; wildcard/public binds are forbidden")
 	}
-	csqttHost, csqttPort, err := singBoxHostPort(input.CSQTTAddress, "CSQTT SOCKS address")
-	if err != nil {
-		return nil, err
-	}
-	csqttIP := net.ParseIP(csqttHost)
-	if csqttIP == nil || !csqttIP.IsLoopback() {
-		return nil, fmt.Errorf("CSQTT SOCKS outbound must use the local loopback listener")
-	}
-	if listenHost == csqttHost && listenPort == csqttPort {
-		return nil, fmt.Errorf("sing-box inbound and CSQTT SOCKS outbound must use different endpoints")
+	outbounds := []map[string]any{{"type": "direct", "tag": singBoxDirectTag}}
+	knownOutbounds := map[string]struct{}{singBoxDirectTag: {}}
+	csqttEnabled := input.CSQTTEnabled || strings.TrimSpace(input.CSQTTAddress) != ""
+	if csqttEnabled {
+		csqttHost, csqttPort, err := singBoxHostPort(input.CSQTTAddress, "CSQTT SOCKS address")
+		if err != nil { return nil, err }
+		csqttIP := net.ParseIP(csqttHost)
+		if csqttIP == nil || !csqttIP.IsLoopback() { return nil, fmt.Errorf("CSQTT SOCKS outbound must use the local loopback listener") }
+		if listenHost == csqttHost && listenPort == csqttPort { return nil, fmt.Errorf("sing-box inbound and CSQTT SOCKS outbound must use different endpoints") }
+		outbounds = append(outbounds, map[string]any{"type":"socks","tag":singBoxCSQTTTag,"server":csqttHost,"server_port":csqttPort,"version":"5"})
+		knownOutbounds[singBoxCSQTTTag] = struct{}{}
 	}
 
 	directDomains, err := normalizeSingBoxDomains(input.DirectDomains, false)
@@ -429,9 +432,12 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		for key,raw:=range item.Advanced { if _,managed:=singBoxManagedRouteFields[key]; managed {return nil,fmt.Errorf("route rule %q advanced field %q conflicts with managed routing",item.ID,key)}; var value any; if err:=json.Unmarshal(raw,&value); err!=nil{return nil,fmt.Errorf("route rule %q advanced field %q: %w",item.ID,key,err)}; rule[key]=value }
 		rules = append(rules, rule)
 	}
-	// CSQTT is the explicit system fallback. Direct exclusions and enabled
-	// user rules above it retain priority; no implicit first-outbound fallback
-	// or system-wide traffic capture is introduced.
+	// Explicit fallback selection. Legacy configs keep CSQTT when configured.
+	finalOutbound := strings.TrimSpace(input.FinalOutbound)
+	if finalOutbound == "" && csqttEnabled { finalOutbound = singBoxCSQTTTag }
+	if finalOutbound == "" { return nil, fmt.Errorf("select a default outbound for unmatched traffic") }
+	if _, ok := knownOutbounds[finalOutbound]; !ok { return nil, fmt.Errorf("default outbound %q is not configured", finalOutbound) }
+
 	config := singBoxConfig{
 		Log: map[string]any{"level": "info", "timestamp": true},
 		Inbounds: []map[string]any{{
@@ -439,7 +445,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			"listen": listenHost, "listen_port": listenPort,
 		}},
 		Outbounds: outbounds,
-		Route: map[string]any{"rules": rules, "rule_set": ruleSetConfigs, "final": singBoxCSQTTTag},
+		Route: map[string]any{"rules": rules, "rule_set": ruleSetConfigs, "final": finalOutbound},
 	}
 	encoded, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
