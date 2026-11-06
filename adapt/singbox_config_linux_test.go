@@ -332,7 +332,7 @@ func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
 }
 
 func TestSingBoxRuleSetConfigAndRouteReferences(t *testing.T) {
-	input := singBoxConfigInput{ListenAddress:"127.0.0.1:19180", CSQTTAddress:"127.0.0.1:12500"}
+	input := singBoxConfigInput{ListenAddress:"127.0.0.1:19180", CSQTTAddress:"127.0.0.1:12500", FinalOutbound:singBoxDirectTag}
 	input.RuleSets = []singBoxRuleSet{{Type:"local", Tag:"geosite-ru", Format:"binary", Path:"/var/lib/csqtt/sing-box/rule-sets/geosite-ru.srs"}}
 	input.Rules = []singBoxRouteRule{{ID:"ru", RuleSets:[]string{"geosite-ru"}, Outbound:"direct", Enabled:true}}
 	got, err := buildSingBoxConfig(input)
