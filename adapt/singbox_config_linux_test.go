@@ -157,6 +157,15 @@ func TestBuildSingBoxConfigDoesNotImplicitlyUseCSQTTAsFallback(t *testing.T) {
 	}
 	if !foundCSQTT { t.Fatal("enabled CSQTT must remain available as an independently selectable outbound") }
 	if _,ok:=route["auto_route"];ok { t.Fatal("sing-box must not create system-wide route capture") }
+
+	input.FinalOutbound = singBoxCSQTTTag
+	encodedCSQTT, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatalf("explicit CSQTT fallback rejected: %v", err) }
+	var csqttConfig map[string]any
+	if err := json.Unmarshal(encodedCSQTT, &csqttConfig); err != nil { t.Fatal(err) }
+	if got := csqttConfig["route"].(map[string]any)["final"]; got != singBoxCSQTTTag {
+		t.Fatalf("explicit route.final=%v, want CSQTT", got)
+	}
 }
 
 func TestBuildSingBoxConfigRequiresExplicitFallbackEvenWhenCSQTTEnabled(t *testing.T) {
