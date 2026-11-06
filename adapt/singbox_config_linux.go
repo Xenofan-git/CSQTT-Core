@@ -270,7 +270,7 @@ func makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs []string, 
 
 // buildSingBoxConfig creates an explicit SOCKS entrypoint and ordered route rules.
 // It deliberately creates no TUN inbound, auto_route, auto_redirect, or system capture.
-// Direct exclusions and user rules are evaluated in order; unmatched traffic uses CSQTT.
+// Direct exclusions and user rules are evaluated in order; unmatched traffic uses only the explicitly selected default outbound.
 func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	listenHost, listenPort, err := singBoxHostPort(input.ListenAddress, "listen address")
 	if err != nil {
@@ -426,8 +426,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	}
 	// Explicit fallback selection. Legacy configs keep CSQTT when configured.
 	finalOutbound := strings.TrimSpace(input.FinalOutbound)
-	if finalOutbound == "" && csqttEnabled { finalOutbound = singBoxCSQTTTag }
-	if finalOutbound == "" { return nil, fmt.Errorf("select a default outbound for unmatched traffic") }
+	if finalOutbound == "" { return nil, fmt.Errorf("select a default outbound for unmatched traffic; CSQTT is never selected implicitly") }
 	if _, ok := knownOutbounds[finalOutbound]; !ok { return nil, fmt.Errorf("default outbound %q is not configured", finalOutbound) }
 
 	config := singBoxConfig{
