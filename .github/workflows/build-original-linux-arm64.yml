@@ -17,6 +17,7 @@ on:
       - fix/direct-ip-hashmode-captcha-e2e
       - fix/socks5-dns-udp-health-e2e
       - fix/direct-dnsmasq-dualstack-production
+      - fix/explicit-singbox-default-outbound
   workflow_dispatch:
 
 permissions:
