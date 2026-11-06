@@ -373,3 +373,29 @@ func TestSingBoxAdvancedInvertAloneIsNotAMatcher(t *testing.T) {
 func TestSingBoxAdvancedRouteFieldsRejectControlPlaneOverrides(t *testing.T) {
  for _,key:=range []string{"action","outbound","inbound","auto_route","final","logical"}{input:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500",Rules:[]singBoxRouteRule{{ID:"safe",Domains:[]string{"example.org"},Outbound:singBoxCSQTTTag,Enabled:true,Advanced:map[string]json.RawMessage{key:json.RawMessage(`"unsafe"`)}}}};if _,err:=buildSingBoxConfig(input);err==nil{t.Fatalf("unsafe advanced field %q accepted",key)}}
 }
+
+func TestBuildSingBoxConfigSupportsExternalDefaultWithoutCSQTT(t *testing.T) {
+	got, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180",
+		FinalOutbound: "socks-hydra",
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"hydra", Server:"192.0.2.10", ServerPort:1080, Username:"user", Password:"secret", Enabled:true}},
+		Rules: []singBoxRouteRule{{ID:"ru-direct", Domains:[]string{"ru.example"}, Outbound:singBoxDirectTag, Enabled:true}},
+	})
+	if err != nil { t.Fatalf("external SOCKS fallback without CSQTT rejected: %v", err) }
+	var config map[string]any
+	if err := json.Unmarshal(got, &config); err != nil { t.Fatal(err) }
+	outbounds := config["outbounds"].([]any)
+	for _, raw := range outbounds {
+		entry := raw.(map[string]any)
+		if entry["tag"] == singBoxCSQTTTag { t.Fatal("disabled CSQTT outbound was emitted") }
+		if entry["tag"] == "socks-hydra" {
+			if entry["server"] != "192.0.2.10" || entry["username"] != "user" || entry["password"] != "secret" { t.Fatalf("external SOCKS credentials/endpoint lost: %#v", entry) }
+		}
+	}
+	if gotFinal := config["route"].(map[string]any)["final"]; gotFinal != "socks-hydra" { t.Fatalf("route.final=%v, want socks-hydra", gotFinal) }
+}
+
+func TestBuildSingBoxConfigRejectsMissingFallbackWhenCSQTTDisabled(t *testing.T) {
+	_, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19180"})
+	if err == nil || !strings.Contains(err.Error(), "select a default outbound") { t.Fatalf("missing explicit fallback error = %v", err) }
+}
