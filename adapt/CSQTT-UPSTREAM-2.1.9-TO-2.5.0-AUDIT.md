@@ -18,9 +18,10 @@
 
 - `DeployTab.kt` adds optional web-panel secret-path protection, UUID regeneration, and explicit main-password validation (`^[a-zA-Z0-9]{16}$`).
 - `SettingsStore.kt` persists the secret-path enabled state and UUID per profile.
-- `SshHostKeyStore.kt` adds SSH host-key TOFU pinning (SHA-256 fingerprint) and rejects a changed key after initial trust.
+- `SshHostKeyStore.kt` adds SSH host-key TOFU pinning (SHA-256 fingerprint) and rejects a changed key after initial trust. No dedicated host-key-store test file appeared in the v2.5.0 source-tree inventory, so any port should add tests for first trust, stable reconnect, changed key, host/port scoping, and explicit pin rotation.
 - The current Linux adaptation derives its installer from pinned v2.1.9 and invokes OpenSSH with `StrictHostKeyChecking=accept-new`. This already has first-use trust-on-first-use semantics, but does not expose a UI for reviewing or rotating the pin. Do not replace this with unconditional host-key acceptance.
-- Secret-path support is a candidate for a separate, narrowly scoped security feature. Before porting, trace every web-panel route, reverse-proxy rule, certificate/renewal path, health check, and uninstall path. The current deploy UI/API contract and namespaced installer must remain compatible.
+- This is a real server feature, not only a cosmetic URL: v2.5.0 `rust-server/main.rs` accepts `CSQTT_WEB_SECRET_PATH`; `web_panel.rs` stores the normalized prefix in `App`, nests panel routes beneath it, redirects authorized `/` requests to the secret path, and sends unknown paths through the stealth-abort fallback. `deploy.sh` also reads the setting when verifying panel health. The Android Deploy UI persists a per-profile UUID and passes it into deploy operations.
+- Secret-path support is a candidate for a separate, narrowly scoped security feature. Porting requires the matching server-side router/config changes and installer environment persistence; copying only the Android UI or health check would create a broken/false sense of protection. Before porting, trace every web-panel route, reverse-proxy rule, certificate/renewal path, health check, and uninstall path. The current deploy UI/API contract and namespaced installer must remain compatible.
 
 ### 2. Tunnel recovery and diagnostics
 
