@@ -300,14 +300,6 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	directCIDRs, err := normalizeSingBoxCIDRs(input.DirectIPCIDRs)
 	if err != nil { return nil, fmt.Errorf("Direct IP/CIDR: %w", err) }
 
-	outbounds := []map[string]any{
-		{"type": "direct", "tag": singBoxDirectTag},
-		{"type": "socks", "tag": singBoxCSQTTTag, "server": csqttHost, "server_port": csqttPort, "version": "5"},
-	}
-	knownOutbounds := map[string]struct{}{
-		singBoxDirectTag: {},
-		singBoxCSQTTTag: {},
-	}
 	for _, proxy := range input.SOCKS5 {
 		if !proxy.Enabled {
 			continue
