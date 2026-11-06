@@ -12,7 +12,7 @@ The disposable pinned Rust client/server clones receive a test-only negotiated-l
 - [Pinned original LaLune ARM64 build and deployment E2E, run #700](https://github.com/Xenofan-git/LaLune-NanoPi-ARM64/actions/runs/38801700145) passed separately, including the real packaged artifact's ARM64 VM lifecycle and Deploy API install/uninstall checks.
 - The upstream unmodified baseline does not contain `CSQTT_LIVENESS_V1`; the release pipeline now builds a separately provenance-tracked patched production artifact. The CI-only test client is separate and uses disposable TURN credentials. Real VK authentication and end-to-end recovery for Manual, Auto API and Auto VK hash-acquisition modes have not been demonstrated by the recovery E2E.
 
-**Interpretation:** same-process recovery with negotiated liveness is demonstrated in patched disposable pinned sources, including a full ARM64 system VM. Production readiness, stock-artifact behavior and VK-auth compatibility remain unproven.
+**Historical interpretation (2026-10-15):** same-process recovery was initially demonstrated only in disposable patched sources. The release workflow has since promoted the negotiated WIRE-4 patch into its production-source build pipeline, as documented in the current-status section below. Hardware validation and real VK-auth mode coverage remain open.
 
 ## Current release-build status (2026-11-06)
 
