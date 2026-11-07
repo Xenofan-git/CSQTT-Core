@@ -58,6 +58,8 @@ func TestSingBoxManagerLoadConfigRejectsMalformedExternalSOCKS5(t *testing.T) {
 		{name: "fractional port", outbound: `{"type":"socks","tag":"socks-alpha","server":"proxy.example","server_port":1080.5}`},
 		{name: "invalid id", outbound: `{"type":"socks","tag":"socks-bad/id","server":"proxy.example","server_port":1080}`},
 		{name: "incomplete credentials", outbound: `{"type":"socks","tag":"socks-alpha","server":"proxy.example","server_port":1080,"username":"user"}`},
+		{name: "wrong outbound type", outbound: `{"type":"direct","tag":"socks-alpha","server":"proxy.example","server_port":1080}`},
+		{name: "non-string credentials", outbound: `{"type":"socks","tag":"socks-alpha","server":"proxy.example","server_port":1080,"username":123,"password":"secret"}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
