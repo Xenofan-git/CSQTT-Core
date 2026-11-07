@@ -1178,3 +1178,166 @@ func TestSingBoxSwitchesBetweenCSQTTAndDirectForRealTCPFlows(t *testing.T) {
 	}
 }
 
+// TestSingBoxSelectsBetweenTwoExternalSOCKS5OutboundsForRealTCPFlows proves
+// that two ordered domain rules select different external SOCKS5 upstreams.
+// Each fake upstream records the requested destination and relays real payload.
+func TestSingBoxSelectsBetweenTwoExternalSOCKS5OutboundsForRealTCPFlows(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" { t.Skip("requires pinned sing-box binary from CI") }
+
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer echo.Close()
+	go func() {
+		for {
+			conn, acceptErr := echo.Accept()
+			if acceptErr != nil { return }
+			go func(c net.Conn) { defer c.Close(); _, _ = io.Copy(c, c) }(conn)
+		}
+	}()
+
+	startUpstream := func(name string) (net.Listener, <-chan string) {
+		t.Helper()
+		listener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+		if listenErr != nil { t.Fatal(listenErr) }
+		targets := make(chan string, 2)
+		go func() {
+			for {
+				conn, acceptErr := listener.Accept()
+				if acceptErr != nil { return }
+				go func(c net.Conn) {
+					defer c.Close()
+					_ = c.SetDeadline(time.Now().Add(10*time.Second))
+					var greeting [2]byte
+					if _, e := io.ReadFull(c, greeting[:]); e != nil { return }
+					methods := make([]byte, int(greeting[1]))
+					if _, e := io.ReadFull(c, methods); e != nil { return }
+					if greeting[0] != 5 { return }
+					if _, e := c.Write([]byte{5, 0}); e != nil { return }
+
+					var request [4]byte
+					if _, e := io.ReadFull(c, request[:]); e != nil { return }
+					if request[0] != 5 || request[1] != 1 { return }
+					var host string
+					switch request[3] {
+					case 1:
+						var ip [4]byte
+						if _, e := io.ReadFull(c, ip[:]); e != nil { return }
+						host = net.IP(ip[:]).String()
+					case 3:
+						var size [1]byte
+						if _, e := io.ReadFull(c, size[:]); e != nil { return }
+						domain := make([]byte, int(size[0]))
+						if _, e := io.ReadFull(c, domain); e != nil { return }
+						host = string(domain)
+					default:
+						return
+					}
+					var portBytes [2]byte
+					if _, e := io.ReadFull(c, portBytes[:]); e != nil { return }
+					target := net.JoinHostPort(host, strconv.Itoa(int(binary.BigEndian.Uint16(portBytes[:]))))
+					select { case targets <- target: default: }
+					remote, dialErr := net.DialTimeout("tcp", echo.Addr().String(), 2*time.Second)
+					if dialErr != nil { _, _ = c.Write([]byte{5,5,0,1,0,0,0,0,0,0}); return }
+					defer remote.Close()
+					if _, e := c.Write([]byte{5,0,0,1,127,0,0,1,0,0}); e != nil { return }
+					done := make(chan struct{}, 2)
+					go func() { _, _ = io.Copy(remote, c); done <- struct{}{} }()
+					go func() { _, _ = io.Copy(c, remote); done <- struct{}{} }()
+					<-done
+				}(conn)
+			}
+		}()
+		_ = name // retained in the call site to make upstream identity explicit.
+		return listener, targets
+	}
+
+	upstreamA, targetsA := startUpstream("proxy-a")
+	defer upstreamA.Close()
+	upstreamB, targetsB := startUpstream("proxy-b")
+	defer upstreamB.Close()
+
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		FinalOutbound: singBoxDirectTag,
+		SOCKS5: []singBoxSOCKS5Outbound{
+			{ID:"proxy-a", Server:"127.0.0.1", ServerPort:upstreamA.Addr().(*net.TCPAddr).Port, Enabled:true},
+			{ID:"proxy-b", Server:"127.0.0.1", ServerPort:upstreamB.Addr().(*net.TCPAddr).Port, Enabled:true},
+		},
+		Rules: []singBoxRouteRule{
+			{ID:"route-proxy-a", Domains:[]string{"via-proxy-a.test"}, Outbound:"socks-proxy-a", Enabled:true},
+			{ID:"route-proxy-b", Domains:[]string{"via-proxy-b.test"}, Outbound:"socks-proxy-b", Enabled:true},
+		},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatal(err) }
+	configPath := filepath.Join(t.TempDir(), "sing-box-two-external.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil { t.Fatalf("start sing-box: %v", err) }
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	dialInbound := func() net.Conn {
+		t.Helper()
+		var client net.Conn
+		var dialErr error
+		deadline := time.Now().Add(8*time.Second)
+		for time.Now().Before(deadline) {
+			client, dialErr = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+			if dialErr == nil { break }
+			time.Sleep(50*time.Millisecond)
+		}
+		if client == nil { t.Fatalf("sing-box inbound not ready: %v; logs: %s", dialErr, output.String()) }
+		_ = client.SetDeadline(time.Now().Add(8*time.Second))
+		if _, err := client.Write([]byte{5,1,0}); err != nil { t.Fatal(err) }
+		var greeting [2]byte
+		if _, err := io.ReadFull(client, greeting[:]); err != nil { t.Fatal(err) }
+		if greeting != [2]byte{5,0} { t.Fatalf("SOCKS greeting=%v", greeting) }
+		return client
+	}
+	connectAndEcho := func(host, payload string) {
+		t.Helper()
+		client := dialInbound()
+		defer client.Close()
+		request := []byte{5,1,0,3,byte(len(host))}
+		request = append(request, []byte(host)...)
+		var portBytes [2]byte
+		binary.BigEndian.PutUint16(portBytes[:], uint16(echo.Addr().(*net.TCPAddr).Port))
+		request = append(request, portBytes[:]...)
+		if _, err := client.Write(request); err != nil { t.Fatal(err) }
+		var reply [10]byte
+		if _, err := io.ReadFull(client, reply[:]); err != nil { t.Fatalf("CONNECT %s: %v; logs: %s", host, err, output.String()) }
+		if reply[1] != 0 { t.Fatalf("CONNECT %s rejected: %v; logs: %s", host, reply, output.String()) }
+		data := []byte(payload)
+		if _, err := client.Write(data); err != nil { t.Fatal(err) }
+		got := make([]byte, len(data))
+		if _, err := io.ReadFull(client, got); err != nil { t.Fatalf("echo %s: %v", host, err) }
+		if !bytes.Equal(got, data) { t.Fatalf("echo %s=%q, want %q", host, got, data) }
+	}
+	assertTarget := func(name string, targets <-chan string, want string) {
+		t.Helper()
+		select {
+		case got := <-targets:
+			if got != want { t.Fatalf("%s received target %q, want %q", name, got, want) }
+		case <-time.After(3*time.Second):
+			t.Fatalf("%s did not receive its routed flow; logs: %s", name, output.String())
+		}
+	}
+
+	connectAndEcho("via-proxy-a.test", "payload-through-proxy-a")
+	assertTarget("proxy-a", targetsA, "via-proxy-a.test:"+strconv.Itoa(echo.Addr().(*net.TCPAddr).Port))
+	select {
+	case got := <-targetsB: t.Fatalf("proxy-b unexpectedly received proxy-a flow %q", got)
+	case <-time.After(200*time.Millisecond):
+	}
+
+	connectAndEcho("via-proxy-b.test", "payload-through-proxy-b")
+	assertTarget("proxy-b", targetsB, "via-proxy-b.test:"+strconv.Itoa(echo.Addr().(*net.TCPAddr).Port))
+	select {
+	case got := <-targetsA: t.Fatalf("proxy-a unexpectedly received proxy-b flow %q", got)
+	case <-time.After(200*time.Millisecond):
+	}
+}
+
