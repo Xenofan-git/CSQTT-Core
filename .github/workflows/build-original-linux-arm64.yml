@@ -355,7 +355,7 @@ jobs:
           set -euxo pipefail
           go test -count=1 -run '^TestBuildSingBoxConfigPassesPinnedBinaryCheck$' -v .
           go test -count=1 .
-          go test -count=1 -run '^TestSingBoxManagerRecoversRealSingBoxAfterForcedExit
+          go test -count=1 -run TestSingBoxManagerRecoversRealSingBoxAfterForcedExit -v .
           go test -race -count=1 .
           # Compile the exact generated client TUN tests for execution inside the ARM64 guest.
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c -o "$GITHUB_WORKSPACE/client-tun-tests-arm64" .
