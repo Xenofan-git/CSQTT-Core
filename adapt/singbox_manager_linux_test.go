@@ -48,6 +48,31 @@ func TestSingBoxManagerLoadConfigSortsExternalSOCKS5Outbounds(t *testing.T) {
 	}
 }
 
+func TestSingBoxManagerLoadConfigRejectsMalformedExternalSOCKS5(t *testing.T) {
+	cases := []struct {
+		name string
+		outbound string
+	}{
+		{name: "empty host", outbound: `{"type":"socks","tag":"socks-alpha","server":"","server_port":1080}`},
+		{name: "invalid host", outbound: `{"type":"socks","tag":"socks-alpha","server":"bad host","server_port":1080}`},
+		{name: "fractional port", outbound: `{"type":"socks","tag":"socks-alpha","server":"proxy.example","server_port":1080.5}`},
+		{name: "invalid id", outbound: `{"type":"socks","tag":"socks-bad/id","server":"proxy.example","server_port":1080}`},
+		{name: "incomplete credentials", outbound: `{"type":"socks","tag":"socks-alpha","server":"proxy.example","server_port":1080,"username":"user"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			config := filepath.Join(dir, "config.json")
+			raw := `{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19080}],"outbounds":[{"type":"direct","tag":"direct"},` + tc.outbound + `],"route":{"final":"direct","rules":[]}}`
+			if err := os.WriteFile(config, []byte(raw), 0600); err != nil { t.Fatal(err) }
+			manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+			if _, err := manager.LoadConfig(); err == nil {
+				t.Fatal("malformed persisted external SOCKS5 outbound was accepted")
+			}
+		})
+	}
+}
+
 func TestSingBoxListenIPAssignedMatchesExactInterfaceAddress(t *testing.T) {
 	addrs := []net.Addr{
 		&net.IPNet{IP: net.ParseIP("192.168.5.2"), Mask: net.CIDRMask(24, 32)},
