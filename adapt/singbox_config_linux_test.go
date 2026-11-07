@@ -570,6 +570,96 @@ func TestSingBoxRoutesDomainThroughAuthenticatedExternalSOCKS5WithoutCSQTT(t *te
 // TestSingBoxUDPAssociateRelaysThroughAuthenticatedExternalSOCKS5 verifies
 // that the pinned sing-box build negotiates RFC 1929 credentials, establishes
 // an upstream UDP ASSOCIATE, and relays an actual datagram in both directions.
+func TestSingBoxDoesNotFallbackWhenExternalSOCKS5AuthenticationFails(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" { t.Skip("requires pinned sing-box binary from CI") }
+
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer echo.Close()
+	go func() {
+		for {
+			conn, acceptErr := echo.Accept()
+			if acceptErr != nil { return }
+			go func(c net.Conn) { defer c.Close(); _, _ = io.Copy(c, c) }(conn)
+		}
+	}()
+
+	upstream, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer upstream.Close()
+	authSeen := make(chan bool, 1)
+	go func() {
+		conn, acceptErr := upstream.Accept()
+		if acceptErr != nil { authSeen <- false; return }
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
+		var greeting [2]byte
+		if _, e := io.ReadFull(conn, greeting[:]); e != nil { authSeen <- false; return }
+		methods := make([]byte, int(greeting[1]))
+		if _, e := io.ReadFull(conn, methods); e != nil { authSeen <- false; return }
+		if greeting[0] != 5 { authSeen <- false; return }
+		if _, e := conn.Write([]byte{5, 2}); e != nil { authSeen <- false; return }
+		var authHead [2]byte
+		if _, e := io.ReadFull(conn, authHead[:]); e != nil { authSeen <- false; return }
+		user := make([]byte, int(authHead[1]))
+		if _, e := io.ReadFull(conn, user); e != nil { authSeen <- false; return }
+		var passLen [1]byte
+		if _, e := io.ReadFull(conn, passLen[:]); e != nil { authSeen <- false; return }
+		pass := make([]byte, int(passLen[0]))
+		if _, e := io.ReadFull(conn, pass); e != nil { authSeen <- false; return }
+		credentialsArrived := authHead[0] == 1 && string(user) == "bad-user" && string(pass) == "bad-pass"
+		authSeen <- credentialsArrived
+		// RFC 1929: reject the configured credentials. No CONNECT is accepted.
+		_, _ = conn.Write([]byte{1, 1})
+	}()
+
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		FinalOutbound: "socks-reject",
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"reject",Server:"127.0.0.1",ServerPort:upstream.Addr().(*net.TCPAddr).Port,Username:"bad-user",Password:"bad-pass",Enabled:true}},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatal(err) }
+	configPath := filepath.Join(t.TempDir(), "sing-box-auth-reject.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil { t.Fatalf("start sing-box: %v", err) }
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	var client net.Conn
+	deadline := time.Now().Add(8*time.Second)
+	for time.Now().Before(deadline) {
+		client, err = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+		if err == nil { break }
+		time.Sleep(50*time.Millisecond)
+	}
+	if client == nil { t.Fatalf("sing-box inbound not ready: %v; logs: %s",err,output.String()) }
+	defer client.Close()
+	_ = client.SetDeadline(time.Now().Add(8*time.Second))
+	if _,err:=client.Write([]byte{5,1,0});err!=nil{t.Fatal(err)}
+	var greeting [2]byte
+	if _,err:=io.ReadFull(client,greeting[:]);err!=nil{t.Fatal(err)}
+	if greeting != [2]byte{5,0} { t.Fatalf("inbound greeting=%v",greeting) }
+
+	port:=echo.Addr().(*net.TCPAddr).Port
+	request:=[]byte{5,1,0,1,127,0,0,1,byte(port>>8),byte(port)}
+	if _,err:=client.Write(request);err!=nil{t.Fatal(err)}
+	var reply [10]byte
+	_,replyErr:=io.ReadFull(client,reply[:])
+	if replyErr==nil && reply[1]==0 {
+		t.Fatal("sing-box connected successfully after upstream SOCKS5 authentication rejection; fallback may have bypassed the selected outbound")
+	}
+	select {
+	case ok:=<-authSeen:
+		if !ok { t.Fatalf("upstream did not receive configured credentials; logs: %s",output.String()) }
+	case <-time.After(3*time.Second):
+		t.Fatalf("upstream authentication attempt was not observed; logs: %s",output.String())
+	}
+}
+
 func TestSingBoxUDPAssociateRelaysThroughAuthenticatedExternalSOCKS5(t *testing.T) {
 	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
 	if binaryPath == "" {
