@@ -988,6 +988,7 @@ func TestSingBoxDoesNotFallbackWhenExternalSOCKS5UpstreamResets(t *testing.T) {
 			return
 		}
 		upstreamAccepted <- struct{}{}
+		_ = upstream.Close() // Refuse subsequent retries rather than queueing them.
 		_ = conn.Close() // Simulate an upstream reset before SOCKS negotiation.
 	}()
 	defer upstream.Close()
