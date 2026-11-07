@@ -950,3 +950,118 @@ func TestSingBoxUDPAssociateRelaysThroughAuthenticatedExternalSOCKS5(t *testing.
 		t.Fatalf("UDP payload = %q, want %q; sing-box logs: %s", got[:n], payload, output.String())
 	}
 }
+
+
+// TestSingBoxDoesNotFallbackWhenExternalSOCKS5UpstreamResets verifies that a
+// selected external SOCKS5 outbound fails closed when its TCP upstream resets
+// immediately after accepting the connection. A local echo target detects any
+// accidental direct fallback by observing end-to-end payload delivery.
+func TestSingBoxDoesNotFallbackWhenExternalSOCKS5UpstreamResets(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" {
+		t.Skip("requires pinned sing-box binary from CI")
+	}
+
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer echo.Close()
+	go func() {
+		for {
+			conn, acceptErr := echo.Accept()
+			if acceptErr != nil {
+				return
+			}
+			go func(c net.Conn) { defer c.Close(); _, _ = io.Copy(c, c) }(conn)
+		}
+	}()
+
+	upstream, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstreamAccepted := make(chan struct{}, 1)
+	go func() {
+		conn, acceptErr := upstream.Accept()
+		if acceptErr != nil {
+			return
+		}
+		upstreamAccepted <- struct{}{}
+		_ = conn.Close() // Simulate an upstream reset before SOCKS negotiation.
+	}()
+	defer upstream.Close()
+
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		FinalOutbound: "socks-reset",
+		SOCKS5: []singBoxSOCKS5Outbound{{
+			ID: "reset", Server: "127.0.0.1",
+			ServerPort: upstream.Addr().(*net.TCPAddr).Port, Enabled: true,
+		}},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "sing-box-upstream-reset.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start sing-box: %v", err)
+	}
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	var client net.Conn
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		client, err = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+		if err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if client == nil {
+		t.Fatalf("sing-box inbound not ready: %v; logs: %s", err, output.String())
+	}
+	defer client.Close()
+	_ = client.SetDeadline(time.Now().Add(8 * time.Second))
+	if _, err := client.Write([]byte{5, 1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	var greeting [2]byte
+	if _, err := io.ReadFull(client, greeting[:]); err != nil {
+		t.Fatal(err)
+	}
+	if greeting != [2]byte{5, 0} {
+		t.Fatalf("inbound greeting=%v", greeting)
+	}
+
+	port := echo.Addr().(*net.TCPAddr).Port
+	request := []byte{5, 1, 0, 1, 127, 0, 0, 1, byte(port >> 8), byte(port)}
+	if _, err := client.Write(request); err != nil {
+		t.Fatal(err)
+	}
+	var reply [10]byte
+	_, replyErr := io.ReadFull(client, reply[:])
+	if replyErr == nil && reply[1] == 0 {
+		probe := []byte("must-not-bypass-reset-external-socks5")
+		if _, err := client.Write(probe); err != nil {
+			t.Fatalf("write fallback probe: %v; logs: %s", err, output.String())
+		}
+		echoed := make([]byte, len(probe))
+		if _, err := io.ReadFull(client, echoed); err == nil && bytes.Equal(echoed, probe) {
+			t.Fatal("payload reached direct echo target after external SOCKS5 upstream reset; selected outbound was bypassed")
+		}
+	}
+
+	select {
+	case <-upstreamAccepted:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("sing-box never attempted the selected external SOCKS5 upstream; logs: %s", output.String())
+	}
+}
