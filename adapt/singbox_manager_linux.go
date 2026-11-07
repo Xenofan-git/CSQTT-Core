@@ -301,6 +301,9 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		username, _ := entry["username"].(string); password, _ := entry["password"].(string)
 		input.SOCKS5 = append(input.SOCKS5, singBoxSOCKS5Outbound{ID:strings.TrimPrefix(tag,"socks-"), Server:host, ServerPort:int(port), Username:username, Password:password, Enabled:true})
 	}
+	// Go map iteration is intentionally randomized. Keep the panel model stable
+	// across loads so outbound ordering does not flicker between API responses.
+	sort.Slice(input.SOCKS5, func(i, j int) bool { return input.SOCKS5[i].ID < input.SOCKS5[j].ID })
 	route, _ := raw["route"].(map[string]any)
 	input.FinalOutbound, _ = route["final"].(string)
 	for _, rawSet := range anySlice(route["rule_set"]) {
