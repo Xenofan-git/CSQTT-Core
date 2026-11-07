@@ -296,10 +296,24 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	}
 	for tag, entry := range known {
 		if !strings.HasPrefix(tag, "socks-") { continue }
-		host, _ := entry["server"].(string); port, ok := entry["server_port"].(float64)
-		if !ok || port < 1 || port > 65535 { return input, fmt.Errorf("invalid SOCKS5 outbound %q", tag) }
-		username, _ := entry["username"].(string); password, _ := entry["password"].(string)
-		input.SOCKS5 = append(input.SOCKS5, singBoxSOCKS5Outbound{ID:strings.TrimPrefix(tag,"socks-"), Server:host, ServerPort:int(port), Username:username, Password:password, Enabled:true})
+		host, _ := entry["server"].(string)
+		port, ok := entry["server_port"].(float64)
+		if !ok || port < 1 || port > 65535 || port != float64(int(port)) {
+			return input, fmt.Errorf("invalid SOCKS5 outbound %q", tag)
+		}
+		id := strings.TrimPrefix(tag, "socks-")
+		if !singBoxIDPattern.MatchString(id) {
+			return input, fmt.Errorf("invalid SOCKS5 outbound ID in tag %q", tag)
+		}
+		if _, _, err := singBoxOutboundHostPort(host, strconv.Itoa(int(port)), "SOCKS5 outbound "+tag); err != nil {
+			return input, err
+		}
+		username, _ := entry["username"].(string)
+		password, _ := entry["password"].(string)
+		if (username == "") != (password == "") {
+			return input, fmt.Errorf("SOCKS5 outbound %q must provide both username and password", tag)
+		}
+		input.SOCKS5 = append(input.SOCKS5, singBoxSOCKS5Outbound{ID:id, Server:strings.TrimSpace(host), ServerPort:int(port), Username:username, Password:password, Enabled:true})
 	}
 	// Go map iteration is intentionally randomized. Keep the panel model stable
 	// across loads so outbound ordering does not flicker between API responses.
