@@ -1066,3 +1066,115 @@ func TestSingBoxDoesNotFallbackWhenExternalSOCKS5UpstreamResets(t *testing.T) {
 		t.Fatalf("sing-box never attempted the selected external SOCKS5 upstream; logs: %s", output.String())
 	}
 }
+
+// TestSingBoxSwitchesBetweenCSQTTAndDirectForRealTCPFlows verifies that
+// ordered rules select distinct outbounds for separate connections through the
+// same SOCKS inbound. The CSQTT server records only its own routed destination;
+// the Direct flow reaches the echo target without touching CSQTT.
+func TestSingBoxSwitchesBetweenCSQTTAndDirectForRealTCPFlows(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" { t.Skip("requires pinned sing-box binary from CI") }
+
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer echo.Close()
+	go func() {
+		for {
+			conn, acceptErr := echo.Accept()
+			if acceptErr != nil { return }
+			go func(c net.Conn) { defer c.Close(); _, _ = io.Copy(c, c) }(conn)
+		}
+	}()
+
+	targets := make(chan string, 4)
+	csqtt := NewSocks5Server("127.0.0.1:0")
+	csqtt.dialTCPOverride = func(target string) (net.Conn, error) {
+		select { case targets <- target: default: }
+		return net.DialTimeout("tcp", echo.Addr().String(), 2*time.Second)
+	}
+	if err := csqtt.Start(); err != nil { t.Fatalf("start CSQTT SOCKS5: %v", err) }
+	defer csqtt.Stop()
+
+	echoPort := echo.Addr().(*net.TCPAddr).Port
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		CSQTTAddress: csqtt.Status().Address,
+		FinalOutbound: singBoxDirectTag,
+		Rules: []singBoxRouteRule{
+			{ID:"route-via-csqtt", Domains:[]string{"via-csqtt.test"}, Outbound:singBoxCSQTTTag, Enabled:true},
+			{ID:"route-direct-ip", IPCIDRs:[]string{"127.0.0.1/32"}, Outbound:singBoxDirectTag, Enabled:true},
+		},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatal(err) }
+	configPath := filepath.Join(t.TempDir(), "sing-box-switch.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil { t.Fatalf("start sing-box: %v", err) }
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	dialInbound := func() net.Conn {
+		t.Helper()
+		var client net.Conn
+		var dialErr error
+		deadline := time.Now().Add(8*time.Second)
+		for time.Now().Before(deadline) {
+			client, dialErr = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+			if dialErr == nil { break }
+			time.Sleep(50*time.Millisecond)
+		}
+		if client == nil { t.Fatalf("sing-box inbound not ready: %v; logs: %s", dialErr, output.String()) }
+		_ = client.SetDeadline(time.Now().Add(8*time.Second))
+		if _, err := client.Write([]byte{5,1,0}); err != nil { t.Fatal(err) }
+		var greeting [2]byte
+		if _, err := io.ReadFull(client, greeting[:]); err != nil { t.Fatal(err) }
+		if greeting != [2]byte{5,0} { t.Fatalf("SOCKS greeting=%v", greeting) }
+		return client
+	}
+	connectAndEcho := func(host string, port int, domain bool, payload string) {
+		t.Helper()
+		client := dialInbound()
+		defer client.Close()
+		request := []byte{5,1,0}
+		if domain {
+			request = append(request, 3, byte(len(host)))
+			request = append(request, []byte(host)...)
+		} else {
+			ip := net.ParseIP(host).To4()
+			if ip == nil { t.Fatalf("invalid test IPv4 %q", host) }
+			request = append(request, 1)
+			request = append(request, ip...)
+		}
+		var portBytes [2]byte
+		binary.BigEndian.PutUint16(portBytes[:], uint16(port))
+		request = append(request, portBytes[:]...)
+		if _, err := client.Write(request); err != nil { t.Fatal(err) }
+		var reply [10]byte
+		if _, err := io.ReadFull(client, reply[:]); err != nil { t.Fatalf("CONNECT %s: %v; logs: %s", host, err, output.String()) }
+		if reply[1] != 0 { t.Fatalf("CONNECT %s rejected: %v; logs: %s", host, reply, output.String()) }
+		data := []byte(payload)
+		if _, err := client.Write(data); err != nil { t.Fatal(err) }
+		got := make([]byte, len(data))
+		if _, err := io.ReadFull(client, got); err != nil { t.Fatalf("echo %s: %v", host, err) }
+		if !bytes.Equal(got, data) { t.Fatalf("echo for %s=%q, want %q", host, got, data) }
+	}
+
+	connectAndEcho("via-csqtt.test", echoPort, true, "flow-selected-csqtt")
+	select {
+	case target := <-targets:
+		if target != net.JoinHostPort("via-csqtt.test", strconv.Itoa(echoPort)) { t.Fatalf("CSQTT received %q", target) }
+	case <-time.After(3*time.Second):
+		t.Fatal("CSQTT did not receive the domain-routed flow")
+	}
+
+	connectAndEcho("127.0.0.1", echoPort, false, "flow-selected-direct")
+	select {
+	case target := <-targets:
+		t.Fatalf("Direct flow unexpectedly traversed CSQTT as %q", target)
+	case <-time.After(300*time.Millisecond):
+		// No CSQTT dial is the expected proof that the second rule selected Direct.
+	}
+}
+
