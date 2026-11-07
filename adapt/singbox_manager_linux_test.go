@@ -7,6 +7,7 @@ import (
 	"context"
 	"net"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -663,5 +664,112 @@ func TestSingBoxManagerRecoversAfterUnexpectedExit(t *testing.T) {
 	}
 	if status := manager.Status(); status.Running || status.PID != 0 {
 		t.Fatalf("manager retained restarted process after Stop: %+v", status)
+	}
+}
+
+
+// TestSingBoxManagerRecoversRealSingBoxAfterForcedExit exercises the manager
+// against the pinned sing-box binary: start, complete a real SOCKS5 CONNECT,
+// kill the process unexpectedly, wait for waiter cleanup, restart, and relay
+// another real payload through the same inbound endpoint.
+func TestSingBoxManagerRecoversRealSingBoxAfterForcedExit(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" {
+		t.Skip("requires pinned sing-box binary from CI")
+	}
+
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer echo.Close()
+	go func() {
+		for {
+			conn, acceptErr := echo.Accept()
+			if acceptErr != nil { return }
+			go func(c net.Conn) { defer c.Close(); _, _ = io.Copy(c, c) }(conn)
+		}
+	}()
+
+	listenAddress := reserveSingBoxTestAddress(t)
+	input := singBoxConfigInput{ListenAddress: listenAddress, FinalOutbound: singBoxDirectTag}
+	config, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatal(err) }
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "sing-box-recovery.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+	manager := NewSingBoxManager(binaryPath, configPath, filepath.Join(dir, "sing-box.log"))
+
+	waitInbound := func() {
+		t.Helper()
+		deadline := time.Now().Add(8 * time.Second)
+		for time.Now().Before(deadline) {
+			conn, dialErr := net.DialTimeout("tcp", listenAddress, 150*time.Millisecond)
+			if dialErr == nil {
+				_ = conn.Close()
+				return
+			}
+			if !manager.Status().Running { break }
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatalf("sing-box inbound did not become ready; status=%+v", manager.Status())
+	}
+	connectAndEcho := func(payload string) {
+		t.Helper()
+		conn, dialErr := net.DialTimeout("tcp", listenAddress, time.Second)
+		if dialErr != nil { t.Fatalf("dial sing-box inbound: %v", dialErr) }
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		if _, err := conn.Write([]byte{5, 1, 0}); err != nil { t.Fatal(err) }
+		var greeting [2]byte
+		if _, err := io.ReadFull(conn, greeting[:]); err != nil { t.Fatal(err) }
+		if greeting != [2]byte{5, 0} { t.Fatalf("SOCKS greeting = %v", greeting) }
+
+		target := echo.Addr().(*net.TCPAddr)
+		request := []byte{5, 1, 0, 1, 127, 0, 0, 1, byte(target.Port >> 8), byte(target.Port)}
+		if _, err := conn.Write(request); err != nil { t.Fatal(err) }
+		var reply [10]byte
+		if _, err := io.ReadFull(conn, reply[:]); err != nil { t.Fatalf("SOCKS CONNECT: %v", err) }
+		if reply[1] != 0 { t.Fatalf("SOCKS CONNECT reply = %v", reply) }
+		data := []byte(payload)
+		if _, err := conn.Write(data); err != nil { t.Fatal(err) }
+		got := make([]byte, len(data))
+		if _, err := io.ReadFull(conn, got); err != nil { t.Fatalf("echo payload: %v", err) }
+		if string(got) != payload { t.Fatalf("echo = %q, want %q", got, payload) }
+	}
+
+	if err := manager.Start(context.Background()); err != nil { t.Fatalf("initial Start: %v", err) }
+	waitInbound()
+	first := manager.Status()
+	if !first.Running || first.PID <= 0 { t.Fatalf("initial process not running: %+v", first) }
+	connectAndEcho("before-forced-exit")
+
+	process, err := os.FindProcess(first.PID)
+	if err != nil { t.Fatalf("find sing-box PID %d: %v", first.PID, err) }
+	if err := process.Kill(); err != nil { t.Fatalf("force-kill sing-box PID %d: %v", first.PID, err) }
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		status := manager.Status()
+		if !status.Running && status.PID == 0 && status.Error != "" { break }
+		time.Sleep(20 * time.Millisecond)
+	}
+	crashed := manager.Status()
+	if crashed.Running || crashed.PID != 0 || crashed.Error == "" {
+		t.Fatalf("manager did not observe forced process exit: %+v", crashed)
+	}
+
+	if err := manager.Start(context.Background()); err != nil {
+		t.Fatalf("restart after forced exit: %v; previous status: %+v", err, crashed)
+	}
+	restarted := manager.Status()
+	if !restarted.Running || restarted.PID <= 0 || restarted.PID == first.PID {
+		t.Fatalf("manager did not create a new process generation: first=%+v restarted=%+v", first, restarted)
+	}
+	if restarted.Error != "" { t.Fatalf("stale crash error after restart: %+v", restarted) }
+	waitInbound()
+	connectAndEcho("after-forced-exit")
+
+	if err := manager.Stop(); err != nil { t.Fatalf("Stop after recovery: %v", err) }
+	if status := manager.Status(); status.Running || status.PID != 0 {
+		t.Fatalf("manager retained process after final Stop: %+v", status)
 	}
 }
