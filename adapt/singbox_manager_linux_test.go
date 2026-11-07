@@ -32,6 +32,22 @@ func writeValidSingBoxConfigForTest(t *testing.T, path string) {
 	if err := os.WriteFile(path, encoded, 0600); err != nil { t.Fatal(err) }
 }
 
+func TestSingBoxManagerLoadConfigSortsExternalSOCKS5Outbounds(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.json")
+	raw := `{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19080}],"outbounds":[{"type":"direct","tag":"direct"},{"type":"socks","tag":"socks-zeta","server":"zeta.example","server_port":1080},{"type":"socks","tag":"socks-alpha","server":"alpha.example","server_port":1081},{"type":"socks","tag":"csqtt","server":"127.0.0.1","server_port":19081}],"route":{"final":"direct","rules":[]}}`
+	if err := os.WriteFile(config, []byte(raw), 0600); err != nil { t.Fatal(err) }
+	manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+	for attempt := 0; attempt < 5; attempt++ {
+		loaded, err := manager.LoadConfig()
+		if err != nil { t.Fatalf("LoadConfig: %v", err) }
+		if len(loaded.SOCKS5) != 2 { t.Fatalf("loaded %d external outbounds, want 2: %#v", len(loaded.SOCKS5), loaded.SOCKS5) }
+		if loaded.SOCKS5[0].ID != "alpha" || loaded.SOCKS5[1].ID != "zeta" {
+			t.Fatalf("external SOCKS5 outbounds are not stable and sorted: %#v", loaded.SOCKS5)
+		}
+	}
+}
+
 func TestSingBoxListenIPAssignedMatchesExactInterfaceAddress(t *testing.T) {
 	addrs := []net.Addr{
 		&net.IPNet{IP: net.ParseIP("192.168.5.2"), Mask: net.CIDRMask(24, 32)},
