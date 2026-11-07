@@ -75,6 +75,26 @@ func TestSingBoxManagerLoadConfigRejectsMalformedExternalSOCKS5(t *testing.T) {
 	}
 }
 
+func TestSingBoxManagerLoadConfigRejectsUnsafeCSQTTOutbound(t *testing.T) {
+	cases := []struct { name, server string; port int }{
+		{name: "non-loopback address", server: "192.168.1.20", port: 12500},
+		{name: "public address", server: "203.0.113.10", port: 12500},
+		{name: "same endpoint as inbound", server: "127.0.0.1", port: 19080},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			config := filepath.Join(dir, "config.json")
+			raw := fmt.Sprintf(`{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19080}],"outbounds":[{"type":"direct","tag":"direct"},{"type":"socks","tag":"csqtt","server":%q,"server_port":%d}],"route":{"final":"direct","rules":[]}}`, tc.server, tc.port)
+			if err := os.WriteFile(config, []byte(raw), 0600); err != nil { t.Fatal(err) }
+			manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+			if _, err := manager.LoadConfig(); err == nil {
+				t.Fatal("unsafe persisted CSQTT outbound was accepted")
+			}
+		})
+	}
+}
+
 func TestSingBoxListenIPAssignedMatchesExactInterfaceAddress(t *testing.T) {
 	addrs := []net.Addr{
 		&net.IPNet{IP: net.ParseIP("192.168.5.2"), Mask: net.CIDRMask(24, 32)},
