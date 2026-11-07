@@ -597,3 +597,62 @@ func TestSingBoxManagerRoundTripsExternalDefaultWithoutCSQTT(t *testing.T) {
 		t.Fatalf("SOCKS5 credentials did not round-trip: %#v", loaded.SOCKS5[0])
 	}
 }
+
+
+// TestSingBoxManagerRecoversAfterUnexpectedExit verifies that the manager's
+// waiter releases the previous process generation after a crash, preserves the
+// failure in Status, and permits a clean subsequent Start.
+func TestSingBoxManagerRecoversAfterUnexpectedExit(t *testing.T) {
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "run-count")
+	script := "if [ \"$1\" = check ]; then exit 0; fi\n" +
+		"count=0\n" +
+		"if [ -f " + shellQuoteForTest(counter) + " ]; then read count < " + shellQuoteForTest(counter) + "; fi\n" +
+		"count=$((count + 1))\n" +
+		"echo $count > " + shellQuoteForTest(counter) + "\n" +
+		"if [ \"$count\" -eq 1 ]; then echo simulated-crash >&2; exit 17; fi\n" +
+		"exec sleep 60"
+	binary := newFakeSingBox(t, script)
+	config := filepath.Join(dir, "config.json")
+	writeValidSingBoxConfigForTest(t, config)
+	manager := NewSingBoxManager(binary, config, filepath.Join(dir, "sing-box.log"))
+
+	if err := manager.Start(context.Background()); err != nil {
+		t.Fatalf("first Start: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		status := manager.Status()
+		if !status.Running && status.Error != "" {
+			if !strings.Contains(status.Error, "exit status 17") {
+				t.Fatalf("unexpected crash status: %+v", status)
+			}
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if status := manager.Status(); status.Running || !strings.Contains(status.Error, "exit status 17") {
+		t.Fatalf("manager did not publish unexpected exit: %+v", status)
+	}
+
+	if err := manager.Start(context.Background()); err != nil {
+		t.Fatalf("Start after unexpected exit: %v", err)
+	}
+	status := manager.Status()
+	if !status.Running || status.PID == 0 {
+		t.Fatalf("manager did not start a new process generation: %+v", status)
+	}
+	data, err := os.ReadFile(counter)
+	if err != nil || strings.TrimSpace(string(data)) != "2" {
+		t.Fatalf("run count = %q, err=%v; want second run", data, err)
+	}
+	if status.Error != "" {
+		t.Fatalf("stale crash error remained after successful restart: %+v", status)
+	}
+	if err := manager.Stop(); err != nil {
+		t.Fatalf("Stop after recovery: %v", err)
+	}
+	if status := manager.Status(); status.Running || status.PID != 0 {
+		t.Fatalf("manager retained restarted process after Stop: %+v", status)
+	}
+}
