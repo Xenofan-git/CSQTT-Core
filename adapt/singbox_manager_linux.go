@@ -290,8 +290,17 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		if csqtt["type"] != "socks" { return input, fmt.Errorf("invalid CSQTT outbound type") }
 		csqttHost, _ := csqtt["server"].(string)
 		csqttPort, ok := csqtt["server_port"].(float64)
-		if csqttHost == "" || !ok || csqttPort < 1 || csqttPort > 65535 { return input, fmt.Errorf("invalid CSQTT SOCKS endpoint") }
-		input.CSQTTAddress = net.JoinHostPort(csqttHost, strconv.Itoa(int(csqttPort)))
+		if !ok || csqttPort < 1 || csqttPort > 65535 || csqttPort != float64(int(csqttPort)) {
+			return input, fmt.Errorf("invalid CSQTT SOCKS endpoint")
+		}
+		csqttIP := net.ParseIP(strings.TrimSpace(csqttHost))
+		if csqttIP == nil || !csqttIP.IsLoopback() {
+			return input, fmt.Errorf("CSQTT SOCKS outbound must use the local loopback listener")
+		}
+		if input.ListenAddress == net.JoinHostPort(csqttIP.String(), strconv.Itoa(int(csqttPort))) {
+			return input, fmt.Errorf("sing-box inbound and CSQTT SOCKS outbound must use different endpoints")
+		}
+		input.CSQTTAddress = net.JoinHostPort(csqttIP.String(), strconv.Itoa(int(csqttPort)))
 		input.CSQTTEnabled = true
 	}
 	for tag, entry := range known {
