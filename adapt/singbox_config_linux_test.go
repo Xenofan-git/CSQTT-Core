@@ -650,7 +650,17 @@ func TestSingBoxDoesNotFallbackWhenExternalSOCKS5AuthenticationFails(t *testing.
 	var reply [10]byte
 	_,replyErr:=io.ReadFull(client,reply[:])
 	if replyErr==nil && reply[1]==0 {
-		t.Fatal("sing-box connected successfully after upstream SOCKS5 authentication rejection; fallback may have bypassed the selected outbound")
+		// A successful local SOCKS CONNECT reply alone is not enough to prove
+		// that traffic bypassed the rejected upstream: verify end-to-end payload
+		// delivery to the local echo target before declaring a fallback.
+		probe := []byte("must-not-bypass-selected-outbound")
+		if _, err := client.Write(probe); err != nil {
+			t.Fatalf("write fallback probe after successful CONNECT reply: %v; logs: %s", err, output.String())
+		}
+		echoed := make([]byte, len(probe))
+		if _, err := io.ReadFull(client, echoed); err == nil && bytes.Equal(echoed, probe) {
+			t.Fatal("payload reached the direct local echo target after upstream SOCKS5 authentication rejection; selected outbound was bypassed")
+		}
 	}
 	select {
 	case ok:=<-authSeen:
