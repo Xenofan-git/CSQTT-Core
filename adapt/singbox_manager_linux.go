@@ -296,6 +296,9 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	}
 	for tag, entry := range known {
 		if !strings.HasPrefix(tag, "socks-") { continue }
+		if entry["type"] != "socks" {
+			return input, fmt.Errorf("invalid SOCKS5 outbound type for %q", tag)
+		}
 		host, _ := entry["server"].(string)
 		port, ok := entry["server_port"].(float64)
 		if !ok || port < 1 || port > 65535 || port != float64(int(port)) {
@@ -308,8 +311,14 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		if _, _, err := singBoxOutboundHostPort(host, strconv.Itoa(int(port)), "SOCKS5 outbound "+tag); err != nil {
 			return input, err
 		}
-		username, _ := entry["username"].(string)
-		password, _ := entry["password"].(string)
+		username, hasUsername := entry["username"].(string)
+		password, hasPassword := entry["password"].(string)
+		if _, exists := entry["username"]; exists && !hasUsername {
+			return input, fmt.Errorf("SOCKS5 outbound %q username must be a string", tag)
+		}
+		if _, exists := entry["password"]; exists && !hasPassword {
+			return input, fmt.Errorf("SOCKS5 outbound %q password must be a string", tag)
+		}
 		if (username == "") != (password == "") {
 			return input, fmt.Errorf("SOCKS5 outbound %q must provide both username and password", tag)
 		}
