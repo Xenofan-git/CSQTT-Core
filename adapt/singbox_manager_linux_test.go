@@ -642,7 +642,16 @@ func TestSingBoxManagerRecoversAfterUnexpectedExit(t *testing.T) {
 	if !status.Running || status.PID == 0 {
 		t.Fatalf("manager did not start a new process generation: %+v", status)
 	}
-	data, err := os.ReadFile(counter)
+	deadline = time.Now().Add(2 * time.Second)
+	var data []byte
+	var err error
+	for time.Now().Before(deadline) {
+		data, err = os.ReadFile(counter)
+		if err == nil && strings.TrimSpace(string(data)) == "2" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if err != nil || strings.TrimSpace(string(data)) != "2" {
 		t.Fatalf("run count = %q, err=%v; want second run", data, err)
 	}
