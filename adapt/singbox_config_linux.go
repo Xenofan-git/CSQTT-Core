@@ -291,7 +291,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	}
 	outbounds := []map[string]any{{"type": "direct", "tag": singBoxDirectTag}}
 	knownOutbounds := map[string]struct{}{singBoxDirectTag: {}}
-	csqttEnabled := input.CSQTTEnabled || strings.TrimSpace(input.CSQTTAddress) != ""
+	csqttEnabled := input.CSQTTEnabled || input.CSQTTRule.Enabled || strings.TrimSpace(input.CSQTTAddress) != ""
 	if csqttEnabled {
 		csqttHost, csqttPort, err := singBoxHostPort(input.CSQTTAddress, "CSQTT SOCKS address")
 		if err != nil { return nil, err }
