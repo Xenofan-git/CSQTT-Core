@@ -56,9 +56,18 @@ type singBoxConfigInput struct {
 	CSQTTAddress  string
 	CSQTTEnabled  bool
 	FinalOutbound string
+	// DirectEnabled is a pointer so omitted legacy API fields retain the
+	// historical enabled-by-default Direct behavior.
+	DirectEnabled *bool
 	DirectDomains        []string
 	DirectDomainSuffixes []string
 	DirectIPCIDRs        []string
+	// CSQTTRule is the immutable system rule card. Its outbound is always
+	// the managed CSQTT outbound; callers cannot redirect or delete it.
+	CSQTTRule singBoxRouteRule
+	// RouteOrder contains "csqtt" and user rule IDs. Direct is always pinned
+	// first and is deliberately not represented in this movable sequence.
+	RouteOrder []string
 	SOCKS5        []singBoxSOCKS5Outbound
 	RuleSets      []singBoxRuleSet
 	Rules         []singBoxRouteRule
@@ -362,68 +371,109 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		ruleSetConfigs = append(ruleSetConfigs, entry)
 	}
 
-	rules := make([]map[string]any, 0, 2+len(input.Rules))
+	rules := make([]map[string]any, 0, 3+len(input.Rules))
 	rules = append(rules, map[string]any{
 		"inbound": []string{singBoxInboundTag},
 		"action": "sniff",
 	})
-	if len(directDomains) > 0 || len(directSuffixes) > 0 || len(directCIDRs) > 0 {
-		rules = append(rules, makeSingBoxRouteRule(directDomains, directSuffixes, nil, nil, directCIDRs, singBoxDirectTag))
+
+	// Compile every enabled card into a stable ID -> sing-box rule map, then
+	// apply the panel's explicit priority order. Direct is immutable and pinned.
+	routeByID := make(map[string]map[string]any, len(input.Rules)+2)
+	directEnabled := input.DirectEnabled == nil || *input.DirectEnabled
+	if directEnabled && (len(directDomains)+len(directSuffixes)+len(directCIDRs) > 0) {
+		routeByID["direct"] = makeSingBoxRouteRule(directDomains, directSuffixes, nil, nil, directCIDRs, singBoxDirectTag)
 	}
 
 	seenRuleIDs := make(map[string]struct{}, len(input.Rules))
-	for _, item := range input.Rules {
-		if !item.Enabled {
-			continue
-		}
-		if !singBoxIDPattern.MatchString(item.ID) {
-			return nil, fmt.Errorf("invalid route rule ID %q", item.ID)
-		}
-		if _, exists := seenRuleIDs[item.ID]; exists {
-			return nil, fmt.Errorf("duplicate route rule ID %q", item.ID)
-		}
-		seenRuleIDs[item.ID] = struct{}{}
+	compileRule := func(item singBoxRouteRule, id, outbound string, system bool) (map[string]any, error) {
+		if !singBoxIDPattern.MatchString(id) { return nil, fmt.Errorf("invalid route rule ID %q", id) }
 		domains, err := normalizeSingBoxDomains(item.Domains, false)
-		if err != nil {
-			return nil, fmt.Errorf("route rule %q domains: %w", item.ID, err)
-		}
+		if err != nil { return nil, fmt.Errorf("route rule %q domains: %w", id, err) }
 		suffixes, err := normalizeSingBoxDomains(item.DomainSuffixes, true)
-		if err != nil { return nil, fmt.Errorf("route rule %q suffixes: %w", item.ID, err) }
+		if err != nil { return nil, fmt.Errorf("route rule %q suffixes: %w", id, err) }
 		keywords, err := normalizeSingBoxKeywords(item.DomainKeywords)
-		if err != nil { return nil, fmt.Errorf("route rule %q keywords: %w", item.ID, err) }
+		if err != nil { return nil, fmt.Errorf("route rule %q keywords: %w", id, err) }
 		regexes, err := normalizeSingBoxRegexes(item.DomainRegexes)
-		if err != nil { return nil, fmt.Errorf("route rule %q regexes: %w", item.ID, err) }
+		if err != nil { return nil, fmt.Errorf("route rule %q regexes: %w", id, err) }
 		cidrs, err := normalizeSingBoxCIDRs(item.IPCIDRs)
-		if err != nil { return nil, fmt.Errorf("route rule %q IP/CIDR: %w", item.ID, err) }
-		if err := validateSingBoxAdvancedRouteFields(item.Advanced); err != nil {
-			return nil, fmt.Errorf("route rule %q advanced fields: %w", item.ID, err)
-		}
+		if err != nil { return nil, fmt.Errorf("route rule %q IP/CIDR: %w", id, err) }
+		if err := validateSingBoxAdvancedRouteFields(item.Advanced); err != nil { return nil, fmt.Errorf("route rule %q advanced fields: %w", id, err) }
 		if len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs)+len(item.RuleSets) == 0 && !singBoxAdvancedHasMatcher(item.Advanced) {
-			return nil, fmt.Errorf("route rule %q has no matchers", item.ID)
+			return nil, fmt.Errorf("route rule %q has no matchers", id)
 		}
 		seenTags := make(map[string]struct{}, len(item.RuleSets))
 		for _, tag := range item.RuleSets {
-			if _, ok := knownRuleSets[tag]; !ok { return nil, fmt.Errorf("route rule %q references unknown Rule Set %q", item.ID, tag) }
-			if _, ok := seenTags[tag]; ok { return nil, fmt.Errorf("route rule %q contains duplicate Rule Set %q", item.ID, tag) }
+			if _, ok := knownRuleSets[tag]; !ok { return nil, fmt.Errorf("route rule %q references unknown Rule Set %q", id, tag) }
+			if _, ok := seenTags[tag]; ok { return nil, fmt.Errorf("route rule %q contains duplicate Rule Set %q", id, tag) }
 			seenTags[tag] = struct{}{}
 		}
-		if _, exists := knownOutbounds[item.Outbound]; !exists {
-			return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound)
-		}
-		rule := makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, item.Outbound)
-		// sing-box logical route rules use the logical-rule schema and do not
-		// accept the ordinary rule-level inbound selector. This CSQTT instance
-		// has a single managed inbound, so the selector is redundant here.
+		if _, exists := knownOutbounds[outbound]; !exists { return nil, fmt.Errorf("route rule %q references unknown outbound %q", id, outbound) }
+		rule := makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, outbound)
 		if item.Advanced["type"] != nil {
 			var ruleType string
-			if err := json.Unmarshal(item.Advanced["type"], &ruleType); err == nil && ruleType == "logical" {
-				delete(rule, "inbound")
-			}
+			if err := json.Unmarshal(item.Advanced["type"], &ruleType); err == nil && ruleType == "logical" { delete(rule, "inbound") }
 		}
 		if len(item.RuleSets) > 0 { rule["rule_set"] = item.RuleSets }
-		for key,raw:=range item.Advanced { if _,managed:=singBoxManagedRouteFields[key]; managed {return nil,fmt.Errorf("route rule %q advanced field %q conflicts with managed routing",item.ID,key)}; var value any; if err:=json.Unmarshal(raw,&value); err!=nil{return nil,fmt.Errorf("route rule %q advanced field %q: %w",item.ID,key,err)}; rule[key]=value }
-		rules = append(rules, rule)
+		for key, raw := range item.Advanced {
+			if _, managed := singBoxManagedRouteFields[key]; managed { return nil, fmt.Errorf("route rule %q advanced field %q conflicts with managed routing", id, key) }
+			var value any
+			if err := json.Unmarshal(raw, &value); err != nil { return nil, fmt.Errorf("route rule %q advanced field %q: %w", id, key, err) }
+			rule[key] = value
+		}
+		_ = system
+		return rule, nil
 	}
+
+	csqttEnabled := input.CSQTTEnabled || input.CSQTTRule.Enabled
+	if csqttEnabled && input.CSQTTRule.Enabled {
+		csqttRule, err := compileRule(input.CSQTTRule, "csqtt", singBoxCSQTTTag, true)
+		if err != nil { return nil, err }
+		routeByID["csqtt"] = csqttRule
+	}
+	for _, item := range input.Rules {
+		if !singBoxIDPattern.MatchString(item.ID) { return nil, fmt.Errorf("invalid route rule ID %q", item.ID) }
+		if _, exists := seenRuleIDs[item.ID]; exists { return nil, fmt.Errorf("duplicate route rule ID %q", item.ID) }
+		seenRuleIDs[item.ID] = struct{}{}
+		if !item.Enabled { continue }
+		if item.ID == "direct" || item.ID == "csqtt" { return nil, fmt.Errorf("route rule ID %q is reserved for a system card", item.ID) }
+		rule, err := compileRule(item, item.ID, item.Outbound, false)
+		if err != nil { return nil, err }
+		routeByID[item.ID] = rule
+	}
+
+	ordered := make([]string, 0, len(routeByID))
+	seenOrder := make(map[string]struct{}, len(input.RouteOrder))
+	for _, id := range input.RouteOrder {
+		if id == "direct" { return nil, fmt.Errorf("Direct is pinned and cannot be reordered") }
+		if _, exists := seenOrder[id]; exists { return nil, fmt.Errorf("duplicate route order entry %q", id) }
+		seenOrder[id] = struct{}{}
+		if _, exists := routeByID[id]; !exists {
+			// A disabled card remains in the panel model and therefore may be
+			// present in RouteOrder without producing a runtime route rule.
+			if id != "csqtt" {
+				if _, known := seenRuleIDs[id]; !known { return nil, fmt.Errorf("route order references unknown rule %q", id) }
+			}
+			continue
+		}
+		ordered = append(ordered, id)
+	}
+	// Legacy requests omit RouteOrder: preserve their Rules slice order.
+	if len(input.RouteOrder) == 0 {
+		for _, item := range input.Rules { if item.Enabled { ordered = append(ordered, item.ID) } }
+		if input.CSQTTRule.Enabled { ordered = append([]string{"csqtt"}, ordered...) }
+	} else {
+		for _, item := range input.Rules {
+			if item.Enabled {
+				if _, exists := seenOrder[item.ID]; !exists { ordered = append(ordered, item.ID) }
+			}
+		}
+		if input.CSQTTRule.Enabled {
+			if _, exists := seenOrder["csqtt"]; !exists { ordered = append(ordered, "csqtt") }
+		}
+	}
+	if directRule, ok := routeByID["direct"]; ok { rules = append(rules, directRule) }
+	for _, id := range ordered { if rule, ok := routeByID[id]; ok { rules = append(rules, rule) } }
 	// Explicit fallback selection. Legacy configs keep CSQTT when configured.
 	finalOutbound := strings.TrimSpace(input.FinalOutbound)
 	if finalOutbound == "" { return nil, fmt.Errorf("select a default outbound for unmatched traffic; CSQTT is never selected implicitly") }
