@@ -358,8 +358,13 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 			return state.Input, nil
 		}
 		if generationSidecar { return input, fmt.Errorf("sing-box panel state generation does not match active config") }
+		return input, fmt.Errorf("sing-box config changed outside the panel; refusing to discard saved disabled-card and priority metadata")
 	} else if !errors.Is(stateErr, os.ErrNotExist) {
 		return input, fmt.Errorf("read sing-box panel state: %w", stateErr)
+	} else if matches, globErr := filepath.Glob(m.configPath + ".panel.*.json"); globErr != nil {
+		return input, fmt.Errorf("inspect sing-box panel state generations: %w", globErr)
+	} else if len(matches) > 0 {
+		return input, fmt.Errorf("sing-box config changed outside the panel; no matching panel-state generation exists")
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil { return input, fmt.Errorf("decode sing-box config: %w", err) }
