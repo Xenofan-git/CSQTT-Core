@@ -226,6 +226,7 @@ def main():
             # Exercise the full default-outbound lifecycle in the real Chromium UI:
             # Direct -> CSQTT -> external SOCKS5, saving and reloading each choice.
             page.locator("#singboxFinalOutbound").select_option("direct")
+            page.locator("#singboxConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
             assert singbox_saved.get("FinalOutbound") == "direct"
@@ -236,6 +237,7 @@ def main():
             page.locator("#singboxCsqttEnabled").check()
             assert page.locator("#singboxCsqtt").input_value() == "127.0.0.1:12500"
             page.locator("#singboxFinalOutbound").select_option("csqtt")
+            page.locator("#singboxConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
             assert singbox_saved.get("CSQTTEnabled") is True
@@ -247,6 +249,7 @@ def main():
 
             page.locator("#singboxFinalOutbound").select_option("socks-hydra")
             page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
+            page.locator("#singboxConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
