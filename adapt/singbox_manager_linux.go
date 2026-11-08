@@ -787,12 +787,16 @@ func (m *SingBoxManager) DeleteRuleSet(tag string) error {
  if !singBoxIDPattern.MatchString(tag){return fmt.Errorf("invalid Rule Set tag %q",tag)}
  m.mu.Lock();defer m.mu.Unlock()
  if m.cmd!=nil||m.starting||m.configuring{return fmt.Errorf("cannot delete Rule Set while sing-box is running, starting, or configuring")}
- input,err:=m.LoadConfig();if err!=nil&&!errors.Is(err, os.ErrNotExist){return fmt.Errorf("load sing-box config before deletion: %w",err)}
+ // Inspect raw route JSON before importing it into the panel model. A
+ // reference may live inside a newer/advanced sing-box action that the panel
+ // deliberately refuses to import; deletion must still fail safely with the
+ // precise reference reason and must never remove a referenced file.
  if referenced, err := singBoxConfigRouteReferencesRuleSet(m.configPath, tag); err != nil {
   return fmt.Errorf("inspect sing-box Rule Set references: %w", err)
  } else if referenced {
   return fmt.Errorf("Rule Set %q is referenced by a route rule; remove the reference and save first", tag)
  }
+ input,err:=m.LoadConfig();if err!=nil&&!errors.Is(err, os.ErrNotExist){return fmt.Errorf("load sing-box config before deletion: %w",err)}
  for _,set:=range input.RuleSets{if set.Tag==tag{return fmt.Errorf("Rule Set %q is still registered in sing-box config; remove it from the registry and save first",tag)}}
  dir:=filepath.Join(filepath.Dir(m.configPath),"rule-sets");info,err:=os.Lstat(dir);if errors.Is(err, os.ErrNotExist){return nil}
  if err!=nil||!info.IsDir()||info.Mode()&os.ModeSymlink!=0{return fmt.Errorf("managed Rule Set path is not a safe directory")}
