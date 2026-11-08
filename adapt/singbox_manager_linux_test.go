@@ -932,7 +932,7 @@ func TestSingBoxManagerLegacyImportPreservesCSQTTRoutePosition(t *testing.T) {
 func TestSingBoxManagerConcurrentLoadsObserveCompleteConfigGenerations(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "config.json")
-	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), config, filepath.Join(dir, "sing-box.log"))
+	manager := NewSingBoxManager(newFakeSingBox(t, "if [ \"$1\" = check ]; then sleep 0.05; fi\nexit 0"), config, filepath.Join(dir, "sing-box.log"))
 	oldInput := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag, DirectDomains: []string{"old.example"}}
 	newInput := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag, DirectDomains: []string{"new.example"}}
 	if err := manager.SaveConfig(oldInput); err != nil { t.Fatalf("save initial generation: %v", err) }
