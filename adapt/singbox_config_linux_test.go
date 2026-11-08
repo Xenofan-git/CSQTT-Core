@@ -1533,3 +1533,22 @@ func TestBuildSingBoxConfigPinsDirectAndRejectsSystemCardReordering(t *testing.T
 		if _, err := buildSingBoxConfig(candidate); err == nil { t.Fatalf("invalid protected route order %v was accepted", order) }
 	}
 }
+
+
+func TestBuildSingBoxConfigRejectsDisabledCSQTTSystemCardReferences(t *testing.T) {
+	base := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180",
+		FinalOutbound: singBoxDirectTag,
+		RouteOrder: []string{"csqtt"},
+	}
+	cases := []struct{name string; input singBoxConfigInput}{
+		{name: "enabled state mismatch", input: func() singBoxConfigInput { x:=base; x.CSQTTEnabled=true; return x }()},
+		{name: "stale listener while disabled", input: func() singBoxConfigInput { x:=base; x.CSQTTAddress="127.0.0.1:12500"; return x }()},
+		{name: "CSQTT selected as fallback while disabled", input: func() singBoxConfigInput { x:=base; x.FinalOutbound=singBoxCSQTTTag; return x }()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := buildSingBoxConfig(tc.input); err == nil { t.Fatal("disabled CSQTT system card reference was accepted") }
+		})
+	}
+}
