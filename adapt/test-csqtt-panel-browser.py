@@ -322,6 +322,17 @@ def main():
             page.wait_for_function("document.querySelector('#singboxFinalOutbound').value === 'csqtt'")
             assert page.locator("#singboxCsqttEnabled").is_checked() is True
 
+            # Disabling CSQTT must not silently rewrite an explicit final choice.
+            page.locator("#singboxCsqttEnabled").uncheck()
+            assert page.locator("#singboxFinalOutbound").input_value() == "csqtt"
+            assert page.locator("#singboxFinalOutbound option:checked").is_disabled()
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function("document.querySelector('#singboxEngineConfigMessage').textContent.includes('CSQTT выключен')")
+            assert singbox_saved.get("FinalOutbound") == "csqtt", "invalid save must not reach the API"
+            page.locator("#singboxCsqttEnabled").check()
+            assert page.locator("#singboxFinalOutbound").input_value() == "csqtt"
+            assert page.locator("#singboxFinalOutbound option:checked").is_enabled()
+
             page.locator("#singboxFinalOutbound").select_option("socks-hydra")
             assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
             page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
