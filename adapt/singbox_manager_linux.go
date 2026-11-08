@@ -364,7 +364,7 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	} else if matches, globErr := filepath.Glob(m.configPath + ".panel.*.json"); globErr != nil {
 		return input, fmt.Errorf("inspect sing-box panel state generations: %w", globErr)
 	} else if len(matches) > 0 {
-		return input, fmt.Errorf("sing-box config changed outside the panel; no matching panel-state generation exists")
+		return input, fmt.Errorf("sing-box config changed outside the panel; no matching panel-state generation exists, refusing lossy import")
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil { return input, fmt.Errorf("decode sing-box config: %w", err) }
