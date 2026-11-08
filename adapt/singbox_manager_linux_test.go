@@ -847,8 +847,11 @@ func TestSingBoxManagerSaveLoadPreservesDisabledSystemAndUserCards(t *testing.T)
 		},
 	}
 	if err := manager.SaveConfig(input); err != nil { t.Fatalf("SaveConfig: %v", err) }
-	loaded, err := manager.LoadConfig()
-	if err != nil { t.Fatalf("LoadConfig: %v", err) }
+	// Simulate a process restart: restore the full model using a fresh manager
+	// and only the persisted config plus its generation-bound sidecar.
+	restartedManager := NewSingBoxManager(manager.binary, configPath, manager.logPath)
+	loaded, err := restartedManager.LoadConfig()
+	if err != nil { t.Fatalf("LoadConfig after manager restart: %v", err) }
 	if loaded.DirectEnabled == nil || *loaded.DirectEnabled { t.Fatalf("Direct enabled state did not round-trip: %#v", loaded.DirectEnabled) }
 	if loaded.CSQTTEnabled || loaded.CSQTTRule.Enabled { t.Fatalf("disabled CSQTT state did not round-trip: %#v", loaded.CSQTTRule) }
 	if len(loaded.Rules) != 2 || loaded.Rules[0].Enabled || loaded.Rules[1].ID != "user-active" {
@@ -857,7 +860,9 @@ func TestSingBoxManagerSaveLoadPreservesDisabledSystemAndUserCards(t *testing.T)
 	if got := strings.Join(loaded.RouteOrder, ","); got != "user-disabled,csqtt,user-active" {
 		t.Fatalf("route priority did not round-trip: %q", got)
 	}
-	stateInfo, err := os.Stat(manager.panelStatePath())
+	stateFiles, err := filepath.Glob(configPath + ".panel.*.json")
+	if err != nil || len(stateFiles) != 1 { t.Fatalf("expected one hash-bound panel sidecar, got %v (%v)", stateFiles, err) }
+	stateInfo, err := os.Stat(stateFiles[0])
 	if err != nil { t.Fatalf("panel state sidecar missing: %v", err) }
 	if stateInfo.Mode().Perm() != 0600 { t.Fatalf("panel state permissions = %o, want 0600", stateInfo.Mode().Perm()) }
 }
