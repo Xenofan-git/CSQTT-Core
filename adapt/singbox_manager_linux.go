@@ -599,14 +599,6 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	}
 	return input,nil
 }
-func anySlice(value any) []any { items, _ := value.([]any); return items }
-
-func stringSlice(value any) []string {
-	items, _ := value.([]any); out := make([]string,0,len(items))
-	for _, item := range items { if s,ok:=item.(string); ok { out=append(out,s) } }
-	return out
-}
-
 func (m *SingBoxManager) CopyLogs(w io.Writer) error {
 	f, err := os.Open(m.logPath)
 	if err != nil { return err }
