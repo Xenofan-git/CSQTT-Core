@@ -368,10 +368,20 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil { return input, fmt.Errorf("decode sing-box config: %w", err) }
-	inbounds, _ := raw["inbounds"].([]any)
-	if len(inbounds) != 1 { return input, fmt.Errorf("unsupported sing-box config: expected one inbound") }
-	inbound, _ := inbounds[0].(map[string]any)
-	if inbound["type"] != "socks" || inbound["tag"] != singBoxInboundTag { return input, fmt.Errorf("unsupported sing-box inbound") }
+	for key := range raw {
+		if key != "log" && key != "inbounds" && key != "outbounds" && key != "route" {
+			return input, fmt.Errorf("unsupported top-level sing-box field %q; refusing lossy panel import", key)
+		}
+	}
+	inbounds, ok := raw["inbounds"].([]any)
+	if !ok || len(inbounds) != 1 { return input, fmt.Errorf("unsupported sing-box config: expected one inbound") }
+	inbound, ok := inbounds[0].(map[string]any)
+	if !ok || inbound["type"] != "socks" || inbound["tag"] != singBoxInboundTag { return input, fmt.Errorf("unsupported sing-box inbound") }
+	for key := range inbound {
+		if key != "type" && key != "tag" && key != "listen" && key != "listen_port" {
+			return input, fmt.Errorf("unsupported sing-box inbound field %q; refusing lossy panel import", key)
+		}
+	}
 	host, _ := inbound["listen"].(string)
 	port, ok := inbound["listen_port"].(float64)
 	if host == "" || !ok || port < 1 || port > 65535 { return input, fmt.Errorf("invalid sing-box inbound endpoint") }
@@ -395,8 +405,21 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		}
 		known[tag] = entry
 	}
+	if direct := known[singBoxDirectTag]; direct != nil {
+		if direct["type"] != "direct" || len(direct) != 2 {
+			return input, fmt.Errorf("unsupported Direct outbound shape; refusing lossy panel import")
+		}
+	}
 	if csqtt := known[singBoxCSQTTTag]; csqtt != nil {
 		if csqtt["type"] != "socks" { return input, fmt.Errorf("invalid CSQTT outbound type") }
+		for key := range csqtt {
+			if key != "type" && key != "tag" && key != "server" && key != "server_port" && key != "version" {
+				return input, fmt.Errorf("unsupported CSQTT outbound field %q; refusing lossy panel import", key)
+			}
+		}
+		if version, exists := csqtt["version"]; exists && version != "5" {
+			return input, fmt.Errorf("CSQTT outbound version must be SOCKS5")
+		}
 		csqttHost, _ := csqtt["server"].(string)
 		csqttPort, ok := csqtt["server_port"].(float64)
 		if !ok || csqttPort < 1 || csqttPort > 65535 || csqttPort != float64(int(csqttPort)) {
@@ -417,6 +440,14 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		if !strings.HasPrefix(tag, "socks-") { continue }
 		if entry["type"] != "socks" {
 			return input, fmt.Errorf("invalid SOCKS5 outbound type for %q", tag)
+		}
+		for key := range entry {
+			if key != "type" && key != "tag" && key != "server" && key != "server_port" && key != "version" && key != "username" && key != "password" {
+				return input, fmt.Errorf("unsupported SOCKS5 outbound field %q in %q; refusing lossy panel import", key, tag)
+			}
+		}
+		if version, exists := entry["version"]; exists && version != "5" {
+			return input, fmt.Errorf("SOCKS5 outbound %q version must be 5", tag)
 		}
 		host, _ := entry["server"].(string)
 		port, ok := entry["server_port"].(float64)
