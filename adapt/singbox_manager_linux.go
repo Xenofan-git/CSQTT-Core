@@ -336,8 +336,18 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	// Go map iteration is intentionally randomized. Keep the panel model stable
 	// across loads so outbound ordering does not flicker between API responses.
 	sort.Slice(input.SOCKS5, func(i, j int) bool { return input.SOCKS5[i].ID < input.SOCKS5[j].ID })
-	route, _ := raw["route"].(map[string]any)
-	input.FinalOutbound, _ = route["final"].(string)
+	route, ok := raw["route"].(map[string]any)
+	if !ok {
+		return input, fmt.Errorf("invalid sing-box route configuration")
+	}
+	finalOutbound, ok := route["final"].(string)
+	if !ok || strings.TrimSpace(finalOutbound) == "" {
+		return input, fmt.Errorf("sing-box route must define an explicit default outbound")
+	}
+	if known[finalOutbound] == nil {
+		return input, fmt.Errorf("sing-box default outbound %q is not configured", finalOutbound)
+	}
+	input.FinalOutbound = finalOutbound
 	for _, rawSet := range anySlice(route["rule_set"]) {
 		set, ok := rawSet.(map[string]any); if !ok { continue }
 		item := singBoxRuleSet{}
