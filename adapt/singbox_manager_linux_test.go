@@ -1005,7 +1005,7 @@ func TestSingBoxManagerLoadsLegacyPanelSidecar(t *testing.T) {
 	sum := sha256.Sum256(encoded)
 	stateData, err := json.MarshalIndent(singBoxPanelState{ConfigSHA256: hex.EncodeToString(sum[:]), Input: input}, "", "  ")
 	if err != nil { t.Fatal(err) }
-	if err := os.WriteFile(config+".panel.json", append(stateData, '\\n'), 0600); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(config+".panel.json", append(stateData, '\n'), 0600); err != nil { t.Fatal(err) }
 	manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
 	loaded, err := manager.LoadConfig()
 	if err != nil { t.Fatalf("LoadConfig legacy sidecar: %v", err) }
