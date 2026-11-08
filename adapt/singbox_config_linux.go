@@ -284,6 +284,9 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	if input.RouteOrder != nil && input.CSQTTEnabled != input.CSQTTRule.Enabled {
 		return nil, fmt.Errorf("CSQTT system card and CSQTT outbound must share the same enabled state")
 	}
+	if input.RouteOrder != nil && !input.CSQTTEnabled && strings.TrimSpace(input.CSQTTAddress) != "" {
+		return nil, fmt.Errorf("CSQTT SOCKS address must be empty while the CSQTT system card is disabled")
+	}
 	listenHost, listenPort, err := singBoxHostPort(input.ListenAddress, "listen address")
 	if err != nil {
 		return nil, err
