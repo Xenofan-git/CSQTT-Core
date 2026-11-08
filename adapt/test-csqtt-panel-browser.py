@@ -245,7 +245,7 @@ def main():
             assert page.locator("#singboxCsqttEnabled").is_checked() is True
 
             page.locator("#singboxFinalOutbound").select_option("socks-hydra")
-            page.locator("#singboxDirectDomains").fill("example.ru\\\\napi.example.ru")
+            page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
