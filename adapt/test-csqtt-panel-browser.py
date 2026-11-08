@@ -229,6 +229,10 @@ def main():
                     assert page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").is_checked() is False
                     page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").check()
                     assert page.locator("#singboxCsqttEnabled").is_checked()
+                    user_card.locator('[data-field="Outbound"]').select_option("csqtt")
+                    page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").uncheck()
+                    assert user_card.locator('[data-field="Outbound"]').input_value() == "csqtt", "disabling CSQTT must not rewrite a disabled rule's selected outbound"
+                    assert user_card.locator('[data-field="Outbound"] option:checked').is_disabled()
                     page.locator('#singboxRouteRuleEditor [data-card-type="user"] [data-remove-route-rule]').click()
                     assert page.locator('#singboxRouteRuleEditor [data-card-type="user"]').count() == 0
                 if name == "direct":
