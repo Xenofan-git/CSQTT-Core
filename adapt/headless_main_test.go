@@ -661,3 +661,45 @@ func TestSingBoxAPIRejectsPublicControlAndUnknownConfigFields(t *testing.T) {
 	handler.ServeHTTP(rec, unknown)
 	if rec.Code != http.StatusBadRequest { t.Fatalf("unknown config field status=%d, want 400",rec.Code) }
 }
+
+
+func TestSingBoxAPIRejectsSystemCardTampering(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	handler := apiHandlerWithSingBox(nil, manager)
+	cases := []struct {
+		name string
+		input singBoxConfigInput
+	}{
+		{
+			name: "Direct cannot be moved",
+			input: singBoxConfigInput{
+				ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:19181",
+				CSQTTEnabled: true, FinalOutbound: singBoxDirectTag,
+				CSQTTRule: singBoxRouteRule{Enabled: true, Domains: []string{"csqtt.example"}},
+				RouteOrder: []string{"direct", "csqtt"},
+			},
+		},
+		{
+			name: "disabled CSQTT cannot be referenced",
+			input: singBoxConfigInput{
+				ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
+				RouteOrder: []string{"user-route"},
+				Rules: []singBoxRouteRule{{ID: "user-route", Enabled: true, Domains: []string{"proxy.example"}, Outbound: singBoxCSQTTTag}},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(tc.input)
+			if err != nil { t.Fatal(err) }
+			req := httptest.NewRequest(http.MethodPut, "/singbox/config", strings.NewReader(string(body)))
+			req.RemoteAddr = "192.168.1.10:12345"
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("tampered system-card request status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
