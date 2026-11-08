@@ -760,7 +760,7 @@ def main():
                 f"first save did not persist its original snapshot: {singbox_saved!r}"
             )
             page.locator("#singboxSaveEngine").click()
-            page.wait_for_function("document.querySelector('#toast').textContent.includes('Конфигурация проверена sing-box и сохранена')")
+            page.wait_for_function("document.querySelector('#singboxRouteConfigMessage').textContent.includes('Конфигурация проверена sing-box и сохранена')")
 
             browser.close()
     finally:
