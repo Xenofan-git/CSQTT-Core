@@ -217,7 +217,7 @@ def main():
 
             # Hold the first saved-config response while the user edits the form.
             # Releasing a stale response must not overwrite those in-progress edits.
-            page.add_init_script("""() => {
+            page.evaluate("""() => {
                 const originalFetch = window.fetch.bind(window);
                 let gateUsed = false;
                 window.__singboxConfigGate = { requested: false, release: null };
