@@ -137,13 +137,13 @@ TCP и UDP relay проверяются E2E через реальную реал
 
 GitHub Actions собирает и проверяет существующую ARM64 адаптацию на основе закреплённого upstream LaLune. Проверки включают исходную адаптацию, панель и API, Chromium smoke test, DeployManager, ARM64 сборку, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с nftables и Linux routes, а также испытания в изолированной Debian ARM64 system VM.
 
-Последний зафиксированный успешный контрольный запуск: [CI run #1297](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64/actions/runs/42114527446). Оба job завершились успешно: pinned sing-box 1.14.4 config validation, сборка ARM64, Chromium smoke test, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с реальными nftables/Linux routes, Deploy API и lifecycle, recovery, clean-runtime acceptance в Debian 13 ARM64 system VM. Это подтверждает только сценарии, реально входившие в запуск; это не заменяет аппаратное тестирование на NanoPi и не означает готовность для всех ARM64 устройств.
+Последний полностью проверенный успешный контрольный запуск до документационного обновления: [CI run #1370](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64/actions/runs/42506708908) на SHA `1593de47145611ef9dadd24249280497aef4be9f`. Оба job завершились успешно: pinned sing-box 1.14.4 config validation, сборка ARM64, Chromium smoke test, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с реальными nftables/Linux routes, Deploy API и lifecycle, recovery, clean-runtime acceptance в Debian 13 ARM64 system VM. Это подтверждает только сценарии, реально входившие в запуск; это не заменяет аппаратное тестирование на NanoPi и не означает готовность для всех ARM64 устройств.
 
 ## Репозиторий и правила разработки
 
 - Основной репозиторий: [CSQTT-sing-box-for-Debian-Ubuntu-ARM64](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64).
 - Default branch: `main`.
-- Рабочая ветка текущего этапа: `fix/direct-dnsmasq-dualstack-production`.
+- Рабочая ветка PR #9 и текущего этапа: `fix/explicit-singbox-default-outbound`.
 - Не менять `main` без отдельного решения.
 - Не ослаблять тесты ради зелёного CI.
 - Не дублировать существующие тесты без необходимости.
