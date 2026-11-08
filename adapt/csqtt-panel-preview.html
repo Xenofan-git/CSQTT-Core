@@ -303,7 +303,7 @@ const singboxRouteModel={directEnabled:true,csqttRule:{Enabled:false,RuleSets:[]
 let singboxEditRevision=0,singboxRefreshSequence=0;
 function splitLines(id){return $(id).value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)}
 function singBoxOutboundTags(){const tags=['direct'];if($('singboxCsqttEnabled')?.checked)tags.push('csqtt');const proxies=routeJSON('singboxOutbounds');for(const x of proxies){const id=x.ID||x.id;if(Boolean(x.Enabled??x.enabled)&&id)tags.push('socks-'+id)}return tags}
-function refreshSingBoxOutboundSelectors(){const tags=singBoxOutboundTags(),final=$('singboxFinalOutbound'),previous=final.value;final.innerHTML=tags.map(tag=>'<option value="'+esc(tag)+'">'+esc(tag==='direct'?'Direct (без прокси)':tag==='csqtt'?'CSQTT':tag)+'</option>').join('');final.value=tags.includes(previous)?previous:'direct';const enabled=$('singboxCsqttEnabled').checked;$('singboxCsqttField').classList.toggle('hidden',!enabled)}
+function refreshSingBoxOutboundSelectors(){const tags=singBoxOutboundTags(),final=$('singboxFinalOutbound'),previous=final.value,visible=tags.includes(previous)?tags:(previous?[previous,...tags]:tags);final.innerHTML=visible.map(tag=>'<option value="'+esc(tag)+'" '+(!tags.includes(tag)?'disabled':'')+'>'+esc(tag==='direct'?'Direct (без прокси)':tag==='csqtt'?'CSQTT':tag)+(!tags.includes(tag)?' (выключен)':'')+'</option>').join('');final.value=visible.includes(previous)?previous:'direct';const enabled=$('singboxCsqttEnabled').checked;$('singboxCsqttField').classList.toggle('hidden',!enabled)}
 function renderSingBoxStatus(s){
  singboxState.running=!!s.running;$('singboxDot').className='dot '+(s.running?'ok':(s.error?'bad':''));$('singboxState').textContent=s.running?'sing-box запущен':(s.error?'Ошибка sing-box':'sing-box остановлен');$('singboxPid').textContent='PID '+(s.pid||'—');$('singboxMessage').textContent=s.error||('Конфигурация: '+(s.configured?'сохранена':'не задана')+' · журнал: '+(s.log_path||'—'));$('singboxStart').disabled=!!s.running||!s.configured;$('singboxStop').disabled=!s.running;
 }
@@ -394,8 +394,9 @@ function singBoxPayload(){
  try{rules=JSON.parse($('singboxRules').value||'[]');if(!Array.isArray(rules))throw new Error('ожидается JSON-массив')}catch(e){throw new Error('Правила: '+e.message)}
  try{ruleSets=JSON.parse($('singboxRuleSets').value||'[]');if(!Array.isArray(ruleSets))throw new Error('ожидается JSON-массив')}catch(e){throw new Error('Rule Set: '+e.message)}
  const csqttEnabled=!!singboxRouteModel.csqttRule.Enabled,finalOutbound=$('singboxFinalOutbound').value;
- if(!finalOutbound||!singBoxOutboundTags().includes(finalOutbound))throw new Error('Выберите доступный outbound по умолчанию');
+ if(!finalOutbound)throw new Error('Выберите outbound по умолчанию');
  if(!csqttEnabled&&finalOutbound==='csqtt')throw new Error('CSQTT выключен: выберите другой outbound по умолчанию');
+ if(!singBoxOutboundTags().includes(finalOutbound))throw new Error('Выбранный outbound выключен или недоступен: '+finalOutbound);
  if(!csqttEnabled&&rules.some(r=>(r.Outbound||r.outbound)==='csqtt'&&(r.Enabled??r.enabled)!==false))throw new Error('Включённое правило использует выключенный CSQTT outbound');
  return {RuleSets:ruleSets,ListenAddress:$('singboxListen').value.trim(),CSQTTAddress:csqttEnabled?$('singboxCsqtt').value.trim():'',CSQTTEnabled:csqttEnabled,CSQTTRule:singboxRouteModel.csqttRule,DirectEnabled:singboxRouteModel.directEnabled,RouteOrder:singboxRouteModel.routeOrder,FinalOutbound:finalOutbound,DirectDomains:splitLines('singboxDirectDomains'),DirectDomainSuffixes:splitLines('singboxDirectSuffixes'),DirectIPCIDRs:splitLines('singboxDirectCIDRs'),SOCKS5:socks,Rules:rules};
 }
