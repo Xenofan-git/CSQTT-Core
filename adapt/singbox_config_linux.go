@@ -281,6 +281,9 @@ func makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs []string, 
 // It deliberately creates no TUN inbound, auto_route, auto_redirect, or system capture.
 // Direct exclusions and user rules are evaluated in order; unmatched traffic uses only the explicitly selected default outbound.
 func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
+	if input.RouteOrder != nil && input.CSQTTEnabled != input.CSQTTRule.Enabled {
+		return nil, fmt.Errorf("CSQTT system card and CSQTT outbound must share the same enabled state")
+	}
 	listenHost, listenPort, err := singBoxHostPort(input.ListenAddress, "listen address")
 	if err != nil {
 		return nil, err
@@ -432,10 +435,10 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	}
 	for _, item := range input.Rules {
 		if !singBoxIDPattern.MatchString(item.ID) { return nil, fmt.Errorf("invalid route rule ID %q", item.ID) }
+		if item.ID == "direct" || item.ID == "csqtt" { return nil, fmt.Errorf("route rule ID %q is reserved for a system card", item.ID) }
 		if _, exists := seenRuleIDs[item.ID]; exists { return nil, fmt.Errorf("duplicate route rule ID %q", item.ID) }
 		seenRuleIDs[item.ID] = struct{}{}
 		if !item.Enabled { continue }
-		if item.ID == "direct" || item.ID == "csqtt" { return nil, fmt.Errorf("route rule ID %q is reserved for a system card", item.ID) }
 		rule, err := compileRule(item, item.ID, item.Outbound)
 		if err != nil { return nil, err }
 		routeByID[item.ID] = rule
