@@ -867,18 +867,18 @@ func TestSingBoxManagerSaveLoadPreservesDisabledSystemAndUserCards(t *testing.T)
 	if stateInfo.Mode().Perm() != 0600 { t.Fatalf("panel state permissions = %o, want 0600", stateInfo.Mode().Perm()) }
 }
 
-func TestSingBoxManagerIgnoresStalePanelStateAfterExternalConfigChange(t *testing.T) {
+func TestSingBoxManagerRejectsStalePanelStateAfterExternalConfigChange(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
 	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), configPath, filepath.Join(dir, "sing-box.log"))
 	input := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag, Rules: []singBoxRouteRule{{ID: "saved", Enabled: true, Domains: []string{"saved.example"}, Outbound: singBoxDirectTag}}}
 	if err := manager.SaveConfig(input); err != nil { t.Fatal(err) }
-	// Model an external edit to the sing-box JSON. A sidecar tied to the old
-	// checksum must not resurrect stale panel state over the edited config.
+	// Model an external edit to a panel-managed config. The runtime JSON alone
+	// cannot reconstruct disabled cards or the exact system-card priority.
 	encoded, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag})
 	if err != nil { t.Fatal(err) }
 	if err := os.WriteFile(configPath, encoded, 0600); err != nil { t.Fatal(err) }
-	loaded, err := manager.LoadConfig()
-	if err != nil { t.Fatalf("LoadConfig after external edit: %v", err) }
-	if len(loaded.Rules) != 0 { t.Fatalf("stale panel sidecar overrode externally edited config: %#v", loaded.Rules) }
+	if _, err := manager.LoadConfig(); err == nil || !strings.Contains(err.Error(), "changed outside the panel") {
+		t.Fatalf("expected fail-closed stale panel-state error, got %v", err)
+	}
 }
