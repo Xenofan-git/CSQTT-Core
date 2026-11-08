@@ -366,7 +366,7 @@ function collectRouteRuleEditor(){
  if(csCard){
   const get=name=>csCard.querySelector('[data-field="'+name+'"]');
   const lines=name=>(get(name)?.value||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-  singboxRouteModel.csqttRule={ID:'csqtt',Enabled:!!csCard.querySelector('[data-system-enabled="csqtt"]')?.checked,RuleSets:[...(get('RuleSets')?.selectedOptions||[])].map(x=>x.value),Domains:lines('Domains'),DomainSuffixes:lines('DomainSuffixes'),DomainKeywords:lines('DomainKeywords'),DomainRegexes:lines('DomainRegexes'),IPCIDRs:lines('IPCIDRs'),Outbound:'csqtt'};
+  singboxRouteModel.csqttRule={...(singboxRouteModel.csqttRule||{}),ID:'csqtt',Enabled:!!csCard.querySelector('[data-system-enabled="csqtt"]')?.checked,RuleSets:[...(get('RuleSets')?.selectedOptions||[])].map(x=>x.value),Domains:lines('Domains'),DomainSuffixes:lines('DomainSuffixes'),DomainKeywords:lines('DomainKeywords'),DomainRegexes:lines('DomainRegexes'),IPCIDRs:lines('IPCIDRs'),Outbound:'csqtt'};
   $('singboxCsqttEnabled').checked=singboxRouteModel.csqttRule.Enabled;
  }
  const movable=[...root.querySelectorAll('[data-movable="true"]')],order=[],rules=[];
