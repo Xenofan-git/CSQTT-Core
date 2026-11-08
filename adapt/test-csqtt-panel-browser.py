@@ -221,11 +221,22 @@ def main():
                     user_card = page.locator('#singboxRouteRuleEditor .route-rule[data-card-type="user"]')
                     assert user_card.count() == 1
                     user_card.locator('[data-field="Domains"]').fill("priority.example")
+                    direct_toggle = page.locator("#singboxRouteRuleEditor [data-system-enabled='direct']")
+                    direct_toggle.uncheck()
+                    assert direct_toggle.is_checked() is False
+                    direct_toggle.check()
+                    csqtt_card = page.locator('#singboxRouteRuleEditor [data-system-card="csqtt"]')
+                    csqtt_card.locator('[data-move-route-card="down"]').click()
+                    ordered = page.locator("#singboxRouteRuleEditor .route-rule[data-movable='true']").evaluate_all("(els) => els.map(el => el.dataset.routeId)")
+                    assert ordered[0].startswith("route-") and ordered[1] == "csqtt", ordered
+                    csqtt_card.locator('[data-move-route-card="up"]').click()
+                    ordered = page.locator("#singboxRouteRuleEditor .route-rule[data-movable='true']").evaluate_all("(els) => els.map(el => el.dataset.routeId)")
+                    assert ordered[0] == "csqtt" and ordered[1].startswith("route-"), ordered
                     user_card.locator('[data-move-route-card="up"]').click()
                     ordered = page.locator("#singboxRouteRuleEditor .route-rule[data-movable='true']").evaluate_all("(els) => els.map(el => el.dataset.routeId)")
                     assert ordered[0].startswith("route-") and ordered[1] == "csqtt", ordered
                     assert page.locator("#singboxRouteRuleEditor .route-rule").first.get_attribute("data-system-card") == "direct"
-                    assert page.locator("#singboxRouteRuleEditor [data-system-enabled='direct']").is_checked()
+                    assert direct_toggle.is_checked()
                     assert page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").is_checked() is False
                     page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").check()
                     assert page.locator("#singboxCsqttEnabled").is_checked()
