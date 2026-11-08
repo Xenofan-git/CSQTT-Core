@@ -26,6 +26,7 @@ import (
 // reference to App, LinuxRunner, TUN, or CSQTT Core.
 type SingBoxManager struct {
 	mu sync.Mutex
+	configMu sync.RWMutex
 	binary string
 	configPath string
 	logPath string
@@ -54,6 +55,13 @@ type singBoxPanelState struct {
 }
 
 func (m *SingBoxManager) panelStatePath() string { return m.configPath + ".panel.json" }
+
+// panelStatePathForHash stores immutable panel metadata beside the config
+// generation it describes. The sidecar is published before the config rename,
+// so readers can always find matching metadata after either side of a crash.
+func (m *SingBoxManager) panelStatePathForHash(hash string) string {
+	return m.configPath + ".panel." + hash + ".json"
+}
 
 
 func NewSingBoxManager(binary, configPath, logPath string) *SingBoxManager {
@@ -162,12 +170,25 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	if err := stateFile.Sync(); err != nil { _ = stateFile.Close(); return fmt.Errorf("sync sing-box panel state: %w", err) }
 	if err := stateFile.Close(); err != nil { return fmt.Errorf("close sing-box panel state: %w", err) }
 
+	// Serialize the generation switch with readers. The hash-named sidecar is
+	// immutable and installed first; the config rename is the single commit
+	// point. A crash before it leaves only an orphan sidecar, while a crash
+	// after it leaves a complete config/sidecar pair.
+	m.configMu.Lock()
+	defer m.configMu.Unlock()
+	statePath := m.panelStatePathForHash(hex.EncodeToString(sum[:]))
 	m.mu.Lock()
 	if m.cmd != nil || m.starting { m.mu.Unlock(); return fmt.Errorf("sing-box started while config was being validated") }
-	if err := os.Rename(stateTmp, m.panelStatePath()); err != nil { m.mu.Unlock(); return fmt.Errorf("activate sing-box panel state: %w", err) }
+	if err := os.Rename(stateTmp, statePath); err != nil { m.mu.Unlock(); return fmt.Errorf("activate sing-box panel state: %w", err) }
 	if err := os.Rename(tmp, m.configPath); err != nil { m.mu.Unlock(); return fmt.Errorf("activate sing-box config: %w", err) }
 	m.lastError = ""
 	m.mu.Unlock()
+	// Old generations and the pre-generation sidecar are no longer needed.
+	// Readers are excluded by configMu until cleanup is complete.
+	if matches, err := filepath.Glob(m.configPath + ".panel.*.json"); err == nil {
+		for _, oldPath := range matches { if oldPath != statePath { _ = os.Remove(oldPath) } }
+	}
+	_ = os.Remove(m.panelStatePath())
 	if d, err := os.Open(dir); err == nil { _ = d.Sync(); _ = d.Close() }
 	return nil
 }
@@ -297,24 +318,34 @@ func (m *SingBoxManager) Status() SingBoxStatus {
 
 
 func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
+	m.configMu.RLock()
+	defer m.configMu.RUnlock()
 	var input singBoxConfigInput
 	data, err := os.ReadFile(m.configPath)
 	if err != nil { return input, fmt.Errorf("read sing-box config: %w", err) }
 	// Prefer the full panel model when it is bound to this exact generated
 	// sing-box config. This round-trips disabled cards and their priority
 	// without inserting non-schema fields into sing-box's own JSON.
-	stateData, stateErr := os.ReadFile(m.panelStatePath())
+	sum := sha256.Sum256(data)
+	sumHex := hex.EncodeToString(sum[:])
+	stateData, stateErr := os.ReadFile(m.panelStatePathForHash(sumHex))
+	generationSidecar := stateErr == nil
+	if errors.Is(stateErr, os.ErrNotExist) {
+		// Backward compatibility with configs written before hash-named
+		// sidecars were introduced.
+		stateData, stateErr = os.ReadFile(m.panelStatePath())
+	}
 	if stateErr == nil {
 		var state singBoxPanelState
 		if err := json.Unmarshal(stateData, &state); err != nil { return input, fmt.Errorf("decode sing-box panel state: %w", err) }
-		sum := sha256.Sum256(data)
-		if state.ConfigSHA256 == hex.EncodeToString(sum[:]) {
+		if state.ConfigSHA256 == sumHex {
 			generated, err := buildSingBoxConfig(state.Input)
 			if err != nil { return input, fmt.Errorf("validate sing-box panel state: %w", err) }
 			generatedSum := sha256.Sum256(generated)
 			if hex.EncodeToString(generatedSum[:]) != state.ConfigSHA256 { return input, fmt.Errorf("sing-box panel state does not match active config") }
 			return state.Input, nil
 		}
+		if generationSidecar { return input, fmt.Errorf("sing-box panel state generation does not match active config") }
 	} else if !errors.Is(stateErr, os.ErrNotExist) {
 		return input, fmt.Errorf("read sing-box panel state: %w", stateErr)
 	}
