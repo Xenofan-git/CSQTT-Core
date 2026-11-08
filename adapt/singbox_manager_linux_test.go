@@ -49,6 +49,31 @@ func TestSingBoxManagerLoadConfigSortsExternalSOCKS5Outbounds(t *testing.T) {
 	}
 }
 
+func TestSingBoxManagerLoadConfigRequiresExplicitConfiguredDefault(t *testing.T) {
+	cases := []struct {
+		name string
+		route string
+	}{
+		{name: "missing route", route: `{}`},
+		{name: "missing final", route: `{"rules":[]}`},
+		{name: "empty final", route: `{"final":"","rules":[]}`},
+		{name: "unknown final", route: `{"final":"socks-missing","rules":[]}`},
+		{name: "non-string final", route: `{"final":123,"rules":[]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			config := filepath.Join(dir, "config.json")
+			raw := `{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19080}],"outbounds":[{"type":"direct","tag":"direct"}],"route":` + tc.route + `}`
+			if err := os.WriteFile(config, []byte(raw), 0600); err != nil { t.Fatal(err) }
+			manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+			if _, err := manager.LoadConfig(); err == nil {
+				t.Fatal("persisted config without a valid explicit default outbound was accepted")
+			}
+		})
+	}
+}
+
 func TestSingBoxManagerLoadConfigRejectsMalformedExternalSOCKS5(t *testing.T) {
 	cases := []struct {
 		name string
