@@ -724,6 +724,44 @@ def main():
                 )
                 blocked_page.close()
 
+            # A save response must not refresh over edits made while PUT is in flight.
+            page.locator('button[data-page="singbox"]').click()
+            page.wait_for_function("document.querySelector('#singboxListen').value === '127.0.0.1:19180'")
+            page.evaluate("""() => {
+                const originalFetch = window.fetch.bind(window);
+                let gateUsed = false;
+                window.__singboxSaveGate = { requested: false, release: null };
+                window.fetch = (input, init = {}) => {
+                    const url = typeof input === 'string' ? input : input.url;
+                    const method = (init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+                    if (!gateUsed && method === 'PUT' && url.includes('/api/singbox/config')) {
+                        gateUsed = true;
+                        return originalFetch(input, init).then(response => new Promise(resolve => {
+                            window.__singboxSaveGate.requested = true;
+                            window.__singboxSaveGate.release = () => {
+                                resolve(response);
+                                setTimeout(() => { window.__singboxSaveGate.settled = true; }, 0);
+                            };
+                        }));
+                    }
+                    return originalFetch(input, init);
+                };
+            }""")
+            page.locator("#singboxDirectDomains").fill("snapshot-before-save.example")
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function("window.__singboxSaveGate?.requested === true")
+            page.locator("#singboxDirectDomains").fill("new-edit-during-save.example")
+            page.evaluate("window.__singboxSaveGate.release()")
+            page.wait_for_function("window.__singboxSaveGate?.settled === true")
+            assert page.locator("#singboxDirectDomains").input_value() == "new-edit-during-save.example", (
+                "save completion refreshed over edits made while PUT was pending"
+            )
+            assert singbox_saved.get("DirectDomains") == ["snapshot-before-save.example"], (
+                f"first save did not persist its original snapshot: {singbox_saved!r}"
+            )
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function("document.querySelector('#toast').textContent.includes('Конфигурация проверена sing-box и сохранена')")
+
             browser.close()
     finally:
         server.shutdown()
