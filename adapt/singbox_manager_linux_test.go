@@ -43,6 +43,7 @@ func TestSingBoxManagerLoadConfigSortsExternalSOCKS5Outbounds(t *testing.T) {
 		loaded, err := manager.LoadConfig()
 		if err != nil { t.Fatalf("LoadConfig: %v", err) }
 		if len(loaded.SOCKS5) != 2 { t.Fatalf("loaded %d external outbounds, want 2: %#v", len(loaded.SOCKS5), loaded.SOCKS5) }
+		if !loaded.CSQTTEnabled || !loaded.CSQTTRule.Enabled { t.Fatalf("legacy CSQTT outbound did not restore enabled system card: %#v", loaded) }
 		if loaded.SOCKS5[0].ID != "alpha" || loaded.SOCKS5[1].ID != "zeta" {
 			t.Fatalf("external SOCKS5 outbounds are not stable and sorted: %#v", loaded.SOCKS5)
 		}
