@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"strings"
 	"testing"
 	"time"
@@ -924,5 +925,46 @@ func TestSingBoxManagerLegacyImportPreservesCSQTTRoutePosition(t *testing.T) {
 	rules := decoded["route"].(map[string]any)["rules"].([]any)
 	if rules[1].(map[string]any)["outbound"] != "csqtt" || rules[2].(map[string]any)["outbound"] != "socks-alpha" {
 		t.Fatalf("CSQTT/user rule order changed during import: %#v", rules)
+	}
+}
+
+
+func TestSingBoxManagerConcurrentLoadsObserveCompleteConfigGenerations(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.json")
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), config, filepath.Join(dir, "sing-box.log"))
+	oldInput := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag, DirectDomains: []string{"old.example"}}
+	newInput := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag, DirectDomains: []string{"new.example"}}
+	if err := manager.SaveConfig(oldInput); err != nil { t.Fatalf("save initial generation: %v", err) }
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 16)
+	stop := make(chan struct{})
+	for worker := 0; worker < 4; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select { case <-stop: return; default: }
+				loaded, err := manager.LoadConfig()
+				if err != nil { select { case errCh <- err: default: }; return }
+				if len(loaded.DirectDomains) != 1 || (loaded.DirectDomains[0] != "old.example" && loaded.DirectDomains[0] != "new.example") {
+					select { case errCh <- fmt.Errorf("observed partial config generation: %#v", loaded.DirectDomains): default: }
+					return
+				}
+			}
+		}()
+	}
+	time.Sleep(10 * time.Millisecond)
+	if err := manager.SaveConfig(newInput); err != nil { close(stop); wg.Wait(); t.Fatalf("save next generation: %v", err) }
+	time.Sleep(10 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh { t.Errorf("concurrent LoadConfig: %v", err) }
+	loaded, err := manager.LoadConfig()
+	if err != nil { t.Fatalf("load committed generation: %v", err) }
+	if len(loaded.DirectDomains) != 1 || loaded.DirectDomains[0] != "new.example" {
+		t.Fatalf("final generation = %#v, want new.example", loaded.DirectDomains)
 	}
 }
