@@ -215,7 +215,48 @@ def main():
                     page.locator("#routeClose").click()
                     assert page.locator("#page-connect").evaluate("el => el.classList.contains('active')")
 
+            # Hold the first saved-config response while the user edits the form.
+            # Releasing a stale response must not overwrite those in-progress edits.
+            page.add_init_script("""() => {
+                const originalFetch = window.fetch.bind(window);
+                let gateUsed = false;
+                window.__singboxConfigGate = { requested: false, release: null };
+                window.fetch = (input, init = {}) => {
+                    const url = typeof input === 'string' ? input : input.url;
+                    const method = (init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+                    if (!gateUsed && method === 'GET' && url.includes('/api/singbox/config')) {
+                        gateUsed = true;
+                        window.__singboxConfigGate.requested = true;
+                        return new Promise(resolve => {
+                            window.__singboxConfigGate.release = () => resolve(new Response(
+                                JSON.stringify({configured: true, config: {
+                                    ListenAddress: "127.0.0.1:19180",
+                                    CSQTTAddress: "",
+                                    CSQTTEnabled: false,
+                                    FinalOutbound: "socks-hydra",
+                                    DirectDomains: ["stale-response.example"],
+                                    DirectIPCIDRs: [],
+                                    SOCKS5: [{ID: "hydra", Server: "192.0.2.10", ServerPort: 1080, Enabled: true}],
+                                    Rules: []
+                                }}),
+                                {status:  200, headers: {"Content-Type": "application/json"}}
+                            ));
+                        });
+                    }
+                    return originalFetch(input, init);
+                };
+            }""")
             page.locator('button[data-page="singbox"]').click()
+            page.wait_for_function("window.__singboxConfigGate?.requested === true")
+            page.locator("#singboxListen").fill("127.0.0.1:19222")
+            page.locator("#singboxDirectDomains").fill("user-edit.example")
+            page.evaluate("window.__singboxConfigGate.release()")
+            assert page.locator("#singboxListen").input_value() == "127.0.0.1:19222"
+            assert page.locator("#singboxDirectDomains").input_value() == "user-edit.example"
+            # Reload normally to restore the baseline fixture for the remaining
+            # default-outbound lifecycle assertions below.
+            page.locator("#singboxLoadEngine").click()
+            page.wait_for_function("document.querySelector('#singboxListen').value === '127.0.0.1:19180' && document.querySelector('#singboxDirectDomains').value === 'example.ru'")
             assert page.locator("#page-singbox").evaluate("el => el.classList.contains('active')")
             assert page.locator("#singboxListen").input_value() == "127.0.0.1:19180"
             assert page.locator("#singboxDirectDomains").input_value() == "example.ru"
