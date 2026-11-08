@@ -968,3 +968,22 @@ func TestSingBoxManagerConcurrentLoadsObserveCompleteConfigGenerations(t *testin
 		t.Fatalf("final generation = %#v, want new.example", loaded.DirectDomains)
 	}
 }
+
+
+func TestSingBoxManagerFailsClosedOnCorruptPanelSidecar(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.json")
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), config, filepath.Join(dir, "sing-box.log"))
+	input := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
+		Rules: []singBoxRouteRule{{ID: "saved", Enabled: false, Domains: []string{"disabled.example"}, Outbound: singBoxDirectTag}},
+		RouteOrder: []string{"saved"},
+	}
+	if err := manager.SaveConfig(input); err != nil { t.Fatalf("SaveConfig: %v", err) }
+	stateFiles, err := filepath.Glob(config + ".panel.*.json")
+	if err != nil || len(stateFiles) != 1 { t.Fatalf("expected one panel sidecar, got %v (%v)", stateFiles, err) }
+	if err := os.WriteFile(stateFiles[0], []byte("{corrupt"), 0600); err != nil { t.Fatal(err) }
+	if _, err := manager.LoadConfig(); err == nil || !strings.Contains(err.Error(), "decode sing-box panel state") {
+		t.Fatalf("corrupt sidecar was not rejected fail-closed: %v", err)
+	}
+}
