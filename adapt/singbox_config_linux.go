@@ -429,9 +429,12 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 
 	csqttEnabled := input.CSQTTEnabled || input.CSQTTRule.Enabled
 	if csqttEnabled && input.CSQTTRule.Enabled {
-		csqttRule, err := compileRule(input.CSQTTRule, "csqtt", singBoxCSQTTTag)
-		if err != nil { return nil, err }
-		routeByID["csqtt"] = csqttRule
+		hasMatcher := len(input.CSQTTRule.Domains)+len(input.CSQTTRule.DomainSuffixes)+len(input.CSQTTRule.DomainKeywords)+len(input.CSQTTRule.DomainRegexes)+len(input.CSQTTRule.IPCIDRs)+len(input.CSQTTRule.RuleSets) > 0 || singBoxAdvancedHasMatcher(input.CSQTTRule.Advanced)
+		if hasMatcher {
+			csqttRule, err := compileRule(input.CSQTTRule, "csqtt", singBoxCSQTTTag)
+			if err != nil { return nil, err }
+			routeByID["csqtt"] = csqttRule
+		}
 	}
 	for _, item := range input.Rules {
 		if !singBoxIDPattern.MatchString(item.ID) { return nil, fmt.Errorf("invalid route rule ID %q", item.ID) }
