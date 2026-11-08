@@ -228,19 +228,22 @@ def main():
                         gateUsed = true;
                         window.__singboxConfigGate.requested = true;
                         return new Promise(resolve => {
-                            window.__singboxConfigGate.release = () => resolve(new Response(
-                                JSON.stringify({configured: true, config: {
-                                    ListenAddress: "127.0.0.1:19180",
-                                    CSQTTAddress: "",
-                                    CSQTTEnabled: false,
-                                    FinalOutbound: "socks-hydra",
-                                    DirectDomains: ["stale-response.example"],
-                                    DirectIPCIDRs: [],
-                                    SOCKS5: [{ID: "hydra", Server: "192.0.2.10", ServerPort: 1080, Enabled: true}],
-                                    Rules: []
-                                }}),
-                                {status:  200, headers: {"Content-Type": "application/json"}}
-                            ));
+                            window.__singboxConfigGate.release = () => {
+                                resolve(new Response(
+                                    JSON.stringify({configured: true, config: {
+                                        ListenAddress: "127.0.0.1:19180",
+                                        CSQTTAddress: "",
+                                        CSQTTEnabled: false,
+                                        FinalOutbound: "socks-hydra",
+                                        DirectDomains: ["stale-response.example"],
+                                        DirectIPCIDRs: [],
+                                        SOCKS5: [{ID: "hydra", Server: "192.0.2.10", ServerPort: 1080, Enabled: true}],
+                                        Rules: []
+                                    }}),
+                                    {status: 200, headers: {"Content-Type": "application/json"}}
+                                ));
+                                setTimeout(() => { window.__singboxConfigGate.settled = true; }, 0);
+                            };
                         });
                     }
                     return originalFetch(input, init);
@@ -251,6 +254,7 @@ def main():
             page.locator("#singboxListen").fill("127.0.0.1:19222")
             page.locator("#singboxDirectDomains").fill("user-edit.example")
             page.evaluate("window.__singboxConfigGate.release()")
+            page.wait_for_function("window.__singboxConfigGate?.settled === true")
             assert page.locator("#singboxListen").input_value() == "127.0.0.1:19222"
             assert page.locator("#singboxDirectDomains").input_value() == "user-edit.example"
             # Reload normally to restore the baseline fixture for the remaining
