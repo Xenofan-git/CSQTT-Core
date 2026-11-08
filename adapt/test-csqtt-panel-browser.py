@@ -252,12 +252,14 @@ def main():
             page.locator("#singboxFinalOutbound").select_option("socks-hydra")
             assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
             page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
+            assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
             page.locator("#singboxEngineConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxEngineConfigMessage').textContent.includes('проверена sing-box')")
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
             assert singbox_saved.get("CSQTTEnabled") is True and singbox_saved.get("CSQTTAddress") == "127.0.0.1:12500"
-            assert singbox_saved.get("FinalOutbound") == "socks-hydra"
+            page.wait_for_function("() => document.querySelector('#singboxFinalOutbound').value === 'socks-hydra' && document.querySelector('#singboxEngineConfigMessage').textContent.includes('проверена sing-box')")
+            assert singbox_saved.get("FinalOutbound") == "socks-hydra", {"saved":dict(singbox_saved), "recent_calls":calls[-8:]}
             assert [x["ID"] for x in singbox_saved.get("SOCKS5", [])] == ["hydra", "disabled"]
             page.locator("#singboxLoadEngine").click()
             page.wait_for_function("document.querySelector('#singboxFinalOutbound').value === 'socks-hydra'")
