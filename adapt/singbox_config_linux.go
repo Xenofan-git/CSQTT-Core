@@ -277,16 +277,32 @@ func makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs []string, 
 	return rule
 }
 
+// normalizeSingBoxSystemCards migrates legacy requests that predate RouteOrder.
+// In that legacy shape, the presence of a CSQTT outbound means its system card
+// is enabled. New panel requests always include RouteOrder and must keep the
+// card and outbound toggles exactly synchronized.
+func normalizeSingBoxSystemCards(input singBoxConfigInput) (singBoxConfigInput, error) {
+	if input.RouteOrder == nil {
+		enabled := input.CSQTTEnabled || input.CSQTTRule.Enabled || strings.TrimSpace(input.CSQTTAddress) != ""
+		input.CSQTTEnabled = enabled
+		input.CSQTTRule.Enabled = enabled
+	}
+	if input.CSQTTEnabled != input.CSQTTRule.Enabled {
+		return input, fmt.Errorf("CSQTT system card and CSQTT outbound must share the same enabled state")
+	}
+	if !input.CSQTTEnabled && strings.TrimSpace(input.CSQTTAddress) != "" {
+		return input, fmt.Errorf("CSQTT SOCKS address must be empty while the CSQTT system card is disabled")
+	}
+	return input, nil
+}
+
 // buildSingBoxConfig creates an explicit SOCKS entrypoint and ordered route rules.
 // It deliberately creates no TUN inbound, auto_route, auto_redirect, or system capture.
 // Direct exclusions and user rules are evaluated in order; unmatched traffic uses only the explicitly selected default outbound.
 func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
-	if input.RouteOrder != nil && input.CSQTTEnabled != input.CSQTTRule.Enabled {
-		return nil, fmt.Errorf("CSQTT system card and CSQTT outbound must share the same enabled state")
-	}
-	if input.RouteOrder != nil && !input.CSQTTEnabled && strings.TrimSpace(input.CSQTTAddress) != "" {
-		return nil, fmt.Errorf("CSQTT SOCKS address must be empty while the CSQTT system card is disabled")
-	}
+	var err error
+	input, err = normalizeSingBoxSystemCards(input)
+	if err != nil { return nil, err }
 	listenHost, listenPort, err := singBoxHostPort(input.ListenAddress, "listen address")
 	if err != nil {
 		return nil, err
