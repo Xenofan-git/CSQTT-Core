@@ -2,7 +2,7 @@
 
 package main
 
-import (
+import (\n\t"crypto/tls"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -1341,3 +1341,134 @@ func TestSingBoxSelectsBetweenTwoExternalSOCKS5OutboundsForRealTCPFlows(t *testi
 	}
 }
 
+
+
+// TestSingBoxSniffsHTTPHostAndTLSSNIFromIPDestination verifies domain routing
+// when SOCKS5 CONNECT carries only an IP and the hostname exists only in the
+// application payload. Both flows run through the pinned real sing-box binary.
+func TestSingBoxSniffsHTTPHostAndTLSSNIFromIPDestination(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" { t.Skip("requires pinned sing-box binary from CI") }
+
+	startUpstream := func() (net.Listener, <-chan string) {
+		t.Helper()
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil { t.Fatal(err) }
+		selected := make(chan string, 4)
+		go func() {
+			for {
+				conn, acceptErr := listener.Accept()
+				if acceptErr != nil { return }
+				go func(c net.Conn) {
+					defer c.Close()
+					_ = c.SetDeadline(time.Now().Add(10*time.Second))
+					var greeting [2]byte
+					if _, e := io.ReadFull(c, greeting[:]); e != nil { return }
+					methods := make([]byte, int(greeting[1]))
+					if _, e := io.ReadFull(c, methods); e != nil { return }
+					if greeting[0] != 5 { return }
+					if _, e := c.Write([]byte{5, 0}); e != nil { return }
+					var request [4]byte
+					if _, e := io.ReadFull(c, request[:]); e != nil { return }
+					if request[0] != 5 || request[1] != 1 { return }
+					var host string
+					switch request[3] {
+					case 1:
+						var ip [4]byte
+						if _, e := io.ReadFull(c, ip[:]); e != nil { return }
+						host = net.IP(ip[:]).String()
+					case 3:
+						var size [1]byte
+						if _, e := io.ReadFull(c, size[:]); e != nil { return }
+						domain := make([]byte, int(size[0]))
+						if _, e := io.ReadFull(c, domain); e != nil { return }
+						host = string(domain)
+					default:
+						return
+					}
+					var port [2]byte
+					if _, e := io.ReadFull(c, port[:]); e != nil { return }
+					select { case selected <- net.JoinHostPort(host, strconv.Itoa(int(binary.BigEndian.Uint16(port[:])))): default: }
+					_, _ = c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0})
+					_, _ = io.Copy(io.Discard, c)
+				}(conn)
+			}
+		}()
+		return listener, selected
+	}
+
+	httpProxy, httpSelected := startUpstream()
+	defer httpProxy.Close()
+	tlsProxy, tlsSelected := startUpstream()
+	defer tlsProxy.Close()
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		FinalOutbound: singBoxDirectTag,
+		SOCKS5: []singBoxSOCKS5Outbound{
+			{ID: "http-sniff", Server: "127.0.0.1", ServerPort: httpProxy.Addr().(*net.TCPAddr).Port, Enabled: true},
+			{ID: "tls-sniff", Server: "127.0.0.1", ServerPort: tlsProxy.Addr().(*net.TCPAddr).Port, Enabled: true},
+		},
+		Rules: []singBoxRouteRule{
+			{ID: "http-host", Domains: []string{"sniff-http.test"}, Outbound: "socks-http-sniff", Enabled: true},
+			{ID: "tls-sni", Domains: []string{"sniff-tls.test"}, Outbound: "socks-tls-sniff", Enabled: true},
+		},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatal(err) }
+	configPath := filepath.Join(t.TempDir(), "sing-box-sniff.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil { t.Fatalf("start sing-box: %v", err) }
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	dialSOCKSIP := func(port int) net.Conn {
+		t.Helper()
+		var conn net.Conn
+		var dialErr error
+		deadline := time.Now().Add(8*time.Second)
+		for time.Now().Before(deadline) {
+			conn, dialErr = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+			if dialErr == nil { break }
+			time.Sleep(50*time.Millisecond)
+		}
+		if conn == nil { t.Fatalf("sing-box inbound not ready: %v; logs: %s", dialErr, output.String()) }
+		_ = conn.SetDeadline(time.Now().Add(8*time.Second))
+		if _, err := conn.Write([]byte{5, 1, 0}); err != nil { t.Fatal(err) }
+		var greeting [2]byte
+		if _, err := io.ReadFull(conn, greeting[:]); err != nil { t.Fatal(err) }
+		if greeting != [2]byte{5, 0} { t.Fatalf("SOCKS greeting=%v", greeting) }
+		request := []byte{5, 1, 0, 1, 192, 0, 2, 10, byte(port >> 8), byte(port)}
+		if _, err := conn.Write(request); err != nil { t.Fatal(err) }
+		var reply [10]byte
+		if _, err := io.ReadFull(conn, reply[:]); err != nil { t.Fatalf("SOCKS CONNECT to IP: %v; logs: %s", err, output.String()) }
+		if reply[1] != 0 { t.Fatalf("SOCKS CONNECT to IP rejected: %v; logs: %s", reply, output.String()) }
+		return conn
+	}
+	assertSelected := func(name string, selected <-chan string, port string) {
+		t.Helper()
+		select {
+		case got := <-selected:
+			if got != net.JoinHostPort("192.0.2.10", port) { t.Fatalf("%s sniff route reached unexpected upstream target %q", name, got) }
+		case <-time.After(4*time.Second):
+			t.Fatalf("%s Host/SNI did not select its SOCKS5 outbound; logs: %s", name, output.String())
+		}
+	}
+
+	httpConn := dialSOCKSIP(80)
+	if _, err := io.WriteString(httpConn, "GET / HTTP/1.1\r\nHost: sniff-http.test\r\nConnection: close\r\n\r\n"); err != nil { t.Fatal(err) }
+	assertSelected("HTTP", httpSelected, "80")
+	httpConn.Close()
+
+	tlsConn := dialSOCKSIP(443)
+	tlsClient := tls.Client(tlsConn, &tls.Config{ServerName: "sniff-tls.test", InsecureSkipVerify: true})
+	handshakeDone := make(chan error, 1)
+	go func() { handshakeDone <- tlsClient.Handshake() }()
+	assertSelected("TLS", tlsSelected, "443")
+	_ = tlsConn.Close()
+	select {
+	case <-handshakeDone:
+	case <-time.After(time.Second):
+	}
+}
