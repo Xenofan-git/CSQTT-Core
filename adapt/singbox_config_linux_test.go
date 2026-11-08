@@ -301,6 +301,9 @@ func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
 	encoded, err := buildSingBoxConfig(singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19180",
 		CSQTTAddress:  "127.0.0.1:12500",
+		CSQTTEnabled: true,
+		CSQTTRule: singBoxRouteRule{Enabled: true, Domains: []string{"csqtt.example"}},
+		RouteOrder: []string{"logical-a", "csqtt", "route-a"},
 		FinalOutbound: singBoxDirectTag,
 		DirectDomains: []string{"example.com"},
 		DirectIPCIDRs: []string{"192.0.2.0/24", "2001:db8::/32"},
