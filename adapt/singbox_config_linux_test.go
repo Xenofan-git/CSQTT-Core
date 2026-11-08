@@ -1446,7 +1446,7 @@ func TestSingBoxSniffsHTTPHostAndTLSSNIFromIPDestination(t *testing.T) {
 		if reply[1] != 0 { t.Fatalf("SOCKS CONNECT to IP rejected: %v; logs: %s", reply, output.String()) }
 		return conn
 	}
-	assertSelected := func(name string, selected <-chan string, port string) {
+	assertSelected := func(name string, selected <-chan string) {
 		t.Helper()
 		select {
 		case got := <-selected:
@@ -1458,14 +1458,14 @@ func TestSingBoxSniffsHTTPHostAndTLSSNIFromIPDestination(t *testing.T) {
 
 	httpConn := dialSOCKSIP(80)
 	if _, err := io.WriteString(httpConn, "GET / HTTP/1.1\r\nHost: sniff-http.test\r\nConnection: close\r\n\r\n"); err != nil { t.Fatal(err) }
-	assertSelected("HTTP", httpSelected, "80")
+	assertSelected("HTTP", httpSelected)
 	httpConn.Close()
 
 	tlsConn := dialSOCKSIP(443)
 	tlsClient := tls.Client(tlsConn, &tls.Config{ServerName: "sniff-tls.test", InsecureSkipVerify: true})
 	handshakeDone := make(chan error, 1)
 	go func() { handshakeDone <- tlsClient.Handshake() }()
-	assertSelected("TLS", tlsSelected, "443")
+	assertSelected("TLS", tlsSelected)
 	_ = tlsConn.Close()
 	select {
 	case <-handshakeDone:
