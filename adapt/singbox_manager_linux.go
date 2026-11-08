@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"encoding/json"
 	"net"
@@ -45,6 +47,14 @@ type SingBoxStatus struct {
 	LogPath string `json:"log_path"`
 	Error   string `json:"error,omitempty"`
 }
+
+type singBoxPanelState struct {
+	ConfigSHA256 string             `json:"config_sha256"`
+	Input        singBoxConfigInput `json:"input"`
+}
+
+func (m *SingBoxManager) panelStatePath() string { return m.configPath + ".panel.json" }
+
 
 func NewSingBoxManager(binary, configPath, logPath string) *SingBoxManager {
 	return &SingBoxManager{
@@ -133,8 +143,25 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	ctx, cancel := context.WithTimeout(context.Background(), m.checkTimeout)
 	defer cancel()
 	if err := m.checkConfigPath(ctx, tmp); err != nil { return fmt.Errorf("refusing invalid sing-box config: %w", err) }
+
+	// Persist the complete panel model separately from sing-box's strict schema.
+	// The checksum binds disabled cards and ordering to the exact active config;
+	// a crash between the two renames makes the stale sidecar safely ignorable.
+	sum := sha256.Sum256(encoded)
+	stateData, err := json.MarshalIndent(singBoxPanelState{ConfigSHA256: hex.EncodeToString(sum[:]), Input: input}, "", "  ")
+	if err != nil { return fmt.Errorf("encode sing-box panel state: %w", err) }
+	stateFile, err := os.CreateTemp(dir, ".sing-box-panel-*.json")
+	if err != nil { return fmt.Errorf("create temporary sing-box panel state: %w", err) }
+	stateTmp := stateFile.Name()
+	defer os.Remove(stateTmp)
+	if err := stateFile.Chmod(0600); err != nil { _ = stateFile.Close(); return err }
+	if _, err := stateFile.Write(append(stateData, '\\n')); err != nil { _ = stateFile.Close(); return fmt.Errorf("write sing-box panel state: %w", err) }
+	if err := stateFile.Sync(); err != nil { _ = stateFile.Close(); return fmt.Errorf("sync sing-box panel state: %w", err) }
+	if err := stateFile.Close(); err != nil { return fmt.Errorf("close sing-box panel state: %w", err) }
+
 	m.mu.Lock()
 	if m.cmd != nil || m.starting { m.mu.Unlock(); return fmt.Errorf("sing-box started while config was being validated") }
+	if err := os.Rename(stateTmp, m.panelStatePath()); err != nil { m.mu.Unlock(); return fmt.Errorf("activate sing-box panel state: %w", err) }
 	if err := os.Rename(tmp, m.configPath); err != nil { m.mu.Unlock(); return fmt.Errorf("activate sing-box config: %w", err) }
 	m.lastError = ""
 	m.mu.Unlock()
@@ -270,6 +297,24 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	var input singBoxConfigInput
 	data, err := os.ReadFile(m.configPath)
 	if err != nil { return input, fmt.Errorf("read sing-box config: %w", err) }
+	// Prefer the full panel model when it is bound to this exact generated
+	// sing-box config. This round-trips disabled cards and their priority
+	// without inserting non-schema fields into sing-box's own JSON.
+	stateData, stateErr := os.ReadFile(m.panelStatePath())
+	if stateErr == nil {
+		var state singBoxPanelState
+		if err := json.Unmarshal(stateData, &state); err != nil { return input, fmt.Errorf("decode sing-box panel state: %w", err) }
+		sum := sha256.Sum256(data)
+		if state.ConfigSHA256 == hex.EncodeToString(sum[:]) {
+			generated, err := buildSingBoxConfig(state.Input)
+			if err != nil { return input, fmt.Errorf("validate sing-box panel state: %w", err) }
+			generatedSum := sha256.Sum256(generated)
+			if hex.EncodeToString(generatedSum[:]) != state.ConfigSHA256 { return input, fmt.Errorf("sing-box panel state does not match active config") }
+			return state.Input, nil
+		}
+	} else if !errors.Is(stateErr, os.ErrNotExist) {
+		return input, fmt.Errorf("read sing-box panel state: %w", stateErr)
+	}
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil { return input, fmt.Errorf("decode sing-box config: %w", err) }
 	inbounds, _ := raw["inbounds"].([]any)
