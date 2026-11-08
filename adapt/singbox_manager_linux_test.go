@@ -467,7 +467,7 @@ func TestSingBoxManagerDeleteRuleSetRejectsReferencedSet(t *testing.T) {
  dir:=t.TempDir();manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
  if err:=os.MkdirAll(filepath.Join(dir,"rule-sets"),0700);err!=nil{t.Fatal(err)}
  path:=filepath.Join(dir,"rule-sets","used.srs");if err:=os.WriteFile(path,[]byte("fixture"),0600);err!=nil{t.Fatal(err)}
- raw:=`{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19180}],"outbounds":[{"type":"socks","tag":"csqtt","server":"127.0.0.1","server_port":12500}],"route":{"rule_set":[{"type":"local","tag":"used","format":"binary","path":"`+path+`"}],"rules":[{"action":"route","rule_set":["used"],"outbound":"csqtt"}]}}`
+ raw:=`{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19180}],"outbounds":[{"type":"direct","tag":"direct"},{"type":"socks","tag":"csqtt","server":"127.0.0.1","server_port":12500}],"route":{"final":"direct","rule_set":[{"type":"local","tag":"used","format":"binary","path":"`+path+`"}],"rules":[{"action":"route","rule_set":["used"],"outbound":"csqtt"}]}}`
  if err:=os.WriteFile(manager.configPath,[]byte(raw),0600);err!=nil{t.Fatal(err)}
  if err:=manager.DeleteRuleSet("used");err==nil||!strings.Contains(err.Error(),"referenced"){t.Fatalf("expected referenced guard, got %v",err)}
  if _,err:=os.Stat(path);err!=nil{t.Fatalf("referenced Rule Set was deleted: %v",err)}
@@ -488,7 +488,7 @@ func TestSingBoxManagerDeleteRuleSetRejectsConfiguredSet(t *testing.T) {
  dir:=t.TempDir();manager:=NewSingBoxManager("unused",filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
  if err:=os.MkdirAll(filepath.Join(dir,"rule-sets"),0700);err!=nil{t.Fatal(err)}
  path:=filepath.Join(dir,"rule-sets","configured.srs");if err:=os.WriteFile(path,[]byte("fixture"),0600);err!=nil{t.Fatal(err)}
- raw:="{\"inbounds\":[{\"type\":\"socks\",\"tag\":\"csqtt-route-in\",\"listen\":\"127.0.0.1\",\"listen_port\":19180}],\"outbounds\":[{\"type\":\"socks\",\"tag\":\"csqtt\",\"server\":\"127.0.0.1\",\"server_port\":12500}],\"route\":{\"rule_set\":[{\"type\":\"local\",\"tag\":\"configured\",\"format\":\"binary\",\"path\":\""+path+"\"}],\"rules\":[]}}"
+ raw:="{\"inbounds\":[{\"type\":\"socks\",\"tag\":\"csqtt-route-in\",\"listen\":\"127.0.0.1\",\"listen_port\":19180}],\"outbounds\":[{\"type\":\"direct\",\"tag\":\"direct\"},{\"type\":\"socks\",\"tag\":\"csqtt\",\"server\":\"127.0.0.1\",\"server_port\":12500}],\"route\":{\"final\":\"direct\",\"rule_set\":[{\"type\":\"local\",\"tag\":\"configured\",\"format\":\"binary\",\"path\":\""+path+"\"}],\"rules\":[]}}"
  if err:=os.WriteFile(manager.configPath,[]byte(raw),0600);err!=nil{t.Fatal(err)}
  if err:=manager.DeleteRuleSet("configured");err==nil||!strings.Contains(err.Error(),"still registered"){t.Fatalf("expected configured registry guard, got %v",err)}
  if _,err:=os.Stat(path);err!=nil{t.Fatalf("configured Rule Set was deleted: %v",err)}
