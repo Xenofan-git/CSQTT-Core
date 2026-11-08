@@ -354,8 +354,8 @@ function renderRouteRuleEditor(){
  root.querySelectorAll('[data-remove-route-rule]').forEach(b=>b.addEventListener('click',()=>{collectRouteRuleEditor();const id=b.dataset.removeRouteRule;const rules=routeJSON('singboxRules').filter(x=>(x.ID||x.id)!==id);$('singboxRules').value=JSON.stringify(rules,null,2);singboxRouteModel.routeOrder=singboxRouteModel.routeOrder.filter(x=>x!==id);renderRouteRuleEditor()}));
  root.querySelectorAll('[data-move-route-card]').forEach(b=>b.addEventListener('click',()=>{const card=b.closest('[data-movable="true"]'),direction=b.dataset.moveRouteCard,neighbor=direction==='up'?card.previousElementSibling:card.nextElementSibling;if(!neighbor||neighbor.dataset.systemCard==='direct')return;collectRouteRuleEditor();if(direction==='up')root.insertBefore(card,neighbor);else root.insertBefore(neighbor,card);collectRouteRuleEditor();renderRouteRuleEditor()}));
  const csToggle=root.querySelector('[data-system-enabled="csqtt"]');
- csToggle?.addEventListener('change',()=>{collectRouteRuleEditor();$('singboxCsqttEnabled').checked=csToggle.checked;refreshSingBoxOutboundSelectors();renderRouteRuleEditor()});
- root.querySelector('[data-system-enabled="direct"]')?.addEventListener('change',()=>collectRouteRuleEditor());
+ csToggle?.addEventListener('change',()=>{singboxRouteModel.csqttRule.Enabled=csToggle.checked;$('singboxCsqttEnabled').checked=csToggle.checked;if(!$('singboxRules')?.closest('details')?.open)collectRouteRuleEditor();refreshSingBoxOutboundSelectors();renderRouteRuleEditor()});
+ root.querySelector('[data-system-enabled="direct"]')?.addEventListener('change',event=>{singboxRouteModel.directEnabled=event.currentTarget.checked;if(!$('singboxRules')?.closest('details')?.open)collectRouteRuleEditor()});
 }
 function collectRouteRuleEditor(){
  if($('singboxRules')?.closest('details')?.open)return;
