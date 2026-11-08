@@ -798,3 +798,28 @@ func TestSingBoxManagerRecoversRealSingBoxAfterForcedExit(t *testing.T) {
 		t.Fatalf("manager retained process after final Stop: %+v", status)
 	}
 }
+
+
+func TestSingBoxManagerLoadConfigRejectsInvalidOrDuplicateOutboundTags(t *testing.T) {
+	cases := []struct {
+		name string
+		outbounds string
+	}{
+		{name: "duplicate direct tag", outbounds: `[{"type":"direct","tag":"direct"},{"type":"socks","tag":"direct","server":"127.0.0.1","server_port":1080}]`},
+		{name: "duplicate external tag", outbounds: `[{"type":"direct","tag":"direct"},{"type":"socks","tag":"socks-alpha","server":"proxy-a.example","server_port":1080},{"type":"socks","tag":"socks-alpha","server":"proxy-b.example","server_port":1080}]`},
+		{name: "missing tag", outbounds: `[{"type":"direct"}]`},
+		{name: "non-object outbound", outbounds: `["direct"]`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			config := filepath.Join(dir, "config.json")
+			raw := `{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19080}],"outbounds":` + tc.outbounds + `, "route":{"final":"direct","rules":[]}}`
+			if err := os.WriteFile(config, []byte(raw), 0600); err != nil { t.Fatal(err) }
+			manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+			if _, err := manager.LoadConfig(); err == nil {
+				t.Fatal("persisted config with invalid or duplicate outbound tags was accepted")
+			}
+		})
+	}
+}
