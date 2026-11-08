@@ -386,7 +386,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	}
 
 	seenRuleIDs := make(map[string]struct{}, len(input.Rules))
-	compileRule := func(item singBoxRouteRule, id, outbound string, system bool) (map[string]any, error) {
+	compileRule := func(item singBoxRouteRule, id, outbound string) (map[string]any, error) {
 		if !singBoxIDPattern.MatchString(id) { return nil, fmt.Errorf("invalid route rule ID %q", id) }
 		domains, err := normalizeSingBoxDomains(item.Domains, false)
 		if err != nil { return nil, fmt.Errorf("route rule %q domains: %w", id, err) }
@@ -421,13 +421,12 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			if err := json.Unmarshal(raw, &value); err != nil { return nil, fmt.Errorf("route rule %q advanced field %q: %w", id, key, err) }
 			rule[key] = value
 		}
-		_ = system
 		return rule, nil
 	}
 
 	csqttEnabled := input.CSQTTEnabled || input.CSQTTRule.Enabled
 	if csqttEnabled && input.CSQTTRule.Enabled {
-		csqttRule, err := compileRule(input.CSQTTRule, "csqtt", singBoxCSQTTTag, true)
+		csqttRule, err := compileRule(input.CSQTTRule, "csqtt", singBoxCSQTTTag)
 		if err != nil { return nil, err }
 		routeByID["csqtt"] = csqttRule
 	}
@@ -437,7 +436,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		seenRuleIDs[item.ID] = struct{}{}
 		if !item.Enabled { continue }
 		if item.ID == "direct" || item.ID == "csqtt" { return nil, fmt.Errorf("route rule ID %q is reserved for a system card", item.ID) }
-		rule, err := compileRule(item, item.ID, item.Outbound, false)
+		rule, err := compileRule(item, item.ID, item.Outbound)
 		if err != nil { return nil, err }
 		routeByID[item.ID] = rule
 	}
