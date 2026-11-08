@@ -226,6 +226,7 @@ func TestSingBoxManagerSaveConfigIsAtomicAndValidated(t *testing.T) {
 	if len(before) == 0 { t.Fatal("empty config persisted") }
 	loaded, err := manager.LoadConfig()
 	if err != nil { t.Fatalf("LoadConfig: %v", err) }
+	if !loaded.CSQTTEnabled || !loaded.CSQTTRule.Enabled { t.Fatalf("legacy CSQTT listener was not migrated to an enabled system card: %#v", loaded) }
 	if len(loaded.DirectDomainSuffixes) != 1 || loaded.DirectDomainSuffixes[0] != ".example.org" { t.Fatalf("Direct suffix did not round-trip: %#v", loaded.DirectDomainSuffixes) }
 	if len(loaded.Rules) != 1 || len(loaded.Rules[0].DomainKeywords) != 1 || loaded.Rules[0].DomainKeywords[0] != "stream" || len(loaded.Rules[0].DomainRegexes) != 1 || len(loaded.Rules[0].IPCIDRs) != 1 { t.Fatalf("extended route matchers did not round-trip: %#v", loaded.Rules) }
 	invalid := input
