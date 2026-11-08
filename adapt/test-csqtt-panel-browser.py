@@ -310,6 +310,9 @@ def main():
             page.wait_for_function("document.querySelector('#singboxEngineConfigMessage').textContent.includes('проверена sing-box')")
             assert singbox_saved.get("CSQTTEnabled") is True
             assert singbox_saved.get("CSQTTAddress") == "127.0.0.1:12500"
+            assert singbox_saved.get("CSQTTRule", {}).get("Enabled") is True
+            assert singbox_saved.get("DirectEnabled") is True
+            assert "csqtt" in singbox_saved.get("RouteOrder", [])
             assert singbox_saved.get("FinalOutbound") == "csqtt"
             page.locator("#singboxLoadEngine").click()
             page.wait_for_function("document.querySelector('#singboxFinalOutbound').value === 'csqtt'")
