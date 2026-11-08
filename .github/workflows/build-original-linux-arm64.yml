@@ -336,6 +336,8 @@ jobs:
           set -euxo pipefail
           go mod download
       - name: Install pinned sing-box config validator
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           archive=/tmp/sing-box-1.14.4-linux-amd64.tar.gz
@@ -348,6 +350,7 @@ jobs:
             curl -fL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 60 \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Authorization: Bearer $GH_TOKEN" \
               -o "$release_json" \
               "https://api.github.com/repos/SagerNet/sing-box/releases/tags/v1.14.4"
             asset_id="$(python3 - "$release_json" <<'PY'
@@ -365,6 +368,7 @@ jobs:
             curl -fL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 180 \
               -H "Accept: application/octet-stream" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Authorization: Bearer $GH_TOKEN" \
               -o "$archive" \
               "https://api.github.com/repos/SagerNet/sing-box/releases/assets/$asset_id"
           fi
