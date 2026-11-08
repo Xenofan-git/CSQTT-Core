@@ -1515,8 +1515,7 @@ func TestBuildSingBoxConfigPinsDirectAndRejectsSystemCardReordering(t *testing.T
 	directEnabled := false
 	base := singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19180",
-		CSQTTAddress: "127.0.0.1:12500",
-		CSQTTEnabled: true,
+		CSQTTEnabled: false,
 		FinalOutbound: singBoxDirectTag,
 		DirectEnabled: &directEnabled,
 		DirectDomains: []string{"direct.example"},
