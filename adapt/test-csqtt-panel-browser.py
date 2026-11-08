@@ -762,6 +762,21 @@ def main():
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxRouteConfigMessage').textContent.includes('Конфигурация проверена sing-box и сохранена')")
 
+            # If a managed config was externally changed and cannot be safely
+            # reconstructed, the panel must not leave stale editor state savable.
+            fail_paths.add("/singbox/config")
+            page.locator('button[data-page="route"]').click()
+            page.locator('button[data-page="singbox"]').click()
+            page.wait_for_function("document.querySelector('#singboxSave').disabled && document.querySelector('#singboxSaveEngine').disabled")
+            assert "Сохранение заблокировано" in page.locator("#singboxRouteConfigMessage").inner_text(), (
+                "stale panel state did not explain why saving was blocked"
+            )
+            put_count_before = sum(1 for method, path, _ in calls if method == "PUT" and path == "/singbox/config")
+            page.evaluate("document.querySelector('#singboxSaveEngine').click()")
+            page.wait_for_timeout(50)
+            put_count_after = sum(1 for method, path, _ in calls if method == "PUT" and path == "/singbox/config")
+            assert put_count_after == put_count_before, "stale editor state was still allowed to overwrite the config"
+
             browser.close()
     finally:
         server.shutdown()
