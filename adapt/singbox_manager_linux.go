@@ -512,9 +512,10 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		if value, exists := set["url"]; exists { item.URL, valid = value.(string); if !valid { return input, fmt.Errorf("Rule Set URL must be a string") } }
 		if value, exists := set["update_interval"]; exists { item.UpdateInterval, valid = value.(string); if !valid { return input, fmt.Errorf("Rule Set update_interval must be a string") } }
 		for key := range set {
-			if key != "type" && key != "tag" && key != "format" && key != "path" && key != "url" && key != "update_interval" {
-				return input, fmt.Errorf("unsupported Rule Set field %q; refusing lossy panel import", key)
-			}
+			allowed := key == "type" || key == "tag" || key == "format"
+			if item.Type == "local" { allowed = allowed || key == "path" }
+			if item.Type == "remote" { allowed = allowed || key == "url" || key == "update_interval" }
+			if !allowed { return input, fmt.Errorf("unsupported Rule Set field %q for type %q; refusing lossy panel import", key, item.Type) }
 		}
 		input.RuleSets = append(input.RuleSets, item)
 	}
