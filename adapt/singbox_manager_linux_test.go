@@ -823,3 +823,55 @@ func TestSingBoxManagerLoadConfigRejectsInvalidOrDuplicateOutboundTags(t *testin
 		})
 	}
 }
+
+
+func TestSingBoxManagerSaveLoadPreservesDisabledSystemAndUserCards(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), configPath, filepath.Join(dir, "sing-box.log"))
+	directEnabled := false
+	input := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180",
+		FinalOutbound: singBoxDirectTag,
+		DirectEnabled: &directEnabled,
+		DirectDomains: []string{"direct.example"},
+		CSQTTAddress: "",
+		CSQTTEnabled: false,
+		CSQTTRule: singBoxRouteRule{Enabled: false, Domains: []string{"csqtt.example"}},
+		RouteOrder: []string{"user-disabled", "csqtt", "user-active"},
+		Rules: []singBoxRouteRule{
+			{ID: "user-disabled", Enabled: false, Domains: []string{"disabled.example"}, Outbound: singBoxDirectTag},
+			{ID: "user-active", Enabled: true, Domains: []string{"active.example"}, Outbound: singBoxDirectTag},
+		},
+	}
+	if err := manager.SaveConfig(input); err != nil { t.Fatalf("SaveConfig: %v", err) }
+	loaded, err := manager.LoadConfig()
+	if err != nil { t.Fatalf("LoadConfig: %v", err) }
+	if loaded.DirectEnabled == nil || *loaded.DirectEnabled { t.Fatalf("Direct enabled state did not round-trip: %#v", loaded.DirectEnabled) }
+	if loaded.CSQTTEnabled || loaded.CSQTTRule.Enabled { t.Fatalf("disabled CSQTT state did not round-trip: %#v", loaded.CSQTTRule) }
+	if len(loaded.Rules) != 2 || loaded.Rules[0].Enabled || loaded.Rules[1].ID != "user-active" {
+		t.Fatalf("disabled user rule or rule order was lost: %#v", loaded.Rules)
+	}
+	if got := strings.Join(loaded.RouteOrder, ","); got != "user-disabled,csqtt,user-active" {
+		t.Fatalf("route priority did not round-trip: %q", got)
+	}
+	stateInfo, err := os.Stat(manager.panelStatePath())
+	if err != nil { t.Fatalf("panel state sidecar missing: %v", err) }
+	if stateInfo.Mode().Perm() != 0600 { t.Fatalf("panel state permissions = %o, want 0600", stateInfo.Mode().Perm()) }
+}
+
+func TestSingBoxManagerIgnoresStalePanelStateAfterExternalConfigChange(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), configPath, filepath.Join(dir, "sing-box.log"))
+	input := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag, Rules: []singBoxRouteRule{{ID: "saved", Enabled: true, Domains: []string{"saved.example"}, Outbound: singBoxDirectTag}}}
+	if err := manager.SaveConfig(input); err != nil { t.Fatal(err) }
+	// Model an external edit to the sing-box JSON. A sidecar tied to the old
+	// checksum must not resurrect stale panel state over the edited config.
+	encoded, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag})
+	if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(configPath, encoded, 0600); err != nil { t.Fatal(err) }
+	loaded, err := manager.LoadConfig()
+	if err != nil { t.Fatalf("LoadConfig after external edit: %v", err) }
+	if len(loaded.Rules) != 0 { t.Fatalf("stale panel sidecar overrode externally edited config: %#v", loaded.Rules) }
+}
