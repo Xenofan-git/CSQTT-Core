@@ -180,9 +180,21 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	m.mu.Lock()
 	if m.cmd != nil || m.starting { m.mu.Unlock(); return fmt.Errorf("sing-box started while config was being validated") }
 	if err := os.Rename(stateTmp, statePath); err != nil { m.mu.Unlock(); return fmt.Errorf("activate sing-box panel state: %w", err) }
+	// Make the new sidecar durable before publishing the config that refers to
+	// it. If this sync fails, the old config and its old sidecar remain active.
+	dirHandle, err := os.Open(dir)
+	if err != nil { m.mu.Unlock(); return fmt.Errorf("open sing-box config directory for sync: %w", err) }
+	if err := dirHandle.Sync(); err != nil { _ = dirHandle.Close(); m.mu.Unlock(); return fmt.Errorf("sync sing-box panel state directory entry: %w", err) }
+	if err := dirHandle.Close(); err != nil { m.mu.Unlock(); return fmt.Errorf("close sing-box config directory: %w", err) }
 	if err := os.Rename(tmp, m.configPath); err != nil { m.mu.Unlock(); return fmt.Errorf("activate sing-box config: %w", err) }
 	m.lastError = ""
 	m.mu.Unlock()
+	// The config is now committed. Sync its directory entry before pruning old
+	// generations, so either the old pair or the new pair survives a crash.
+	dirHandle, err = os.Open(dir)
+	if err != nil { return fmt.Errorf("config committed but opening directory for sync failed: %w", err) }
+	if err := dirHandle.Sync(); err != nil { _ = dirHandle.Close(); return fmt.Errorf("config committed but directory sync failed: %w", err) }
+	if err := dirHandle.Close(); err != nil { return fmt.Errorf("config committed but directory close failed: %w", err) }
 	// Old generations and the pre-generation sidecar are no longer needed.
 	// Readers are excluded by configMu until cleanup is complete.
 	if matches, err := filepath.Glob(m.configPath + ".panel.*.json"); err == nil {
