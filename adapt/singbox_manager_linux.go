@@ -363,6 +363,7 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		}
 		input.CSQTTAddress = net.JoinHostPort(csqttIP.String(), strconv.Itoa(int(csqttPort)))
 		input.CSQTTEnabled = true
+		input.CSQTTRule.Enabled = true
 	}
 	for tag, entry := range known {
 		if !strings.HasPrefix(tag, "socks-") { continue }
