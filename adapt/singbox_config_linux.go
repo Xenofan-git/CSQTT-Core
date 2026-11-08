@@ -430,7 +430,6 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		return rule, nil
 	}
 
-	csqttEnabled := input.CSQTTEnabled || input.CSQTTRule.Enabled
 	if csqttEnabled && input.CSQTTRule.Enabled {
 		hasMatcher := len(input.CSQTTRule.Domains)+len(input.CSQTTRule.DomainSuffixes)+len(input.CSQTTRule.DomainKeywords)+len(input.CSQTTRule.DomainRegexes)+len(input.CSQTTRule.IPCIDRs)+len(input.CSQTTRule.RuleSets) > 0 || singBoxAdvancedHasMatcher(input.CSQTTRule.Advanced)
 		if hasMatcher {
