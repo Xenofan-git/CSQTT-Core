@@ -234,6 +234,7 @@ def main():
             assert page.locator("#singboxCsqttEnabled").is_checked() is False
 
             page.locator("#singboxCsqttEnabled").check()
+            assert page.locator("#singboxCsqtt").input_value() == "127.0.0.1:12500"
             page.locator("#singboxFinalOutbound").select_option("csqtt")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
