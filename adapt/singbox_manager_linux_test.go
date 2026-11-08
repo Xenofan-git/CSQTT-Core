@@ -882,3 +882,47 @@ func TestSingBoxManagerRejectsStalePanelStateAfterExternalConfigChange(t *testin
 		t.Fatalf("expected fail-closed stale panel-state error, got %v", err)
 	}
 }
+
+
+func TestSingBoxManagerLegacyImportRejectsLossyDirectMatchersAndOrder(t *testing.T) {
+	cases := []struct { name, rules string }{
+		{name: "Direct domain keyword", rules: `[{"action":"route","outbound":"direct","domain_keyword":["video"]}]`},
+		{name: "Direct domain regex", rules: `[{"action":"route","outbound":"direct","domain_regex":["video"]}]`},
+		{name: "Direct Rule Set", rules: `[{"action":"route","outbound":"direct","rule_set":["blocked"]}]`},
+		{name: "Direct after proxy route", rules: `[{"action":"route","outbound":"csqtt","domain":["first.example"]},{"action":"route","outbound":"direct","domain":["later.example"]}]`},
+		{name: "unsupported reject action", rules: `[{"action":"reject","domain":["blocked.example"]}]`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			config := filepath.Join(dir, "config.json")
+			raw := `{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19080}],"outbounds":[{"type":"direct","tag":"direct"},{"type":"socks","tag":"csqtt","server":"127.0.0.1","server_port":19081}],"route":{"final":"direct","rules":` + tc.rules + `}}`
+			if err := os.WriteFile(config, []byte(raw), 0600); err != nil { t.Fatal(err) }
+			manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+			if _, err := manager.LoadConfig(); err == nil {
+				t.Fatal("lossy legacy route configuration was accepted")
+			}
+		})
+	}
+}
+
+func TestSingBoxManagerLegacyImportPreservesCSQTTRoutePosition(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.json")
+	raw := `{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19080}],"outbounds":[{"type":"direct","tag":"direct"},{"type":"socks","tag":"csqtt","server":"127.0.0.1","server_port":19081},{"type":"socks","tag":"socks-alpha","server":"alpha.example","server_port":1080}],"route":{"final":"direct","rules":[{"action":"route","outbound":"csqtt","domain":["first.example"]},{"action":"route","outbound":"socks-alpha","domain":["second.example"]}]}}`
+	if err := os.WriteFile(config, []byte(raw), 0600); err != nil { t.Fatal(err) }
+	manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+	loaded, err := manager.LoadConfig()
+	if err != nil { t.Fatalf("LoadConfig legacy route order: %v", err) }
+	if got := strings.Join(loaded.RouteOrder, ","); got != "loaded-1,loaded-2" {
+		t.Fatalf("legacy route order = %q, want original order", got)
+	}
+	generated, err := buildSingBoxConfig(loaded)
+	if err != nil { t.Fatalf("rebuild imported config: %v", err) }
+	var decoded map[string]any
+	if err := json.Unmarshal(generated, &decoded); err != nil { t.Fatal(err) }
+	rules := decoded["route"].(map[string]any)["rules"].([]any)
+	if rules[1].(map[string]any)["outbound"] != "csqtt" || rules[2].(map[string]any)["outbound"] != "socks-alpha" {
+		t.Fatalf("CSQTT/user rule order changed during import: %#v", rules)
+	}
+}
