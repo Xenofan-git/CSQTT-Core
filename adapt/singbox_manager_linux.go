@@ -463,16 +463,27 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 			return input, fmt.Errorf("unsupported sing-box route field %q; refusing lossy panel import", key)
 		}
 	}
-	for _, rawSet := range anySlice(route["rule_set"]) {
+	rawRuleSets := []any{}
+	if rawSets, exists := route["rule_set"]; exists {
+		var valid bool
+		rawRuleSets, valid = rawSets.([]any)
+		if !valid { return input, fmt.Errorf("sing-box route Rule Sets must be an array; refusing lossy panel import") }
+	}
+	for _, rawSet := range rawRuleSets {
 		set, ok := rawSet.(map[string]any)
 		if !ok { return input, fmt.Errorf("invalid sing-box Rule Set entry; refusing lossy panel import") }
 		item := singBoxRuleSet{}
-		item.Type, _ = set["type"].(string); item.Tag, _ = set["tag"].(string)
-		item.Format, _ = set["format"].(string); item.Path, _ = set["path"].(string)
-		item.URL, _ = set["url"].(string); item.UpdateInterval, _ = set["update_interval"].(string)
-		if len(set) != 4 && item.Type == "local" || len(set) < 4 {
-			// buildSingBoxConfig performs the detailed type/path/format checks;
-			// this guard prevents malformed objects from being silently skipped.
+		var valid bool
+		if value, exists := set["type"]; exists { item.Type, valid = value.(string); if !valid { return input, fmt.Errorf("Rule Set type must be a string") } }
+		if value, exists := set["tag"]; exists { item.Tag, valid = value.(string); if !valid { return input, fmt.Errorf("Rule Set tag must be a string") } }
+		if value, exists := set["format"]; exists { item.Format, valid = value.(string); if !valid { return input, fmt.Errorf("Rule Set format must be a string") } }
+		if value, exists := set["path"]; exists { item.Path, valid = value.(string); if !valid { return input, fmt.Errorf("Rule Set path must be a string") } }
+		if value, exists := set["url"]; exists { item.URL, valid = value.(string); if !valid { return input, fmt.Errorf("Rule Set URL must be a string") } }
+		if value, exists := set["update_interval"]; exists { item.UpdateInterval, valid = value.(string); if !valid { return input, fmt.Errorf("Rule Set update_interval must be a string") } }
+		for key := range set {
+			if key != "type" && key != "tag" && key != "format" && key != "path" && key != "url" && key != "update_interval" {
+				return input, fmt.Errorf("unsupported Rule Set field %q; refusing lossy panel import", key)
+			}
 		}
 		input.RuleSets = append(input.RuleSets, item)
 	}
@@ -485,12 +496,24 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	}
 	input.RouteOrder = make([]string, 0, len(rules))
 	seenNonDirectRoute := false
+	readStrings := func(rule map[string]any, key string) ([]string, error) {
+		raw, exists := rule[key]
+		if !exists { return nil, nil }
+		items, ok := raw.([]any)
+		if !ok { return nil, fmt.Errorf("route matcher %q must be an array of strings", key) }
+		values := make([]string, 0, len(items))
+		for _, item := range items {
+			value, ok := item.(string)
+			if !ok { return nil, fmt.Errorf("route matcher %q contains a non-string value", key) }
+			values = append(values, value)
+		}
+		return values, nil
+	}
 	validateInbound := func(rule map[string]any) error {
-		if rawInbound, exists := rule["inbound"]; exists {
-			inbounds := stringSlice(rawInbound)
-			if len(inbounds) != 1 || inbounds[0] != singBoxInboundTag {
-				return fmt.Errorf("route references unsupported inbound; refusing lossy panel import")
-			}
+		inbounds, err := readStrings(rule, "inbound")
+		if err != nil { return err }
+		if _, exists := rule["inbound"]; exists && (len(inbounds) != 1 || inbounds[0] != singBoxInboundTag) {
+			return fmt.Errorf("route references unsupported inbound; refusing lossy panel import")
 		}
 		return nil
 	}
@@ -506,9 +529,12 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		if action != "route" { return input, fmt.Errorf("unsupported sing-box route action %q at rule %d; refusing lossy panel import", action, index) }
 		if err := validateInbound(rule); err != nil { return input, err }
 		outbound, _ := rule["outbound"].(string)
-		domains, suffixes := stringSlice(rule["domain"]), stringSlice(rule["domain_suffix"])
-		keywords, regexes, cidrs := stringSlice(rule["domain_keyword"]), stringSlice(rule["domain_regex"]), stringSlice(rule["ip_cidr"])
-		ruleSets := stringSlice(rule["rule_set"])
+		domains, err := readStrings(rule, "domain"); if err != nil { return input, err }
+		suffixes, err := readStrings(rule, "domain_suffix"); if err != nil { return input, err }
+		keywords, err := readStrings(rule, "domain_keyword"); if err != nil { return input, err }
+		regexes, err := readStrings(rule, "domain_regex"); if err != nil { return input, err }
+		cidrs, err := readStrings(rule, "ip_cidr"); if err != nil { return input, err }
+		ruleSets, err := readStrings(rule, "rule_set"); if err != nil { return input, err }
 		if outbound == singBoxDirectTag {
 			if seenNonDirectRoute { return input, fmt.Errorf("Direct route appears after another route; pinned Direct order cannot be imported without changing first-match semantics") }
 			for key := range rule {
