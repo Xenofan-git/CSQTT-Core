@@ -280,11 +280,24 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	port, ok := inbound["listen_port"].(float64)
 	if host == "" || !ok || port < 1 || port > 65535 { return input, fmt.Errorf("invalid sing-box inbound endpoint") }
 	input.ListenAddress = net.JoinHostPort(host, strconv.Itoa(int(port)))
-	outbounds, _ := raw["outbounds"].([]any)
-	known := make(map[string]map[string]any)
-	for _, item := range outbounds {
-		entry, ok := item.(map[string]any); if !ok { continue }
-		tag, _ := entry["tag"].(string); known[tag] = entry
+	outbounds, ok := raw["outbounds"].([]any)
+	if !ok || len(outbounds) == 0 {
+		return input, fmt.Errorf("invalid sing-box outbounds configuration")
+	}
+	known := make(map[string]map[string]any, len(outbounds))
+	for index, item := range outbounds {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return input, fmt.Errorf("invalid sing-box outbound at index %d", index)
+		}
+		tag, ok := entry["tag"].(string)
+		if !ok || strings.TrimSpace(tag) == "" {
+			return input, fmt.Errorf("sing-box outbound at index %d has no valid tag", index)
+		}
+		if _, exists := known[tag]; exists {
+			return input, fmt.Errorf("duplicate sing-box outbound tag %q", tag)
+		}
+		known[tag] = entry
 	}
 	if csqtt := known[singBoxCSQTTTag]; csqtt != nil {
 		if csqtt["type"] != "socks" { return input, fmt.Errorf("invalid CSQTT outbound type") }
