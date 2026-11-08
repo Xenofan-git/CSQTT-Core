@@ -3,6 +3,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"context"
 	"net"
@@ -985,5 +987,29 @@ func TestSingBoxManagerFailsClosedOnCorruptPanelSidecar(t *testing.T) {
 	if err := os.WriteFile(stateFiles[0], []byte("{corrupt"), 0600); err != nil { t.Fatal(err) }
 	if _, err := manager.LoadConfig(); err == nil || !strings.Contains(err.Error(), "decode sing-box panel state") {
 		t.Fatalf("corrupt sidecar was not rejected fail-closed: %v", err)
+	}
+}
+
+
+func TestSingBoxManagerLoadsLegacyPanelSidecar(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config.json")
+	input := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
+		RouteOrder: []string{"disabled"},
+		Rules: []singBoxRouteRule{{ID: "disabled", Enabled: false, Domains: []string{"legacy-disabled.example"}, Outbound: singBoxDirectTag}},
+	}
+	encoded, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatalf("build legacy config: %v", err) }
+	if err := os.WriteFile(config, encoded, 0600); err != nil { t.Fatal(err) }
+	sum := sha256.Sum256(encoded)
+	stateData, err := json.MarshalIndent(singBoxPanelState{ConfigSHA256: hex.EncodeToString(sum[:]), Input: input}, "", "  ")
+	if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(config+".panel.json", append(stateData, '\\n'), 0600); err != nil { t.Fatal(err) }
+	manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+	loaded, err := manager.LoadConfig()
+	if err != nil { t.Fatalf("LoadConfig legacy sidecar: %v", err) }
+	if len(loaded.Rules) != 1 || loaded.Rules[0].Enabled || loaded.Rules[0].ID != "disabled" {
+		t.Fatalf("legacy disabled-card state was not restored: %#v", loaded.Rules)
 	}
 }
