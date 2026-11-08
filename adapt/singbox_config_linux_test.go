@@ -1473,3 +1473,63 @@ func TestSingBoxSniffsHTTPHostAndTLSSNIFromIPDestination(t *testing.T) {
 	case <-time.After(time.Second):
 	}
 }
+
+
+func TestBuildSingBoxConfigAppliesSystemCardPriorityOrder(t *testing.T) {
+	directEnabled := true
+	encoded, err := buildSingBoxConfig(singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180",
+		CSQTTAddress: "127.0.0.1:12500",
+		CSQTTEnabled: true,
+		CSQTTRule: singBoxRouteRule{Enabled: true, Domains: []string{"csqtt.example"}},
+		DirectEnabled: &directEnabled,
+		DirectDomains: []string{"direct.example"},
+		FinalOutbound: singBoxDirectTag,
+		Rules: []singBoxRouteRule{
+			{ID: "alpha", Enabled: true, Domains: []string{"alpha.example"}, Outbound: singBoxDirectTag},
+			{ID: "beta", Enabled: true, Domains: []string{"beta.example"}, Outbound: singBoxDirectTag},
+		},
+		RouteOrder: []string{"beta", "csqtt", "alpha"},
+	})
+	if err != nil { t.Fatal(err) }
+	var config map[string]any
+	if err := json.Unmarshal(encoded, &config); err != nil { t.Fatal(err) }
+	rules := config["route"].(map[string]any)["rules"].([]any)
+	if len(rules) != 5 { t.Fatalf("got %d route rules, want sniff + Direct + 3 ordered cards", len(rules)) }
+	want := []string{"", singBoxDirectTag, singBoxDirectTag, singBoxCSQTTTag, singBoxDirectTag}
+	wantDomains := []string{"", "direct.example", "beta.example", "csqtt.example", "alpha.example"}
+	for i := range rules {
+		rule := rules[i].(map[string]any)
+		if got := rule["outbound"]; got != want[i] && i != 0 { t.Errorf("route[%d] outbound=%v, want %s", i, got, want[i]) }
+		if i > 0 {
+			domains := rule["domain"].([]any)
+			if domains[0] != wantDomains[i] { t.Errorf("route[%d] domain=%v, want %s", i, domains, wantDomains[i]) }
+		}
+	}
+}
+
+func TestBuildSingBoxConfigPinsDirectAndRejectsSystemCardReordering(t *testing.T) {
+	directEnabled := false
+	base := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180",
+		CSQTTAddress: "127.0.0.1:12500",
+		CSQTTEnabled: true,
+		FinalOutbound: singBoxDirectTag,
+		DirectEnabled: &directEnabled,
+		DirectDomains: []string{"direct.example"},
+		Rules: []singBoxRouteRule{{ID: "user-one", Enabled: true, Domains: []string{"user.example"}, Outbound: singBoxDirectTag}},
+	}
+	encoded, err := buildSingBoxConfig(base)
+	if err != nil { t.Fatal(err) }
+	var config map[string]any
+	if err := json.Unmarshal(encoded, &config); err != nil { t.Fatal(err) }
+	rules := config["route"].(map[string]any)["rules"].([]any)
+	if len(rules) != 2 { t.Fatalf("disabled Direct card still generated a runtime matcher: %#v", rules) }
+	if rules[1].(map[string]any)["domain"].([]any)[0] != "user.example" { t.Fatalf("unexpected first active route: %#v", rules[1]) }
+
+	for _, order := range [][]string{{"direct", "user-one"}, {"user-one", "user-one"}} {
+		candidate := base
+		candidate.RouteOrder = order
+		if _, err := buildSingBoxConfig(candidate); err == nil { t.Fatalf("invalid protected route order %v was accepted", order) }
+	}
+}
