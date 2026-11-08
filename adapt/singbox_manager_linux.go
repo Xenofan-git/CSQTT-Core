@@ -458,29 +458,86 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		return input, fmt.Errorf("sing-box default outbound %q is not configured", finalOutbound)
 	}
 	input.FinalOutbound = finalOutbound
+	for key := range route {
+		if key != "final" && key != "rule_set" && key != "rules" {
+			return input, fmt.Errorf("unsupported sing-box route field %q; refusing lossy panel import", key)
+		}
+	}
 	for _, rawSet := range anySlice(route["rule_set"]) {
-		set, ok := rawSet.(map[string]any); if !ok { continue }
+		set, ok := rawSet.(map[string]any)
+		if !ok { return input, fmt.Errorf("invalid sing-box Rule Set entry; refusing lossy panel import") }
 		item := singBoxRuleSet{}
 		item.Type, _ = set["type"].(string); item.Tag, _ = set["tag"].(string)
 		item.Format, _ = set["format"].(string); item.Path, _ = set["path"].(string)
 		item.URL, _ = set["url"].(string); item.UpdateInterval, _ = set["update_interval"].(string)
+		if len(set) != 4 && item.Type == "local" || len(set) < 4 {
+			// buildSingBoxConfig performs the detailed type/path/format checks;
+			// this guard prevents malformed objects from being silently skipped.
+		}
 		input.RuleSets = append(input.RuleSets, item)
 	}
-	rules, _ := route["rules"].([]any)
-	for _, item := range rules {
-		rule, ok := item.(map[string]any); if !ok || rule["action"] != "route" { continue }
+	rulesValue, hasRules := route["rules"]
+	rules := []any{}
+	if hasRules {
+		var valid bool
+		rules, valid = rulesValue.([]any)
+		if !valid { return input, fmt.Errorf("sing-box route rules must be an array; refusing lossy panel import") }
+	}
+	input.RouteOrder = make([]string, 0, len(rules))
+	seenNonDirectRoute := false
+	validateInbound := func(rule map[string]any) error {
+		if rawInbound, exists := rule["inbound"]; exists {
+			inbounds := stringSlice(rawInbound)
+			if len(inbounds) != 1 || inbounds[0] != singBoxInboundTag {
+				return fmt.Errorf("route references unsupported inbound; refusing lossy panel import")
+			}
+		}
+		return nil
+	}
+	for index, item := range rules {
+		rule, ok := item.(map[string]any)
+		if !ok { return input, fmt.Errorf("sing-box route rule %d is not an object; refusing lossy panel import", index) }
+		action, _ := rule["action"].(string)
+		if action == "sniff" {
+			if len(rule) != 2 { return input, fmt.Errorf("custom sniff action at route rule %d is not representable in the panel", index) }
+			if err := validateInbound(rule); err != nil { return input, err }
+			continue
+		}
+		if action != "route" { return input, fmt.Errorf("unsupported sing-box route action %q at rule %d; refusing lossy panel import", action, index) }
+		if err := validateInbound(rule); err != nil { return input, err }
 		outbound, _ := rule["outbound"].(string)
 		domains, suffixes := stringSlice(rule["domain"]), stringSlice(rule["domain_suffix"])
 		keywords, regexes, cidrs := stringSlice(rule["domain_keyword"]), stringSlice(rule["domain_regex"]), stringSlice(rule["ip_cidr"])
 		ruleSets := stringSlice(rule["rule_set"])
 		if outbound == singBoxDirectTag {
+			if seenNonDirectRoute { return input, fmt.Errorf("Direct route appears after another route; pinned Direct order cannot be imported without changing first-match semantics") }
+			for key := range rule {
+				switch key {
+				case "inbound", "action", "outbound", "domain", "domain_suffix", "ip_cidr":
+				default:
+					return input, fmt.Errorf("Direct route uses unsupported matcher %q; refusing lossy panel import", key)
+				}
+			}
+			if len(domains)+len(suffixes)+len(cidrs) == 0 { return input, fmt.Errorf("Direct route has no supported matchers; refusing lossy panel import") }
 			input.DirectDomains=append(input.DirectDomains,domains...)
 			input.DirectDomainSuffixes=append(input.DirectDomainSuffixes,suffixes...)
 			input.DirectIPCIDRs=append(input.DirectIPCIDRs,cidrs...)
 			continue
 		}
+		seenNonDirectRoute = true
 		if outbound == "" || known[outbound] == nil { return input, fmt.Errorf("route references missing outbound %q", outbound) }
-		input.Rules=append(input.Rules,singBoxRouteRule{ID:fmt.Sprintf("loaded-%d",len(input.Rules)+1),Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Advanced:singBoxAdvancedFieldsFromRule(rule),Outbound:outbound,Enabled:true})
+		for key := range rule {
+			if _, managed := singBoxManagedRouteFields[key]; managed { continue }
+			if _, allowed := singBoxAdvancedRouteFields[key]; !allowed {
+				return input, fmt.Errorf("route uses unsupported matcher %q; refusing lossy panel import", key)
+			}
+		}
+		id := fmt.Sprintf("loaded-%d", len(input.Rules)+1)
+		input.Rules=append(input.Rules,singBoxRouteRule{ID:id,Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Advanced:singBoxAdvancedFieldsFromRule(rule),Outbound:outbound,Enabled:true})
+		input.RouteOrder = append(input.RouteOrder, id)
+	}
+	if _, err := buildSingBoxConfig(input); err != nil {
+		return input, fmt.Errorf("sing-box config cannot be represented safely by the panel: %w", err)
 	}
 	return input,nil
 }
