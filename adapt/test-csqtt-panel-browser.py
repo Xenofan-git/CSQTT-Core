@@ -37,7 +37,7 @@ def main():
     vk_token = {"hasToken": True}
     # A fresh device has no tunnel password; the success path provisions one below.
     tunnel_auth = {"configured": False}
-    singbox_config = {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"","CSQTTEnabled":False,"FinalOutbound":"socks-hydra","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[{"ID":"hydra","Server":"192.0.2.10","ServerPort":1080,"Enabled":True},{"ID":"disabled","Server":"192.0.2.11","ServerPort":1080,"Enabled":False}],"Rules":[]}
+    singbox_config = {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"","CSQTTEnabled":False,"CSQTTRule":{"ID":"csqtt","Enabled":False,"RuleSets":[],"Domains":[],"DomainSuffixes":[],"DomainKeywords":[],"DomainRegexes":[],"IPCIDRs":[],"Outbound":"csqtt"},"DirectEnabled":True,"RouteOrder":[],"FinalOutbound":"socks-hydra","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[{"ID":"hydra","Server":"192.0.2.10","ServerPort":1080,"Enabled":True},{"ID":"disabled","Server":"192.0.2.11","ServerPort":1080,"Enabled":False}],"Rules":[]}
     singbox_saved = {}
     settings = {
         "authMode": "manual", "workers": 9, "autoApiWorkers": 9,
@@ -210,6 +210,27 @@ def main():
                     assert page.locator("#copySocks5Address").is_disabled()
                     socks5_state["listening"] = True
                     socks5_state["address"] = "192.168.4.26:12500"
+                if name == "route":
+                    page.wait_for_function("document.querySelectorAll('#singboxRouteRuleEditor .route-rule').length === 2")
+                    cards = page.locator("#singboxRouteRuleEditor .route-rule")
+                    assert cards.nth(0).get_attribute("data-system-card") == "direct"
+                    assert cards.nth(1).get_attribute("data-system-card") == "csqtt"
+                    assert cards.nth(0).locator("[data-remove-route-rule], [data-move-route-card]").count() == 0, "Direct must be immutable and pinned"
+                    assert cards.nth(1).locator("[data-remove-route-rule]").count() == 0, "CSQTT system card cannot be deleted"
+                    page.locator("#singboxAddRouteRule").click()
+                    user_card = page.locator('#singboxRouteRuleEditor .route-rule[data-card-type="user"]')
+                    assert user_card.count() == 1
+                    user_card.locator('[data-field="Domains"]').fill("priority.example")
+                    user_card.locator('[data-move-route-card="up"]').click()
+                    ordered = page.locator("#singboxRouteRuleEditor .route-rule[data-movable='true']").evaluate_all("(els) => els.map(el => el.dataset.routeId)")
+                    assert ordered[0].startswith("route-") and ordered[1] == "csqtt", ordered
+                    assert page.locator("#singboxRouteRuleEditor .route-rule").first.get_attribute("data-system-card") == "direct"
+                    assert page.locator("#singboxRouteRuleEditor [data-system-enabled='direct']").is_checked()
+                    assert page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").is_checked() is False
+                    page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").check()
+                    assert page.locator("#singboxCsqttEnabled").is_checked()
+                    page.locator('#singboxRouteRuleEditor [data-card-type="user"] [data-remove-route-rule]').click()
+                    assert page.locator('#singboxRouteRuleEditor [data-card-type="user"]').count() == 0
                 if name == "direct":
                     # Direct editor is a full-screen dialog; close it before using bottom navigation again.
                     page.locator("#routeClose").click()
