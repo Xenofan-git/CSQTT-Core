@@ -114,6 +114,9 @@ func (m *SingBoxManager) checkConfigPath(ctx context.Context, configPath string)
 
 
 func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
+	var err error
+	input, err = normalizeSingBoxSystemCards(input)
+	if err != nil { return fmt.Errorf("validate sing-box system cards: %w", err) }
 	encoded, err := buildSingBoxConfig(input)
 	if err != nil { return fmt.Errorf("build sing-box config: %w", err) }
 	if err := m.validateRuleSetPaths(input.RuleSets); err != nil { return fmt.Errorf("unsafe Rule Set path: %w", err) }
