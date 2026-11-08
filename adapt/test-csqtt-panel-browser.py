@@ -226,6 +226,7 @@ def main():
             # Exercise the full default-outbound lifecycle in the real Chromium UI:
             # Direct -> CSQTT -> external SOCKS5, saving and reloading each choice.
             page.locator("#singboxFinalOutbound").select_option("direct")
+            assert page.locator("#singboxFinalOutbound").input_value() == "direct"
             page.locator("#singboxEngineConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxEngineConfigMessage').textContent.includes('проверена sing-box')")
@@ -237,6 +238,7 @@ def main():
             page.locator("#singboxCsqttEnabled").check()
             assert page.locator("#singboxCsqtt").input_value() == "127.0.0.1:12500"
             page.locator("#singboxFinalOutbound").select_option("csqtt")
+            assert page.locator("#singboxFinalOutbound").input_value() == "csqtt"
             page.locator("#singboxEngineConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxEngineConfigMessage').textContent.includes('проверена sing-box')")
@@ -248,6 +250,7 @@ def main():
             assert page.locator("#singboxCsqttEnabled").is_checked() is True
 
             page.locator("#singboxFinalOutbound").select_option("socks-hydra")
+            assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
             page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
             page.locator("#singboxEngineConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
             page.locator("#singboxSaveEngine").click()
