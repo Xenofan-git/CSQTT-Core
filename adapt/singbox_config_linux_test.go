@@ -2,7 +2,8 @@
 
 package main
 
-import (\n\t"crypto/tls"
+import (
+	"crypto/tls"
 	"bytes"
 	"context"
 	"encoding/binary"
