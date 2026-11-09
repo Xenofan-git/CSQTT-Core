@@ -681,6 +681,14 @@ func TestSingBoxAPIRejectsSystemCardTampering(t *testing.T) {
 			},
 		},
 		{
+			name: "route order cannot omit disabled user cards",
+			input: singBoxConfigInput{
+				ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
+				RouteOrder: []string{"csqtt"},
+				Rules: []singBoxRouteRule{{ID: "hidden-disabled", Enabled: false, Domains: []string{"disabled.example"}, Outbound: singBoxDirectTag}},
+			},
+		},
+		{
 			name: "disabled CSQTT cannot be referenced",
 			input: singBoxConfigInput{
 				ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
