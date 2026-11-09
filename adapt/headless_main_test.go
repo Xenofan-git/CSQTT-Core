@@ -692,7 +692,7 @@ func TestSingBoxAPIRejectsSystemCardTampering(t *testing.T) {
 			name: "disabled CSQTT cannot be referenced",
 			input: singBoxConfigInput{
 				ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
-				RouteOrder: []string{"user-route"},
+				RouteOrder: []string{"csqtt", "user-route"},
 				Rules: []singBoxRouteRule{{ID: "user-route", Enabled: true, Domains: []string{"proxy.example"}, Outbound: singBoxCSQTTTag}},
 			},
 		},
