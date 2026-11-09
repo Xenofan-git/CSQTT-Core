@@ -962,7 +962,7 @@ func TestSingBoxManagerLegacyImportPreservesCSQTTRoutePosition(t *testing.T) {
 	manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
 	loaded, err := manager.LoadConfig()
 	if err != nil { t.Fatalf("LoadConfig legacy route order: %v", err) }
-	if got := strings.Join(loaded.RouteOrder, ","); got != "loaded-1,loaded-2" {
+	if got := strings.Join(loaded.RouteOrder, ","); got != "loaded-1,loaded-2,csqtt" {
 		t.Fatalf("legacy route order = %q, want original order", got)
 	}
 	generated, err := buildSingBoxConfig(loaded)
