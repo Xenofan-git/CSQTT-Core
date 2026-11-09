@@ -1024,7 +1024,7 @@ func TestSingBoxManagerFailsClosedOnCorruptPanelSidecar(t *testing.T) {
 	input := singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
 		Rules: []singBoxRouteRule{{ID: "saved", Enabled: false, Domains: []string{"disabled.example"}, Outbound: singBoxDirectTag}},
-		RouteOrder: []string{"saved"},
+		RouteOrder: []string{"csqtt", "saved"},
 	}
 	if err := manager.SaveConfig(input); err != nil { t.Fatalf("SaveConfig: %v", err) }
 	stateFiles, err := filepath.Glob(config + ".panel.*.json")
@@ -1041,7 +1041,7 @@ func TestSingBoxManagerLoadsLegacyPanelSidecar(t *testing.T) {
 	config := filepath.Join(dir, "config.json")
 	input := singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
-		RouteOrder: []string{"disabled"},
+		RouteOrder: []string{"disabled", "csqtt"},
 		Rules: []singBoxRouteRule{{ID: "disabled", Enabled: false, Domains: []string{"legacy-disabled.example"}, Outbound: singBoxDirectTag}},
 	}
 	encoded, err := buildSingBoxConfig(input)
