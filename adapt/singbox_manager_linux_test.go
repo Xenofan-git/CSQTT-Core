@@ -887,6 +887,51 @@ func TestSingBoxManagerRejectsStalePanelStateAfterExternalConfigChange(t *testin
 }
 
 
+func TestSingBoxManagerLegacyImportRejectsMisorderedOrDuplicateSniffActions(t *testing.T) {
+	input := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180",
+		CSQTTAddress: "127.0.0.1:19181",
+		CSQTTEnabled: true,
+		FinalOutbound: singBoxDirectTag,
+		CSQTTRule: singBoxRouteRule{Enabled: true, Domains: []string{"first.example"}},
+		RouteOrder: []string{"csqtt"},
+	}
+	encoded, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatalf("build source config: %v", err) }
+	var base map[string]any
+	if err := json.Unmarshal(encoded, &base); err != nil { t.Fatal(err) }
+	baseRoute := base["route"].(map[string]any)
+	baseRules := baseRoute["rules"].([]any)
+	if len(baseRules) != 2 { t.Fatalf("expected leading sniff and CSQTT route, got %#v", baseRules) }
+
+	cases := []struct {
+		name string
+		rules []any
+	}{
+		{name: "sniff after route", rules: []any{baseRules[1], baseRules[0]}},
+		{name: "duplicate sniff", rules: []any{baseRules[0], baseRules[0], baseRules[1]}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			config := filepath.Join(dir, "config.json")
+			raw := make(map[string]any, len(base))
+			for key, value := range base { raw[key] = value }
+			route := make(map[string]any)
+			for key, value := range baseRoute { route[key] = value }
+			route["rules"] = tc.rules
+			raw["route"] = route
+			data, err := json.Marshal(raw)
+			if err != nil { t.Fatal(err) }
+			if err := os.WriteFile(config, data, 0600); err != nil { t.Fatal(err) }
+			manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+			if _, err := manager.LoadConfig(); err == nil || !strings.Contains(err.Error(), "sniff action must appear only once at the beginning") {
+				t.Fatalf("expected lossy sniff-order import rejection, got %v", err)
+			}
+		})
+	}
+}
+
 func TestSingBoxManagerLegacyImportRejectsLossyDirectMatchersAndOrder(t *testing.T) {
 	cases := []struct { name, rules string }{
 		{name: "Direct domain keyword", rules: `[{"action":"route","outbound":"direct","domain_keyword":["video"]}]`},
