@@ -1511,6 +1511,42 @@ func TestBuildSingBoxConfigAppliesSystemCardPriorityOrder(t *testing.T) {
 	}
 }
 
+func TestBuildSingBoxConfigRequiresCompleteExplicitRouteOrder(t *testing.T) {
+	base := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180",
+		FinalOutbound: singBoxDirectTag,
+		CSQTTEnabled: false,
+		CSQTTRule: singBoxRouteRule{Enabled: false},
+		Rules: []singBoxRouteRule{
+			{ID: "disabled-user", Enabled: false, Domains: []string{"disabled.example"}, Outbound: singBoxDirectTag},
+			{ID: "active-user", Enabled: true, Domains: []string{"active.example"}, Outbound: singBoxDirectTag},
+		},
+	}
+	cases := []struct {
+		name string
+		order []string
+		want string
+	}{
+		{name: "omitted disabled user card", order: []string{"csqtt", "active-user"}, want: "missing user rule"},
+		{name: "omitted CSQTT system card", order: []string{"disabled-user", "active-user"}, want: "must include the CSQTT system card"},
+		{name: "empty explicit order", order: []string{}, want: "must include the CSQTT system card"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := base
+			input.RouteOrder = tc.order
+			if _, err := buildSingBoxConfig(input); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected route-order completeness error containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+	valid := base
+	valid.RouteOrder = []string{"disabled-user", "csqtt", "active-user"}
+	if _, err := buildSingBoxConfig(valid); err != nil {
+		t.Fatalf("complete explicit route order rejected: %v", err)
+	}
+}
+
 func TestBuildSingBoxConfigPinsDirectAndRejectsSystemCardReordering(t *testing.T) {
 	directEnabled := false
 	base := singBoxConfigInput{
