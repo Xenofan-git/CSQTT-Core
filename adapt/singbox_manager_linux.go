@@ -413,12 +413,19 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 			return input, fmt.Errorf("unsupported sing-box outbound tag %q; refusing lossy panel import", tag)
 		}
 	}
-	// Logging is intentionally panel-managed. Accept only the exact generated
-	// default when a log object is present; custom outputs/levels cannot round-trip.
+	// Logging is intentionally panel-managed. Preserve the supported default
+	// level and timestamp option; reject custom outputs and non-default levels
+	// that the panel cannot round-trip.
 	if rawLog, exists := raw["log"]; exists {
 		logConfig, ok := rawLog.(map[string]any)
-		if !ok || len(logConfig) != 2 || logConfig["level"] != "info" || logConfig["timestamp"] != true {
+		if !ok || len(logConfig) > 2 {
 			return input, fmt.Errorf("unsupported sing-box log configuration; refusing lossy panel import")
+		}
+		if level, exists := logConfig["level"]; exists && level != "info" {
+			return input, fmt.Errorf("unsupported sing-box log level; refusing lossy panel import")
+		}
+		if timestamp, exists := logConfig["timestamp"]; exists && timestamp != true {
+			return input, fmt.Errorf("unsupported sing-box log timestamp setting; refusing lossy panel import")
 		}
 	}
 	if direct := known[singBoxDirectTag]; direct != nil {
