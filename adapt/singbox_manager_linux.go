@@ -156,8 +156,8 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	if err := m.checkConfigPath(ctx, tmp); err != nil { return fmt.Errorf("refusing invalid sing-box config: %w", err) }
 
 	// Persist the complete panel model separately from sing-box's strict schema.
-	// The checksum binds disabled cards and ordering to the exact active config;
-	// a crash between the two renames makes the stale sidecar safely ignorable.
+	// The immutable sidecar is named by the config checksum and published before
+	// the config rename, which is the generation's single commit point.
 	sum := sha256.Sum256(encoded)
 	stateData, err := json.MarshalIndent(singBoxPanelState{ConfigSHA256: hex.EncodeToString(sum[:]), Input: input}, "", "  ")
 	if err != nil { return fmt.Errorf("encode sing-box panel state: %w", err) }
@@ -603,6 +603,9 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		input.Rules=append(input.Rules,singBoxRouteRule{ID:id,Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Advanced:singBoxAdvancedFieldsFromRule(rule),Outbound:outbound,Enabled:true})
 		input.RouteOrder = append(input.RouteOrder, id)
 	}
+	// The panel always retains its CSQTT system card in the priority model,
+	// even when the imported config has no matching CSQTT route rule.
+	input.RouteOrder = append(input.RouteOrder, "csqtt")
 	if _, err := buildSingBoxConfig(input); err != nil {
 		return input, fmt.Errorf("sing-box config cannot be represented safely by the panel: %w", err)
 	}
