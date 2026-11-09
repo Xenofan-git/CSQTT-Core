@@ -472,8 +472,8 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		if _, exists := seenOrder[id]; exists { return nil, fmt.Errorf("duplicate route order entry %q", id) }
 		seenOrder[id] = struct{}{}
 		if _, exists := routeByID[id]; !exists {
-			// A disabled card remains in the panel model and therefore may be
-			// present in RouteOrder without producing a runtime route rule.
+			// Disabled cards remain in the panel model and may have no runtime
+			// route rule. Their IDs must still be present in the saved order.
 			if id != "csqtt" {
 				if _, known := seenRuleIDs[id]; !known { return nil, fmt.Errorf("route order references unknown rule %q", id) }
 			}
@@ -481,8 +481,18 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		}
 		ordered = append(ordered, id)
 	}
-	// Legacy requests omit RouteOrder: preserve their Rules slice order.
-	if len(input.RouteOrder) == 0 {
+	if input.RouteOrder != nil {
+		if _, ok := seenOrder["csqtt"]; !ok {
+			return nil, fmt.Errorf("route order must include the CSQTT system card, even when disabled")
+		}
+		for id := range seenRuleIDs {
+			if _, ok := seenOrder[id]; !ok {
+				return nil, fmt.Errorf("route order is missing user rule %q", id)
+			}
+		}
+	}
+	// Legacy requests omit RouteOrder entirely: preserve their Rules slice order.
+	if input.RouteOrder == nil {
 		for _, item := range input.Rules { if item.Enabled { ordered = append(ordered, item.ID) } }
 		if input.CSQTTRule.Enabled { ordered = append([]string{"csqtt"}, ordered...) }
 	} else {
@@ -495,7 +505,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			if _, exists := seenOrder["csqtt"]; !exists { ordered = append(ordered, "csqtt") }
 		}
 	}
-	if directRule, ok := routeByID["direct"]; ok { rules = append(rules, directRule) }
+		if directRule, ok := routeByID["direct"]; ok { rules = append(rules, directRule) }
 	for _, id := range ordered { if rule, ok := routeByID[id]; ok { rules = append(rules, rule) } }
 	// Explicit fallback selection. Legacy configs keep CSQTT when configured.
 	finalOutbound := strings.TrimSpace(input.FinalOutbound)
