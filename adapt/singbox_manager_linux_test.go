@@ -830,6 +830,50 @@ func TestSingBoxManagerLoadConfigRejectsInvalidOrDuplicateOutboundTags(t *testin
 }
 
 
+func TestSingBoxManagerLegacyImportRejectsUnsupportedOutboundAndLog(t *testing.T) {
+	cases := []struct {
+		name, outbounds, log string
+	}{
+		{
+			name: "unknown unused outbound",
+			outbounds: `[{"type":"direct","tag":"direct"},{"type":"direct","tag":"unused"}]`,
+		},
+		{
+			name: "custom log output",
+			outbounds: `[{"type":"direct","tag":"direct"}]`,
+			log: `{"level":"info","timestamp":true,"output":"/tmp/custom.log"}`,
+		},
+		{
+			name: "custom log level",
+			outbounds: `[{"type":"direct","tag":"direct"}]`,
+			log: `{"level":"debug","timestamp":true}`,
+		},
+		{
+			name: "non-object log",
+			outbounds: `[{"type":"direct","tag":"direct"}]`,
+			log: `[]`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			config := filepath.Join(dir, "config.json")
+			logField := ""
+			if tc.log != "" {
+				logField = `"log":` + tc.log + `,`
+			}
+			raw := `{` + logField + `"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19080}], "outbounds":` + tc.outbounds + `, "route":{"final":"direct","rules":[]}}`
+			if err := os.WriteFile(config, []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			manager := NewSingBoxManager("unused", config, filepath.Join(dir, "sing-box.log"))
+			if _, err := manager.LoadConfig(); err == nil {
+				t.Fatal("lossy external configuration was accepted")
+			}
+		})
+	}
+}
+
 func TestSingBoxManagerSaveLoadPreservesDisabledSystemAndUserCards(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
