@@ -549,11 +549,20 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		}
 		return nil
 	}
+	seenSniffAction := false
 	for index, item := range rules {
 		rule, ok := item.(map[string]any)
 		if !ok { return input, fmt.Errorf("sing-box route rule %d is not an object; refusing lossy panel import", index) }
 		action, _ := rule["action"].(string)
 		if action == "sniff" {
+			// The panel always emits its sniff action before every route card.
+			// Moving a later sniff action to the front during import would alter
+			// first-match behavior, so only the single leading generated action
+			// is representable.
+			if index != 0 || seenSniffAction {
+				return input, fmt.Errorf("sniff action must appear only once at the beginning of route rules; refusing lossy panel import")
+			}
+			seenSniffAction = true
 			if len(rule) != 2 { return input, fmt.Errorf("custom sniff action at route rule %d is not representable in the panel", index) }
 			if err := validateInbound(rule); err != nil { return input, err }
 			continue
