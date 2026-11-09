@@ -405,6 +405,22 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		}
 		known[tag] = entry
 	}
+	// The panel can represent only its managed Direct/CSQTT outbounds and
+	// authenticated external SOCKS5 entries. Keeping an unknown unused outbound
+	// in the import model would silently discard it on the next Save.
+	for tag := range known {
+		if tag != singBoxDirectTag && tag != singBoxCSQTTTag && !strings.HasPrefix(tag, "socks-") {
+			return input, fmt.Errorf("unsupported sing-box outbound tag %q; refusing lossy panel import", tag)
+		}
+	}
+	// Logging is intentionally panel-managed. Accept only the exact generated
+	// default when a log object is present; custom outputs/levels cannot round-trip.
+	if rawLog, exists := raw["log"]; exists {
+		logConfig, ok := rawLog.(map[string]any)
+		if !ok || len(logConfig) != 2 || logConfig["level"] != "info" || logConfig["timestamp"] != true {
+			return input, fmt.Errorf("unsupported sing-box log configuration; refusing lossy panel import")
+		}
+	}
 	if direct := known[singBoxDirectTag]; direct != nil {
 		if direct["type"] != "direct" || len(direct) != 2 {
 			return input, fmt.Errorf("unsupported Direct outbound shape; refusing lossy panel import")
