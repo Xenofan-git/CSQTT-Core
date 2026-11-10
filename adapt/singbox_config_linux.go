@@ -352,6 +352,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		"reverse_mapping": true,
 	}
 
+	if len(input.SOCKS5) > 15 { return nil, fmt.Errorf("at most 15 user SOCKS5 outbounds are allowed") }
 	for _, proxy := range input.SOCKS5 {
 		if !proxy.Enabled {
 			continue
