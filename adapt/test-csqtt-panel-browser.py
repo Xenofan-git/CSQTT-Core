@@ -213,6 +213,7 @@ def main():
 
             page.locator('button[data-page="route"]').click()
             assert page.locator("#page-route").evaluate("el => el.classList.contains('active')")
+            page.wait_for_function("document.querySelectorAll('#singboxRouteRuleEditor .route-rule').length === 2")
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert route_cards.count() == 2, "Route must start with fixed DIRECT and CSQTT system cards"
             assert route_cards.nth(0).get_attribute("data-system-rule") == "direct"
