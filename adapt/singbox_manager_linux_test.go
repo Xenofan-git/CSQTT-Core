@@ -547,8 +547,8 @@ func TestSingBoxManagerMigratesLegacyDirectExclusions(t *testing.T) {
 	if err := os.WriteFile(config, []byte(legacy), 0600); err != nil { t.Fatal(err) }
 	loaded, err := manager.LoadConfig()
 	if err != nil { t.Fatalf("load legacy config: %v", err) }
-	if len(loaded.DirectDomains) != 1 || loaded.DirectDomains[0] != "legacy-bypass.example" || len(loaded.Rules) != 0 {
-		t.Fatalf("legacy Direct exclusion was not migrated: %#v", loaded)
+	if len(loaded.DirectDomains) != 1 || loaded.DirectDomains[0] != "legacy-bypass.example" || len(loaded.Rules) != 1 || loaded.Rules[0].ID != singBoxCSQTTRuleID || !loaded.Rules[0].Enabled || loaded.FinalOutbound != singBoxDirectTag {
+		t.Fatalf("legacy Direct exclusion / CSQTT fallback migration failed: %#v", loaded)
 	}
 }
 
