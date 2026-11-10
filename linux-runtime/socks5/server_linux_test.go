@@ -23,8 +23,8 @@ func testResolver(_ context.Context, host string) ([]net.IPAddr, error) {
 func startTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	server, err := New(Config{
-		ListenAddr: "127.0.0.1:0",
-		Resolve: testResolver,
+		ListenAddr:  "127.0.0.1:0",
+		Resolve:     testResolver,
 		StopTimeout: 3 * time.Second,
 	})
 	if err != nil {

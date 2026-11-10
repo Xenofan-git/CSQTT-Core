@@ -19,37 +19,37 @@ import (
 )
 
 const (
-	version5       = byte(5)
-	methodNoAuth   = byte(0)
-	methodNoAccept = byte(0xff)
-	cmdConnect     = byte(1)
+	version5        = byte(5)
+	methodNoAuth    = byte(0)
+	methodNoAccept  = byte(0xff)
+	cmdConnect      = byte(1)
 	cmdUDPAssociate = byte(3)
-	atypIPv4       = byte(1)
-	atypDomain     = byte(3)
-	atypIPv6       = byte(4)
-	replySucceeded = byte(0)
-	replyGeneral   = byte(1)
+	atypIPv4        = byte(1)
+	atypDomain      = byte(3)
+	atypIPv6        = byte(4)
+	replySucceeded  = byte(0)
+	replyGeneral    = byte(1)
 	replyNotAllowed = byte(2)
-	replyNetwork   = byte(3)
-	replyHost      = byte(4)
-	replyRefused   = byte(5)
-	replyCommand   = byte(7)
-	replyAddress   = byte(8)
-	soMarkOption   = 36 // Linux SOL_SOCKET/SO_MARK
+	replyNetwork    = byte(3)
+	replyHost       = byte(4)
+	replyRefused    = byte(5)
+	replyCommand    = byte(7)
+	replyAddress    = byte(8)
+	soMarkOption    = 36 // Linux SOL_SOCKET/SO_MARK
 )
 
 type ResolveFunc func(context.Context, string) ([]net.IPAddr, error)
 
 type Config struct {
-	ListenAddr       string
-	Mark             int
-	DialTimeout      time.Duration
-	ResolveTimeout   time.Duration
-	StopTimeout      time.Duration
-	MaxSessions      int
-	MaxUDPTargets    int
-	Resolve          ResolveFunc
-	Logger           func(format string, args ...any)
+	ListenAddr     string
+	Mark           int
+	DialTimeout    time.Duration
+	ResolveTimeout time.Duration
+	StopTimeout    time.Duration
+	MaxSessions    int
+	MaxUDPTargets  int
+	Resolve        ResolveFunc
+	Logger         func(format string, args ...any)
 }
 
 type Server struct {
@@ -371,10 +371,10 @@ func (s *Server) handleUDPAssociate(ctx context.Context, control net.Conn) {
 	}()
 
 	association := &udpAssociation{
-		server: s,
-		ctx: assocCtx,
-		relay: relay,
-		peerIP: peer.IP,
+		server:  s,
+		ctx:     assocCtx,
+		relay:   relay,
+		peerIP:  peer.IP,
 		targets: make(map[string]*udpTarget),
 	}
 	defer association.close()
@@ -421,14 +421,14 @@ type udpTarget struct {
 
 type udpAssociation struct {
 	server *Server
-	ctx context.Context
-	relay *net.UDPConn
+	ctx    context.Context
+	relay  *net.UDPConn
 	peerIP net.IP
 
-	mu sync.Mutex
-	client *net.UDPAddr
+	mu      sync.Mutex
+	client  *net.UDPAddr
 	targets map[string]*udpTarget
-	wg sync.WaitGroup
+	wg      sync.WaitGroup
 }
 
 func (a *udpAssociation) acceptClient(source *net.UDPAddr) error {
