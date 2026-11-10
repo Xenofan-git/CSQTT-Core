@@ -39,6 +39,7 @@ replacements = [
     ('readonly UPLOAD_BINARY="/tmp/.csqtt-upload-server"', 'readonly UPLOAD_BINARY="${CSQTT_DEPLOY_STAGE:-/tmp}/.csqtt-lalune-upload-server"'),
     ('readonly UPLOAD_ENV_FILE="/tmp/.csqtt-upload-web.env"', 'readonly UPLOAD_ENV_FILE="${CSQTT_DEPLOY_STAGE:-/tmp}/.csqtt-lalune-upload-web.env"'),
     ('readonly UPLOAD_OVERRIDES_FILE="/tmp/.csqtt-upload-overrides.json"', 'readonly UPLOAD_OVERRIDES_FILE="${CSQTT_DEPLOY_STAGE:-/tmp}/.csqtt-lalune-upload-overrides.json"'),
+    ('readonly UPLOAD_OVERRIDES_FILE="${CSQTT_DEPLOY_STAGE:-/tmp}/.csqtt-lalune-upload-overrides.json"', 'readonly UPLOAD_OVERRIDES_FILE="${CSQTT_DEPLOY_STAGE:-/tmp}/.csqtt-lalune-upload-overrides.json"\nreadonly UPLOAD_SING_BOX="${CSQTT_DEPLOY_STAGE:-/tmp}/.csqtt-lalune-upload-sing-box"'),
     ('readonly CSQTT_DOCKER_IMAGE="csqtt:2.1.9"', 'readonly CSQTT_DOCKER_IMAGE="csqtt-lalune:2.1.9"'),
     ('readonly CSQTT_DOCKER_CONTAINER="csqtt"', 'readonly CSQTT_DOCKER_CONTAINER="csqtt-lalune"'),
 ]
@@ -242,9 +243,83 @@ for old in [
 ]:
     src = src.replace(old, '    # Preserve legacy SOCKS5 helpers unless their ownership is independently verified.\n')
 
+# Install a pinned, namespaced sing-box runtime alongside the original CSQTT service.
+# Never replace a system-wide sing-box binary or adopt an unmarked directory.
+sing_box_installer = r'''install_sing_box_binary() {
+    local root="/usr/local/lib/csqtt-lalune/sing-box"
+    local version_dir="${root}/1.14.4"
+    local binary="${version_dir}/sing-box"
+    local root_marker="${root}/.managed-by-lalune"
+    local version_marker="${version_dir}/.managed-by-lalune"
+    local data_dir="/etc/csqtt-lalune/sing-box"
+    local data_marker="${data_dir}/.managed-by-lalune"
+    local marker_value="CSQTT-LALUNE-SING-BOX-MANAGED-V1"
+    local data_marker_value="CSQTT-LALUNE-SING-BOX-DATA-V1"
+    local version_output
+
+    [ -s "$UPLOAD_SING_BOX" ] || die "Pinned sing-box 1.14.4 asset is missing" "$EXIT_PREFLIGHT_FAILED"
+    for owned_path in "/usr/local/lib/csqtt-lalune" "$root" "$version_dir" "$binary" "$data_dir"; do
+        [ ! -L "$owned_path" ] || die "$owned_path is a symlink; refusing to replace or follow it"
+    done
+    if [ -e "$root" ]; then
+        [ -f "$root_marker" ] && [ "$(cat "$root_marker")" = "$marker_value" ] || die "$root exists without our ownership marker; refusing to adopt it"
+    else
+        install -d -m 0755 "$root"
+        printf '%s\\n' "$marker_value" > "$root_marker"
+        chmod 0644 "$root_marker"
+    fi
+    if [ -e "$version_dir" ]; then
+        [ -f "$version_marker" ] && [ "$(cat "$version_marker")" = "$marker_value" ] || die "$version_dir exists without our ownership marker; refusing to adopt it"
+    else
+        install -d -m 0755 "$version_dir"
+        printf '%s\\n' "$marker_value" > "$version_marker"
+        chmod 0644 "$version_marker"
+    fi
+    if [ -e "$data_dir" ]; then
+        [ -f "$data_marker" ] && [ "$(cat "$data_marker")" = "$data_marker_value" ] || die "$data_dir exists without our ownership marker; refusing to adopt it"
+    else
+        install -d -m 0700 "$data_dir"
+        printf '%s\\n' "$data_marker_value" > "$data_marker"
+        chmod 0600 "$data_marker"
+    fi
+    [ ! -L "${binary}.new" ] || die "temporary sing-box binary path is a symlink"
+    rm -f -- "${binary}.new"
+    install -m 0755 "$UPLOAD_SING_BOX" "${binary}.new"
+    version_output="$("${binary}.new" version 2>&1)" || die "bundled sing-box binary cannot execute: $version_output"
+    printf '%s\\n' "$version_output" | grep -Fq "sing-box version 1.14.4" || die "bundled sing-box version mismatch: $version_output"
+    mv -f -- "${binary}.new" "$binary"
+    log_info "Pinned sing-box 1.14.4 installed in the LaLune-owned directory"
+}
+
+'''
+marker_install = "setup_csqtt_binary() {"
+if src.count(marker_install) != 1:
+    raise SystemExit("expected exactly one CSQTT binary installation function")
+src = src.replace(marker_install, sing_box_installer + marker_install, 1)
+old_binary = '''    install -m 0755 "$UPLOAD_BINARY" /usr/local/bin/csqtt || \\
+        die "Не удалось установить новый бинарник csqtt"
+    echo "✓ csqtt установлен"'''
+new_binary = old_binary + '''
+    install_sing_box_binary'''
+if src.count(old_binary) != 1:
+    raise SystemExit("expected exactly one CSQTT binary install sequence")
+src = src.replace(old_binary, new_binary, 1)
+old_upload = '''    [ -f "$UPLOAD_OVERRIDES_FILE" ] && [ -s "$UPLOAD_OVERRIDES_FILE" ] || \\
+        die "Одноразовая deploy-конфигурация не загружена" "$EXIT_PREFLIGHT_FAILED"'''
+new_upload = old_upload + '''
+    [ -f "$UPLOAD_SING_BOX" ] && [ -s "$UPLOAD_SING_BOX" ] || \\
+        die "Pinned sing-box 1.14.4 asset is not uploaded" "$EXIT_PREFLIGHT_FAILED"
+    local sing_box_version
+    sing_box_version="$(timeout 5 "$UPLOAD_SING_BOX" version 2>/dev/null || true)"
+    printf '%s\\n' "$sing_box_version" | grep -Fq "sing-box version 1.14.4" || \\
+        die "Uploaded sing-box binary is not the pinned 1.14.4 release" "$EXIT_PREFLIGHT_FAILED"'''
+if src.count(old_upload) != 1:
+    raise SystemExit("expected exactly one uploaded release preflight sequence")
+src = src.replace(old_upload, new_upload, 1)
+
 # The patched server uses this variable for restart actions initiated by its panel.
 old = "Environment=CSQTT_SERVICE_MANAGER=systemd"
-new = old + "\nEnvironment=CSQTT_SYSTEMD_UNIT=csqtt-lalune.service"
+new = old + "\nEnvironment=CSQTT_SYSTEMD_UNIT=csqtt-lalune.service\nEnvironment=CSQTT_SING_BOX_BINARY=/usr/local/lib/csqtt-lalune/sing-box/1.14.4/sing-box\nEnvironment=CSQTT_SING_BOX_DATA_DIR=/etc/csqtt-lalune/sing-box"
 if src.count(old) != 1:
     raise SystemExit("expected exactly one systemd service-manager environment line")
 src = src.replace(old, new, 1)
