@@ -146,7 +146,7 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	stateTmp := stateFile.Name()
 	defer os.Remove(stateTmp)
 	if err := stateFile.Chmod(0600); err != nil { _ = stateFile.Close(); return err }
-	if _, err := stateFile.Write(append(stateData, '\\n')); err != nil { _ = stateFile.Close(); return fmt.Errorf("write temporary sing-box panel state: %w", err) }
+	if _, err := stateFile.Write(append(stateData, '\n')); err != nil { _ = stateFile.Close(); return fmt.Errorf("write temporary sing-box panel state: %w", err) }
 	if err := stateFile.Sync(); err != nil { _ = stateFile.Close(); return fmt.Errorf("sync temporary sing-box panel state: %w", err) }
 	if err := stateFile.Close(); err != nil { return fmt.Errorf("close temporary sing-box panel state: %w", err) }
 	ctx, cancel := context.WithTimeout(context.Background(), m.checkTimeout)
