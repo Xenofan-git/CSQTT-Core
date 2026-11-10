@@ -65,6 +65,11 @@ func TestAPIHandlersRejectWrongMethods(t *testing.T) {
 		{"/captcha/state", http.MethodPost, http.MethodGet},
 		{"/captcha/result", http.MethodGet, http.MethodPost},
 		{"/captcha/cancel", http.MethodGet, http.MethodPost},
+		{"/singbox/config", http.MethodPost, http.MethodGet},
+		{"/singbox/rulesets", http.MethodPost, http.MethodGet},
+		{"/singbox/rulesets/upload", http.MethodGet, http.MethodPost},
+		{"/singbox/start", http.MethodGet, http.MethodPost},
+		{"/singbox/stop", http.MethodGet, http.MethodPost},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path+"_"+tc.method, func(t *testing.T) {
@@ -112,6 +117,10 @@ func TestSensitiveEndpointsDenyPublicPeers(t *testing.T) {
 		{"/deploy/status", http.MethodGet, ""},
 		{"/deploy/log", http.MethodGet, ""},
 		{"/vk/import", http.MethodPost, `{"token":"fixture-token"}`},
+		{"/singbox/config", http.MethodPut, `{}`},
+		{"/singbox/rulesets/upload", http.MethodPost, ""},
+		{"/singbox/start", http.MethodPost, ""},
+		{"/singbox/stop", http.MethodPost, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
