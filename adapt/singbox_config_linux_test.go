@@ -41,23 +41,32 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 	if inbound["type"] != "socks" || inbound["listen"] != "192.168.5.2" || inbound["listen_port"] != float64(12500) {
 		t.Fatalf("unexpected inbound: %#v", inbound)
 	}
-	if _, exists := config["dns"]; exists {
-		t.Fatal("DNS must remain an explicit next-stage design, not be silently redirected")
+	dns := config["dns"].(map[string]any)
+	if dns["reverse_mapping"] != true || dns["strategy"] != "prefer_ipv4" || dns["final"] != singBoxDNSLocalTag {
+		t.Fatalf("DNS must use the isolated local resolver with reverse mapping: %#v", dns)
+	}
+	dnsServers := dns["servers"].([]any)
+	if len(dnsServers) != 1 || dnsServers[0].(map[string]any)["type"] != "local" {
+		t.Fatalf("default DNS server is not local/system-resolver mode: %#v", dnsServers)
 	}
 	outbounds := config["outbounds"].([]any)
-	if len(outbounds) != 3 { t.Fatalf("got %d outbounds, want direct + CSQTT + one user SOCKS5", len(outbounds)) }
+	if len(outbounds) != 4 { t.Fatalf("got %d outbounds, want direct + Direct-bypass + CSQTT + one user SOCKS5", len(outbounds)) }
 	rules := config["route"].(map[string]any)["rules"].([]any)
-	if len(rules) != 4 { t.Fatalf("got %d rules, want sniff + Direct + 2 enabled routes", len(rules)) }
+	if len(rules) != 5 { t.Fatalf("got %d rules, want DNS hijack + sniff + Direct + 2 enabled routes", len(rules)) }
+	dnsHijack := rules[0].(map[string]any)
+	if dnsHijack["action"] != "hijack-dns" || dnsHijack["port"].([]any)[0] != float64(53) {
+		t.Fatalf("DNS traffic is not hijacked before ordinary routing: %#v", dnsHijack)
+	}
 	if gotFinal := config["route"].(map[string]any)["final"]; gotFinal != singBoxCSQTTTag {
 		t.Fatalf("system fallback = %v, want CSQTT", gotFinal)
 	}
-	direct := rules[1].(map[string]any)
-	if direct["outbound"] != singBoxDirectTag { t.Fatalf("Direct bypass is not first: %#v", direct) }
+	direct := rules[2].(map[string]any)
+	if direct["outbound"] != singBoxDirectBypassTag { t.Fatalf("Direct bypass is not first after DNS/sniff: %#v", direct) }
 	if direct["domain"].([]any)[0] != "local.example" { t.Fatalf("domain normalization/dedup failed: %#v", direct) }
 	if direct["domain_suffix"].([]any)[0] != ".example.org" { t.Fatalf("Direct suffix missing: %#v", direct) }
 	if direct["ip_cidr"].([]any)[0] != "192.0.2.0/24" || direct["ip_cidr"].([]any)[2] != "203.0.113.8/32" { t.Fatalf("CIDR normalization failed: %#v", direct) }
-	first := rules[2].(map[string]any)
-	second := rules[3].(map[string]any)
+	first := rules[3].(map[string]any)
+	second := rules[4].(map[string]any)
 	if first["outbound"] != "socks-proxy-a" || first["domain"].([]any)[0] != "one.example" { t.Fatalf("first user route lost ordering: %#v", first) }
 	if second["outbound"] != singBoxCSQTTTag || second["domain_suffix"].([]any)[0] != ".example.net" || second["domain_keyword"].([]any)[0] != "stream" || second["domain_regex"].([]any)[0] != "video" || second["ip_cidr"].([]any)[0] != "198.51.100.9/32" { t.Fatalf("second user route malformed: %#v", second) }
 
@@ -115,8 +124,8 @@ func TestBuildSingBoxConfigAllowsIPOnlyRouteRule(t *testing.T) {
 	var config map[string]any
 	if err := json.Unmarshal(got, &config); err != nil { t.Fatal(err) }
 	rules := config["route"].(map[string]any)["rules"].([]any)
-	if len(rules) != 2 { t.Fatalf("route rules=%d, want sniff + IP-only rule", len(rules)) }
-	ipRule := rules[1].(map[string]any)
+	if len(rules) != 3 { t.Fatalf("route rules=%d, want DNS hijack + sniff + IP-only rule", len(rules)) }
+	ipRule := rules[2].(map[string]any)
 	if ipRule["ip_cidr"].([]any)[0] != "203.0.113.0/24" || ipRule["outbound"] != singBoxCSQTTTag {
 		t.Fatalf("IP-only rule malformed: %#v", ipRule)
 	}
@@ -139,6 +148,36 @@ func TestCSQTTAndLoopbackListenersCanSharePort12500(t *testing.T) {
     if got := local.Status().Address; got != "127.0.0.1:12500" {
         t.Fatalf("loopback listener = %q", got)
     }
+}
+
+func TestBuildSingBoxConfigDNSModesAndValidation(t *testing.T) {
+	local, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500"})
+	if err != nil { t.Fatalf("build local DNS config: %v", err) }
+	var localConfig map[string]any
+	if err := json.Unmarshal(local, &localConfig); err != nil { t.Fatal(err) }
+	localDNS := localConfig["dns"].(map[string]any)
+	if localDNS["reverse_mapping"] != true || localDNS["strategy"] != "prefer_ipv4" { t.Fatalf("local DNS defaults: %#v", localDNS) }
+	localServer := localDNS["servers"].([]any)[0].(map[string]any)
+	if localServer["type"] != "local" || localServer["prefer_go"] != true { t.Fatalf("local DNS server: %#v", localServer) }
+
+	udp, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500", DNSMode: "udp", DNSServer: "127.0.0.1", DNSPort: 5353, DNSStrategy: "ipv6_only"})
+	if err != nil { t.Fatalf("build UDP DNS config: %v", err) }
+	var udpConfig map[string]any
+	if err := json.Unmarshal(udp, &udpConfig); err != nil { t.Fatal(err) }
+	udpDNS := udpConfig["dns"].(map[string]any)
+	udpServer := udpDNS["servers"].([]any)[0].(map[string]any)
+	if udpServer["type"] != "udp" || udpServer["server"] != "127.0.0.1" || udpServer["server_port"] != float64(5353) || udpServer["detour"] != singBoxDirectTag || udpDNS["strategy"] != "ipv6_only" {
+		t.Fatalf("UDP DNS server configuration: %#v / %#v", udpDNS, udpServer)
+	}
+
+	invalid := []struct{name string; input singBoxConfigInput}{
+		{"unknown mode", singBoxConfigInput{ListenAddress:"127.0.0.1:19180", DNSMode:"https"}},
+		{"domain bootstrap server", singBoxConfigInput{ListenAddress:"127.0.0.1:19180", DNSMode:"udp", DNSServer:"dns.example", DNSPort:53}},
+		{"invalid port", singBoxConfigInput{ListenAddress:"127.0.0.1:19180", DNSMode:"udp", DNSServer:"192.0.2.1", DNSPort:65536}},
+		{"unknown strategy", singBoxConfigInput{ListenAddress:"127.0.0.1:19180", DNSStrategy:"automatic"}},
+		{"custom server in local mode", singBoxConfigInput{ListenAddress:"127.0.0.1:19180", DNSServer:"192.0.2.1"}},
+	}
+	for _, tc := range invalid { t.Run(tc.name, func(t *testing.T) { if _, err := buildSingBoxConfig(tc.input); err == nil { t.Fatal("invalid DNS configuration was accepted") } }) }
 }
 
 func TestBuildSingBoxConfigUsesCSQTTAsExplicitSystemFallback(t *testing.T) {
