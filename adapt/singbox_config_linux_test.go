@@ -58,8 +58,8 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 	if dnsHijack["action"] != "hijack-dns" || dnsHijack["port"].([]any)[0] != float64(53) {
 		t.Fatalf("DNS traffic is not hijacked before ordinary routing: %#v", dnsHijack)
 	}
-	if gotFinal := config["route"].(map[string]any)["final"]; gotFinal != singBoxCSQTTTag {
-		t.Fatalf("system fallback = %v, want CSQTT", gotFinal)
+	if gotFinal := config["route"].(map[string]any)["final"]; gotFinal != singBoxDirectTag {
+		t.Fatalf("unmatched fallback = %v, want explicit DIRECT", gotFinal)
 	}
 	direct := rules[2].(map[string]any)
 	if direct["outbound"] != singBoxDirectBypassTag { t.Fatalf("Direct bypass is not first after DNS/sniff: %#v", direct) }
@@ -181,13 +181,13 @@ func TestBuildSingBoxConfigDNSModesAndValidation(t *testing.T) {
 	for _, tc := range invalid { t.Run(tc.name, func(t *testing.T) { if _, err := buildSingBoxConfig(tc.input); err == nil { t.Fatal("invalid DNS configuration was accepted") } }) }
 }
 
-func TestBuildSingBoxConfigUsesCSQTTAsExplicitSystemFallback(t *testing.T) {
+func TestBuildSingBoxConfigUsesDIRECTAsExplicitDefaultFallback(t *testing.T) {
 	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500"})
 	if err != nil { t.Fatal(err) }
 	var config map[string]any
 	if err:=json.Unmarshal(got,&config); err!=nil { t.Fatal(err) }
 	route:=config["route"].(map[string]any)
-	if route["final"] != singBoxCSQTTTag { t.Fatalf("route.final=%v, want CSQTT",route["final"]) }
+	if route["final"] != singBoxDirectTag { t.Fatalf("route.final=%v, want DIRECT",route["final"]) }
 	if _,ok:=route["auto_route"];ok { t.Fatal("sing-box must not create system-wide route capture") }
 }
 
