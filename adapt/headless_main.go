@@ -272,11 +272,21 @@ var sharedSingBoxManager *SingBoxManager
 
 func defaultSingBoxManager() *SingBoxManager {
 	singBoxManagerOnce.Do(func() {
-		dir, err := os.UserConfigDir()
-		if err != nil { dir = os.TempDir() }
-		dir = filepath.Join(dir, "csqtt-lalune", "sing-box")
+		dir := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_DATA_DIR"))
+		if dir == "" || !filepath.IsAbs(dir) {
+			base, err := os.UserConfigDir()
+			if err != nil { base = os.TempDir() }
+			dir = filepath.Join(base, "csqtt-lalune", "sing-box")
+		}
 		binary := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
-		if binary == "" { binary = "sing-box" }
+		if binary == "" {
+			bundled := "/usr/local/lib/csqtt-lalune/sing-box/1.14.4/sing-box"
+			if info, err := os.Stat(bundled); err == nil && info.Mode().IsRegular() && info.Mode()&0111 != 0 {
+				binary = bundled
+			} else {
+				binary = "sing-box"
+			}
+		}
 		sharedSingBoxManager = NewSingBoxManager(binary, filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
 	})
 	return sharedSingBoxManager
