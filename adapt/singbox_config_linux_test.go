@@ -317,26 +317,33 @@ func TestSingBoxDNSHijackAndReverseMappingThroughSOCKSInbound(t *testing.T) {
 	go func() {
 		buf := make([]byte, 2048)
 		_ = upstream.SetReadDeadline(time.Now().Add(15 * time.Second))
-		n, peer, readErr := upstream.ReadFromUDP(buf)
-		if readErr != nil { return }
-		query := append([]byte(nil), buf[:n]...)
-		questionEnd := 12
-		for questionEnd < len(query) {
-			labelLen := int(query[questionEnd])
-			questionEnd++
-			if labelLen == 0 { break }
-			questionEnd += labelLen
+		for {
+			n, peer, readErr := upstream.ReadFromUDP(buf)
+			if readErr != nil { return }
+			query := append([]byte(nil), buf[:n]...)
+			questionEnd := 12
+			for questionEnd < len(query) {
+				labelLen := int(query[questionEnd])
+				questionEnd++
+				if labelLen == 0 { break }
+				questionEnd += labelLen
+			}
+			if questionEnd+4 > len(query) { return }
+			queryType := binary.BigEndian.Uint16(query[questionEnd:questionEnd+2])
+			questionEnd += 4
+			response := make([]byte, 12)
+			copy(response, query[:12])
+			response[2], response[3] = 0x81, 0x80
+			response[6], response[7] = 0, 0
+			response[8], response[9], response[10], response[11] = 0, 0, 0, 0
+			response = append(response, query[12:questionEnd]...)
+			if queryType == 1 {
+				response[7] = 1
+				response = append(response, 0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 198, 51, 100, 42)
+			}
+			_, _ = upstream.WriteToUDP(response, peer)
+			if queryType == 1 { return }
 		}
-		if questionEnd+4 > len(query) { return }
-		questionEnd += 4
-		response := make([]byte, 12)
-		copy(response, query[:12])
-		response[2], response[3] = 0x81, 0x80
-		response[6], response[7] = 0, 1
-		response[8], response[9], response[10], response[11] = 0, 0, 0, 0
-		response = append(response, query[12:questionEnd]...)
-		response = append(response, 0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 198, 51, 100, 42)
-		_, _ = upstream.WriteToUDP(response, peer)
 	}()
 
 	echo, err := net.Listen("tcp", "127.0.0.1:0")
