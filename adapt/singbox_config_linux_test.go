@@ -569,6 +569,19 @@ func TestSingBoxRuleSetConfigAndRouteReferences(t *testing.T) {
 	if !found { t.Fatalf("route rule does not reference Rule Set: %#v", rules) }
 }
 
+func TestSingBoxRemoteRuleSetsUseExplicitHTTPClientAndCache(t *testing.T) {
+	input:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",RuleSetCachePath:"/var/lib/csqtt/sing-box/sing-box-cache.db",RuleSets:[]singBoxRuleSet{{Type:"remote",Tag:"geo-test",Format:"binary",URL:"https://example.org/geo-test.srs",UpdateInterval:"1d"}}}
+	encoded,err:=buildSingBoxConfig(input);if err!=nil{t.Fatal(err)}
+	var config map[string]any;if err:=json.Unmarshal(encoded,&config);err!=nil{t.Fatal(err)}
+	clients,ok:=config["http_clients"].([]any);if !ok||len(clients)!=1||clients[0].(map[string]any)["tag"]!=singBoxRuleSetHTTPClientTag{t.Fatalf("explicit HTTP clients missing: %#v",config["http_clients"])}
+	route:=config["route"].(map[string]any);if route["default_http_client"]!=singBoxRuleSetHTTPClientTag{t.Fatalf("default_http_client=%v",route["default_http_client"])}
+	sets:=route["rule_set"].([]any);if len(sets)!=1||sets[0].(map[string]any)["http_client"]!=singBoxRuleSetHTTPClientTag{t.Fatalf("remote Rule Set HTTP client not linked: %#v",sets)}
+	cache:=config["experimental"].(map[string]any)["cache_file"].(map[string]any)
+	if cache["enabled"]!=true||cache["path"]!=input.RuleSetCachePath{t.Fatalf("remote Rule Set cache not persistent: %#v",cache)}
+	if _,exists:=sets[0].(map[string]any)["download_detour"];exists{t.Fatal("deprecated download_detour must not be emitted")}
+	binary:=strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"));if binary!=""{path:=filepath.Join(t.TempDir(),"remote-ruleset.json");if err:=os.WriteFile(path,encoded,0600);err!=nil{t.Fatal(err)};output,err:=exec.Command(binary,"check","-c",path).CombinedOutput();if err!=nil{t.Fatalf("pinned sing-box rejected remote Rule Set config: %v: %s",err,output)}}
+}
+
 func TestSingBoxRuleSetRejectsUnknownAndInsecureSources(t *testing.T) {
 	input := singBoxConfigInput{ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500"}
 	input.Rules = []singBoxRouteRule{{ID:"bad", RuleSets:[]string{"missing"}, Outbound:"direct", Enabled:true}}
