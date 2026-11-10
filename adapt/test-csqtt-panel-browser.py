@@ -217,6 +217,14 @@ def main():
             assert page.locator("#singboxDirectDomains").input_value() == "example.ru"
             assert page.locator("#singboxCsqttEnabled").is_checked() is False
             assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
+            assert page.locator("#singboxDNSMode").input_value() == "local"
+            assert page.locator("#singboxDNSStrategy").input_value() == "prefer_ipv4"
+            assert page.locator("#singboxDNSUDPFields").is_hidden()
+            page.locator("#singboxDNSMode").select_option("udp")
+            assert page.locator("#singboxDNSUDPFields").is_visible()
+            page.locator("#singboxDNSServer").fill("192.168.4.1")
+            page.locator("#singboxDNSPort").fill("53")
+            page.locator("#singboxDNSStrategy").select_option("prefer_ipv4")
             outbound_options = page.locator("#singboxFinalOutbound option").all_text_contents()
             assert "socks-hydra" in outbound_options and "csqtt" not in outbound_options and "socks-disabled" not in outbound_options, outbound_options
             page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
@@ -225,6 +233,8 @@ def main():
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
             assert singbox_saved.get("CSQTTEnabled") is False and singbox_saved.get("CSQTTAddress") == ""
             assert singbox_saved.get("FinalOutbound") == "socks-hydra"
+            assert singbox_saved.get("DNSMode") == "udp" and singbox_saved.get("DNSServer") == "192.168.4.1"
+            assert singbox_saved.get("DNSPort") == 53 and singbox_saved.get("DNSStrategy") == "prefer_ipv4"
             assert [x["ID"] for x in singbox_saved.get("SOCKS5", [])] == ["hydra", "disabled"]
             assert page.locator("#singboxLogs").inner_text() == "fixture sing-box log"
             page.locator("#singboxStart").click()
