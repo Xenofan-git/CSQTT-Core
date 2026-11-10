@@ -169,7 +169,7 @@ official = r'''fn deploy_official_csqtt(args: &DeployArgs, ports: &Ports) -> Res
         std::fs::copy(&deploy_script, bundle.join("deploy-csqtt-lalune.sh"))
             .context("stage the adapted original deploy.sh")?;
         if !args.uninstall {
-            for name in ["csqtt-lalune-linux-arm64", "csqtt-lalune-linux-amd64"] {
+            for name in ["csqtt-lalune-linux-arm64", "csqtt-lalune-linux-amd64", "sing-box-linux-arm64", "sing-box-linux-amd64"] {
                 let path = source.join(name);
                 if !path.is_file() {
                     anyhow::bail!("required pinned CSQTT server asset is missing: {}", path.display());
@@ -242,11 +242,13 @@ STAGE='{remote_stage}'
 BUNDLE='{remote_bundle}'
 trap 'rm -rf -- "$STAGE"' EXIT
 case "$(uname -m)" in
-  aarch64|arm64) ASSET="$BUNDLE/csqtt-lalune-linux-arm64" ;;
-  x86_64|amd64) ASSET="$BUNDLE/csqtt-lalune-linux-amd64" ;;
+  aarch64|arm64) ASSET="$BUNDLE/csqtt-lalune-linux-arm64"; SING_BOX_ASSET="$BUNDLE/sing-box-linux-arm64" ;;
+  x86_64|amd64) ASSET="$BUNDLE/csqtt-lalune-linux-amd64"; SING_BOX_ASSET="$BUNDLE/sing-box-linux-amd64" ;;
   *) echo "unsupported server architecture; no runtime files changed" >&2; exit 2 ;;
 esac
 install -m 0755 "$ASSET" "$BUNDLE/.csqtt-lalune-upload-server"
+test -s "$SING_BOX_ASSET"
+install -m 0755 "$SING_BOX_ASSET" "$BUNDLE/.csqtt-lalune-upload-sing-box"
 chmod 0600 "$BUNDLE/.csqtt-lalune-upload-web.env" "$BUNDLE/.csqtt-lalune-upload-overrides.json"
 if [ "$(id -u)" -eq 0 ]; then
   env CSQTT_DEPLOY_STAGE="$BUNDLE" CSQTT_PEER_PORT='{peer_port}' CSQTT_WEB_PORT='{web_port}' CSQTT_SSH_PORT='{ssh_port}' CSQTT_DEPLOY_MODE=systemd bash "$BUNDLE/deploy-csqtt-lalune.sh" install
