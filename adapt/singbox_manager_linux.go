@@ -112,6 +112,8 @@ func (m *SingBoxManager) checkConfigPath(ctx context.Context, configPath string)
 
 
 func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
+	if m.configPath == "" || m.binary == "" { return fmt.Errorf("sing-box binary and config path are required") }
+	if err := m.normalizeRuleSetCachePath(&input); err != nil { return err }
 	encoded, err := buildSingBoxConfig(input)
 	if err != nil { return fmt.Errorf("build sing-box config: %w", err) }
 	if err := m.validateRuleSetPaths(input.RuleSets); err != nil { return fmt.Errorf("unsafe Rule Set path: %w", err) }
@@ -127,7 +129,6 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	m.mu.Unlock()
 	defer func() { m.mu.Lock(); m.configuring = false; m.mu.Unlock() }()
 
-	if m.configPath == "" || m.binary == "" { return fmt.Errorf("sing-box binary and config path are required") }
 	dir := filepath.Dir(m.configPath)
 	if err := os.MkdirAll(dir, 0700); err != nil { return fmt.Errorf("create sing-box config directory: %w", err) }
 	f, err := os.CreateTemp(dir, ".sing-box-config-*.json")
@@ -193,6 +194,9 @@ func (m *SingBoxManager) Start(ctx context.Context) error {
 	// edited outside SaveConfig after they were originally written.
 	if err := m.validateRuleSetPaths(input.RuleSets); err != nil {
 		return fail(fmt.Errorf("unsafe Rule Set path: %w", err))
+	}
+	if err := m.validateRuleSetCachePath(input); err != nil {
+		return fail(fmt.Errorf("unsafe Rule Set cache path: %w", err))
 	}
 	if err := validateSingBoxListenAddress(input.ListenAddress); err != nil {
 		return fail(fmt.Errorf("unsafe sing-box inbound: %w", err))
@@ -458,6 +462,34 @@ func (m *SingBoxManager) CopyLogs(w io.Writer) error {
 // validateRuleSetPaths confines local Rule Set files to the manager-owned directory.
 // It rejects symlinks and non-regular files so a config cannot make sing-box read
 // arbitrary host files through a crafted path or symlink.
+func (m *SingBoxManager) normalizeRuleSetCachePath(input *singBoxConfigInput) error {
+	if input == nil { return fmt.Errorf("sing-box config is required") }
+	needsCache := false
+	for _, set := range input.RuleSets { if set.Type == "remote" { needsCache = true; break } }
+	if !needsCache { input.RuleSetCachePath = ""; return nil }
+	if m.configPath == "" { return fmt.Errorf("sing-box config path is required for remote Rule Set cache") }
+	expected := filepath.Join(filepath.Dir(m.configPath), "sing-box-cache.db")
+	if input.RuleSetCachePath != "" && filepath.Clean(input.RuleSetCachePath) != expected {
+		return fmt.Errorf("remote Rule Set cache path must remain inside the sing-box manager directory")
+	}
+	input.RuleSetCachePath = expected
+	return nil
+}
+
+func (m *SingBoxManager) validateRuleSetCachePath(input singBoxConfigInput) error {
+	needsCache := false
+	for _, set := range input.RuleSets { if set.Type == "remote" { needsCache = true; break } }
+	if !needsCache {
+		if input.RuleSetCachePath != "" { return fmt.Errorf("unexpected Rule Set cache path without remote Rule Sets") }
+		return nil
+	}
+	expected := filepath.Join(filepath.Dir(m.configPath), "sing-box-cache.db")
+	if input.RuleSetCachePath != expected || !filepath.IsAbs(input.RuleSetCachePath) || filepath.Clean(input.RuleSetCachePath) != input.RuleSetCachePath {
+		return fmt.Errorf("remote Rule Set cache path must be the manager-owned cache file")
+	}
+	return nil
+}
+
 func (m *SingBoxManager) validateRuleSetPaths(ruleSets []singBoxRuleSet) error {
 	needsLocal := false
 	for _, set := range ruleSets { if set.Type == "local" { needsLocal = true; break } }
