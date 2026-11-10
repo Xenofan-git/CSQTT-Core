@@ -531,7 +531,7 @@ func TestSingBoxAdvancedRouteFieldsRoundTripThroughLoadAndSave(t *testing.T) {
  dir:=t.TempDir(); config:=filepath.Join(dir,"config.json"); manager:=NewSingBoxManager(newFakeSingBox(t,"exit 0"),config,filepath.Join(dir,"sing-box.log"))
  original:=`{"log":{"level":"info"},"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19180}],"outbounds":[{"type":"socks","tag":"csqtt","server":"127.0.0.1","server_port":12500,"version":"5"},{"type":"direct","tag":"direct"}],"route":{"rules":[{"inbound":["csqtt-route-in"],"type":"logical","mode":"or","rules":[{"domain_suffix":["example.org"]},{"protocol":["quic"]}],"action":"route","outbound":"csqtt","invert":true}],"final":"csqtt","rule_set":[]}}`
  if err:=os.WriteFile(config,[]byte(original),0600);err!=nil{t.Fatal(err)}
- loaded,err:=manager.LoadConfig();if err!=nil{t.Fatal(err)};if len(loaded.Rules)!=1||len(loaded.Rules[0].Advanced)!=4{t.Fatalf("advanced fields not loaded: %#v",loaded.Rules)}
+ loaded,err:=manager.LoadConfig();if err!=nil{t.Fatal(err)};if len(loaded.Rules)!=2||len(loaded.Rules[0].Advanced)!=4||loaded.Rules[1].ID!=singBoxCSQTTRuleID||!loaded.Rules[1].Enabled||loaded.FinalOutbound!=singBoxDirectTag{t.Fatalf("advanced fields / explicit CSQTT fallback not loaded: %#v",loaded.Rules)}
  if err:=manager.SaveConfig(loaded);err!=nil{t.Fatal(err)};data,err:=os.ReadFile(config);if err!=nil{t.Fatal(err)}
  var got map[string]any;if err:=json.Unmarshal(data,&got);err!=nil{t.Fatal(err)};rules:=got["route"].(map[string]any)["rules"].([]any);var advanced map[string]any
  for _,candidate:=range rules{rule:=candidate.(map[string]any);if rule["type"]=="logical"{advanced=rule;break}}
