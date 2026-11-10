@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"encoding/json"
 	"net"
@@ -37,6 +39,12 @@ type SingBoxManager struct {
 	configuring bool
 	startDone chan struct{}
 	startCancel context.CancelFunc
+}
+
+type singBoxPanelState struct {
+	Version int `json:"version"`
+	ConfigSHA256 string `json:"config_sha256"`
+	Config singBoxConfigInput `json:"config"`
 }
 
 type SingBoxStatus struct {
@@ -130,12 +138,28 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	if _, err := f.Write(encoded); err != nil { _ = f.Close(); return fmt.Errorf("write temporary sing-box config: %w", err) }
 	if err := f.Sync(); err != nil { _ = f.Close(); return fmt.Errorf("sync temporary sing-box config: %w", err) }
 	if err := f.Close(); err != nil { return fmt.Errorf("close temporary sing-box config: %w", err) }
+	stateHash := sha256.Sum256(encoded)
+	stateData, err := json.MarshalIndent(singBoxPanelState{Version: 1, ConfigSHA256: hex.EncodeToString(stateHash[:]), Config: input}, "", "  ")
+	if err != nil { return fmt.Errorf("encode sing-box panel state: %w", err) }
+	stateFile, err := os.CreateTemp(dir, ".sing-box-panel-state-*.json")
+	if err != nil { return fmt.Errorf("create temporary sing-box panel state: %w", err) }
+	stateTmp := stateFile.Name()
+	defer os.Remove(stateTmp)
+	if err := stateFile.Chmod(0600); err != nil { _ = stateFile.Close(); return err }
+	if _, err := stateFile.Write(append(stateData, '\\n')); err != nil { _ = stateFile.Close(); return fmt.Errorf("write temporary sing-box panel state: %w", err) }
+	if err := stateFile.Sync(); err != nil { _ = stateFile.Close(); return fmt.Errorf("sync temporary sing-box panel state: %w", err) }
+	if err := stateFile.Close(); err != nil { return fmt.Errorf("close temporary sing-box panel state: %w", err) }
 	ctx, cancel := context.WithTimeout(context.Background(), m.checkTimeout)
 	defer cancel()
 	if err := m.checkConfigPath(ctx, tmp); err != nil { return fmt.Errorf("refusing invalid sing-box config: %w", err) }
 	m.mu.Lock()
 	if m.cmd != nil || m.starting { m.mu.Unlock(); return fmt.Errorf("sing-box started while config was being validated") }
 	if err := os.Rename(tmp, m.configPath); err != nil { m.mu.Unlock(); return fmt.Errorf("activate sing-box config: %w", err) }
+	if err := os.Rename(stateTmp, m.panelStatePath()); err != nil {
+		m.lastError = "config saved but panel state activation failed: " + err.Error()
+		m.mu.Unlock()
+		return fmt.Errorf("activate sing-box panel state: %w", err)
+	}
 	m.lastError = ""
 	m.mu.Unlock()
 	if d, err := os.Open(dir); err == nil { _ = d.Sync(); _ = d.Close() }
@@ -266,10 +290,26 @@ func (m *SingBoxManager) Status() SingBoxStatus {
 }
 
 
+func (m *SingBoxManager) panelStatePath() string { return m.configPath + ".panel.json" }
+
 func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	var input singBoxConfigInput
 	data, err := os.ReadFile(m.configPath)
 	if err != nil { return input, fmt.Errorf("read sing-box config: %w", err) }
+	if stateData, stateErr := os.ReadFile(m.panelStatePath()); stateErr == nil {
+		var state singBoxPanelState
+		if err := json.Unmarshal(stateData, &state); err != nil { return input, fmt.Errorf("decode sing-box panel state: %w", err) }
+		actualHash := sha256.Sum256(data)
+		if state.Version != 1 || state.ConfigSHA256 != hex.EncodeToString(actualHash[:]) {
+			return input, fmt.Errorf("sing-box panel state does not match the active config; refusing to discard disabled route and outbound settings")
+		}
+		expected, err := buildSingBoxConfig(state.Config)
+		if err != nil { return input, fmt.Errorf("validate sing-box panel state: %w", err) }
+		if string(expected) != string(data) { return input, fmt.Errorf("sing-box panel state and active config diverge; refusing to discard panel settings") }
+		return state.Config, nil
+	} else if !errors.Is(stateErr, os.ErrNotExist) {
+		return input, fmt.Errorf("read sing-box panel state: %w", stateErr)
+	}
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil { return input, fmt.Errorf("decode sing-box config: %w", err) }
 	inbounds, _ := raw["inbounds"].([]any)
