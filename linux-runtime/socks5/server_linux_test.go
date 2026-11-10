@@ -98,7 +98,7 @@ func socksAddress(host string, port uint16) []byte {
 	} else if ip6 := ip.To16(); ip6 != nil {
 		out = append([]byte{4}, ip6...)
 	} else {
-		out = append([]byte{3, byte(len(host))})
+		out = []byte{3, byte(len(host))}
 		out = append(out, host...)
 	}
 	var p [2]byte
