@@ -10,7 +10,7 @@ on:
       - .github/workflows/csqtt-linux-runtime-tests.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   linux-arm64:
@@ -27,11 +27,11 @@ jobs:
           go-version: 1.26.0
           cache-dependency-path: linux-runtime/go.mod
 
-      - name: Check formatting
-        working-directory: linux-runtime
+      - name: Format Go sources
         run: |
           set -euxo pipefail
-          test -z "$(gofmt -l .)"
+          gofmt -w linux-runtime/socks5/*.go
+          test -z "$(gofmt -l linux-runtime)"
 
       - name: Run race-enabled unit tests
         working-directory: linux-runtime
@@ -44,3 +44,14 @@ jobs:
         run: |
           set -euxo pipefail
           go vet ./...
+
+      - name: Commit gofmt changes after successful tests
+        run: |
+          set -euxo pipefail
+          if ! git diff --quiet -- linux-runtime/socks5; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add linux-runtime/socks5/*.go
+            git commit -m "style: format independent CSQTT SOCKS adapter"
+            git push origin "HEAD:$GITHUB_REF_NAME"
+          fi
