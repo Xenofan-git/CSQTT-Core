@@ -211,6 +211,40 @@ def main():
                     page.locator("#routeClose").click()
                     assert page.locator("#page-connect").evaluate("el => el.classList.contains('active')")
 
+            page.locator('button[data-page="route"]').click()
+            assert page.locator("#page-route").evaluate("el => el.classList.contains('active')")
+            route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
+            assert route_cards.count() == 2, "Route must start with fixed DIRECT and CSQTT system cards"
+            assert route_cards.nth(0).get_attribute("data-system-rule") == "direct"
+            assert route_cards.nth(1).get_attribute("data-system-rule") == "csqtt"
+            assert route_cards.nth(0).locator("[data-move-route-rule]").count() == 0
+            assert route_cards.nth(0).locator("[data-remove-route-rule]").count() == 0
+            route_cards.nth(0).locator('[data-field="Enabled"]').check()
+            route_cards.nth(0).locator('[data-field="Domains"]').fill("direct-route.example")
+            page.locator("#singboxAddRouteRule").click()
+            route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
+            assert route_cards.count() == 3
+            route_cards.nth(1).locator('[data-field="Domains"]').fill("user-route.example")
+            route_cards.nth(2).locator("[data-move-route-rule]").first.click()
+            route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
+            assert [route_cards.nth(i).get_attribute("data-system-rule") for i in range(3)] == ["direct", "csqtt", None], (
+                "CSQTT must be movable above user rules but never above DIRECT"
+            )
+            page.locator("#singboxSave").click()
+            page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('Конфигурация проверена sing-box и сохранена')")
+            assert singbox_saved["Rules"][0]["ID"] == "system-direct" and singbox_saved["Rules"][0]["Domains"] == ["direct-route.example"]
+            assert singbox_saved["Rules"][1]["ID"] == "system-csqtt"
+            assert singbox_saved["Rules"][2]["Domains"] == ["user-route.example"]
+            # The limit counts user rules only; DIRECT and CSQTT system cards are excluded.
+            for _ in range(15):
+                page.locator("#singboxAddRouteRule").click()
+            route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
+            user_count = route_cards.evaluate_all("cards => cards.filter(card => !card.dataset.systemRule).length")
+            assert user_count == 15, f"user route rule limit mismatch: {user_count}"
+            page.locator("#singboxAddRouteRule").click()
+            user_count = page.locator("#singboxRouteRuleEditor .route-rule").evaluate_all("cards => cards.filter(card => !card.dataset.systemRule).length")
+            assert user_count == 15, "UI accepted a 16th user route rule"
+
             page.locator('button[data-page="singbox"]').click()
             assert page.locator("#page-singbox").evaluate("el => el.classList.contains('active')")
             assert page.locator("#singboxListen").input_value() == "127.0.0.1:19180"
