@@ -280,6 +280,35 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	port, ok := inbound["listen_port"].(float64)
 	if host == "" || !ok || port < 1 || port > 65535 { return input, fmt.Errorf("invalid sing-box inbound endpoint") }
 	input.ListenAddress = net.JoinHostPort(host, strconv.Itoa(int(port)))
+	if dns, ok := raw["dns"].(map[string]any); ok {
+		if dns["reverse_mapping"] != true {
+			return input, fmt.Errorf("unsupported sing-box DNS config: reverse_mapping must be enabled for domain routing")
+		}
+		input.DNSStrategy, _ = dns["strategy"].(string)
+		if dns["final"] != singBoxDNSLocalTag {
+			return input, fmt.Errorf("unsupported sing-box DNS config: expected final DNS server %q", singBoxDNSLocalTag)
+		}
+		servers := anySlice(dns["servers"])
+		if len(servers) != 1 { return input, fmt.Errorf("unsupported sing-box DNS config: expected exactly one managed DNS server") }
+		server, ok := servers[0].(map[string]any)
+		if !ok || server["tag"] != singBoxDNSLocalTag { return input, fmt.Errorf("unsupported sing-box DNS server entry") }
+		switch server["type"] {
+		case "local":
+			input.DNSMode = "local"
+		case "udp":
+			input.DNSMode = "udp"
+			input.DNSServer, _ = server["server"].(string)
+			serverPort, ok := server["server_port"].(float64)
+			if !ok || serverPort < 1 || serverPort > 65535 { return input, fmt.Errorf("invalid persisted UDP DNS server port") }
+			input.DNSPort = int(serverPort)
+			if server["detour"] != singBoxDirectTag { return input, fmt.Errorf("unsupported UDP DNS detour; expected Direct") }
+		default:
+			return input, fmt.Errorf("unsupported sing-box DNS server type %v", server["type"])
+		}
+	} else {
+		input.DNSMode = "local"
+		input.DNSStrategy = "prefer_ipv4"
+	}
 	outbounds, _ := raw["outbounds"].([]any)
 	known := make(map[string]map[string]any)
 	for _, item := range outbounds {
@@ -318,7 +347,10 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		domains, suffixes := stringSlice(rule["domain"]), stringSlice(rule["domain_suffix"])
 		keywords, regexes, cidrs := stringSlice(rule["domain_keyword"]), stringSlice(rule["domain_regex"]), stringSlice(rule["ip_cidr"])
 		ruleSets := stringSlice(rule["rule_set"])
-		if outbound == singBoxDirectTag {
+		if outbound == singBoxDirectBypassTag {
+			if len(keywords)+len(regexes)+len(ruleSets)+len(singBoxAdvancedFieldsFromRule(rule)) > 0 {
+				return input, fmt.Errorf("Direct exclusions contain unsupported advanced matchers; refusing to discard them")
+			}
 			input.DirectDomains=append(input.DirectDomains,domains...)
 			input.DirectDomainSuffixes=append(input.DirectDomainSuffixes,suffixes...)
 			input.DirectIPCIDRs=append(input.DirectIPCIDRs,cidrs...)
