@@ -501,6 +501,46 @@ func TestSingBoxValueReferencesRuleSetRecursive(t *testing.T) {
 }
 
 
+func TestSingBoxManagerPanelStatePreservesDisabledRulesAndOutbounds(t *testing.T) {
+	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
+	manager:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexit 0"),config,filepath.Join(dir,"sing-box.log"))
+	input:=singBoxConfigInput{
+		ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081",CSQTTEnabled:false,CSQTTExplicitlyDisabled:true,FinalOutbound:singBoxDirectTag,
+		SOCKS5:[]singBoxSOCKS5Outbound{
+			{ID:"active",Server:"192.0.2.10",ServerPort:1080,Enabled:true},
+			{ID:"disabled",Server:"192.0.2.11",ServerPort:1081,Username:"saved-user",Password:"saved-password",Enabled:false},
+		},
+		Rules:[]singBoxRouteRule{
+			{ID:singBoxDirectRuleID,Domains:[]string{"disabled-direct.test"},Outbound:singBoxDirectTag,Enabled:false},
+			{ID:"disabled-user",Domains:[]string{"disabled-user.test"},Outbound:"socks-active",Enabled:false},
+			{ID:singBoxCSQTTRuleID,Outbound:singBoxCSQTTTag,Enabled:false},
+			{ID:"active-user",Domains:[]string{"active-user.test"},Outbound:"socks-active",Enabled:true},
+		},
+	}
+	if err:=manager.SaveConfig(input);err!=nil{t.Fatalf("SaveConfig: %v",err)}
+	loaded,err:=manager.LoadConfig();if err!=nil{t.Fatalf("LoadConfig: %v",err)}
+	if !reflect.DeepEqual(loaded,input){t.Fatalf("full panel state did not round-trip:\nloaded=%#v\nwant=%#v",loaded,input)}
+	statePath:=manager.panelStatePath();info,err:=os.Stat(statePath);if err!=nil{t.Fatalf("panel state sidecar missing: %v",err)}
+	if info.Mode().Perm()!=0600{t.Fatalf("panel state permissions=%o, want 0600",info.Mode().Perm())}
+	data,err:=os.ReadFile(config);if err!=nil{t.Fatal(err)}
+	var raw map[string]any;if err:=json.Unmarshal(data,&raw);err!=nil{t.Fatal(err)}
+	outbounds:=raw["outbounds"].([]any);var disabledCSQTT,disabledSOCKS bool
+	for _,item:=range outbounds{entry:=item.(map[string]any);if entry["tag"]==singBoxCSQTTDisabledTag{disabledCSQTT=true};if entry["tag"]=="socks-disabled"{disabledSOCKS=true}}
+	if !disabledCSQTT||disabledSOCKS{t.Fatalf("disabled connection state leaked into active routing config: %#v",outbounds)}
+}
+
+func TestSingBoxManagerRejectsPanelStateWhenActiveConfigChanges(t *testing.T) {
+	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
+	manager:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexit 0"),config,filepath.Join(dir,"sing-box.log"))
+	input:=singBoxConfigInput{ListenAddress:"127.0.0.1:19080",FinalOutbound:singBoxDirectTag}
+	if err:=manager.SaveConfig(input);err!=nil{t.Fatal(err)}
+	data,err:=os.ReadFile(config);if err!=nil{t.Fatal(err)}
+	if err:=os.WriteFile(config,append(data,' '),0600);err!=nil{t.Fatal(err)}
+	if _,err:=manager.LoadConfig();err==nil||!strings.Contains(err.Error(),"does not match the active config"){
+		t.Fatalf("mismatched panel state was not rejected: %v",err)
+	}
+}
+
 func TestSingBoxManagerLoadSavePreservesDNSAndExplicitDirectRoute(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "config.json")
