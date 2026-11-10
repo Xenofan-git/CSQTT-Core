@@ -181,6 +181,20 @@ func TestBuildSingBoxConfigDNSModesAndValidation(t *testing.T) {
 	for _, tc := range invalid { t.Run(tc.name, func(t *testing.T) { if _, err := buildSingBoxConfig(tc.input); err == nil { t.Fatal("invalid DNS configuration was accepted") } }) }
 }
 
+func TestBuildSingBoxConfigValidatesDisabledRuleReferences(t *testing.T) {
+	input:=singBoxConfigInput{
+		ListenAddress:"127.0.0.1:19180",
+		SOCKS5:[]singBoxSOCKS5Outbound{{ID:"proxy",Server:"192.0.2.10",ServerPort:1080,Enabled:true}},
+		RuleSets:[]singBoxRuleSet{{Type:"remote",Tag:"geo-test",Format:"source",URL:"https://example.com/geosite.json"}},
+		Rules:[]singBoxRouteRule{{ID:"disabled-rule",Enabled:false,RuleSets:[]string{"geo-test"},Outbound:"socks-proxy"}},
+	}
+	if _,err:=buildSingBoxConfig(input);err!=nil{t.Fatalf("disabled rule with registered Rule Set should be preserved: %v",err)}
+	input.RuleSets=nil
+	if _,err:=buildSingBoxConfig(input);err==nil||!strings.Contains(err.Error(),"unknown Rule Set"){
+		t.Fatalf("disabled rule referencing an unregistered Rule Set was accepted: %v",err)
+	}
+}
+
 func TestBuildSingBoxConfigPreservesSystemRouteCardOrder(t *testing.T) {
 	input := singBoxConfigInput{
 		ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500", CSQTTEnabled: true,
