@@ -482,7 +482,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	}
 	// Explicit fallback selection. Legacy configs keep CSQTT when configured.
 	finalOutbound := strings.TrimSpace(input.FinalOutbound)
-	if finalOutbound == "" && csqttEnabled { finalOutbound = singBoxCSQTTTag }
+	if finalOutbound == "" { finalOutbound = singBoxDirectTag }
 	if finalOutbound == "" { return nil, fmt.Errorf("select a default outbound for unmatched traffic") }
 	if finalOutbound == singBoxDirectBypassTag {
 		return nil, fmt.Errorf("default outbound cannot use the internal Direct-exclusions outbound")
