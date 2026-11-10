@@ -100,8 +100,12 @@ jobs:
         run: |
           set -euxo pipefail
           cp csqtt-2.5.0-source-sha256.txt dist/
+          cp upstream-csqtt/app/src/main/assets/deploy.sh dist/deploy-csqtt-2.5.0.sh
+          cp "$GITHUB_WORKSPACE/LICENSE" dist/LICENSE
+          bash -n dist/deploy-csqtt-2.5.0.sh
+          grep -Fq 'readonly SCRIPT_VERSION="2.5.0"' dist/deploy-csqtt-2.5.0.sh
           printf '%s\n' "$CSQTT_REPOSITORY@$CSQTT_COMMIT" > dist/CSQTT-UPSTREAM
-          (cd dist && sha256sum csqtt-client-2.5.0-linux-arm64 csqtt-server-2.5.0-linux-arm64 csqtt-2.5.0-source-sha256.txt CSQTT-UPSTREAM > SHA256SUMS)
+          (cd dist && sha256sum csqtt-client-2.5.0-linux-arm64 csqtt-server-2.5.0-linux-arm64 deploy-csqtt-2.5.0.sh LICENSE csqtt-2.5.0-source-sha256.txt CSQTT-UPSTREAM > SHA256SUMS)
           (cd dist && sha256sum -c SHA256SUMS)
           tar -C dist -czf csqtt-2.5.0-linux-arm64-source-baseline.tar.gz .
           sha256sum csqtt-2.5.0-linux-arm64-source-baseline.tar.gz
