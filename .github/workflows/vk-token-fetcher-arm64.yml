@@ -69,9 +69,10 @@ jobs:
         run: |
           set -euxo pipefail
           printf '%s\n' "$LALUNE_REPOSITORY@$LALUNE_COMMIT" > dist/VK-TOKEN-FETCHER-UPSTREAM
+          cp "$GITHUB_WORKSPACE/LICENSE" dist/VK-TOKEN-FETCHER-LICENSE
           (cd dist && find vk-token-fetcher -type f -print0 | sort -z | xargs -0 sha256sum > VK-TOKEN-FETCHER-SHA256SUMS)
           (cd dist && sha256sum -c VK-TOKEN-FETCHER-SHA256SUMS)
-          tar -C dist -czf vk-token-fetcher-linux-arm64.tar.gz vk-token-fetcher VK-TOKEN-FETCHER-UPSTREAM VK-TOKEN-FETCHER-SHA256SUMS
+          tar -C dist -czf vk-token-fetcher-linux-arm64.tar.gz vk-token-fetcher VK-TOKEN-FETCHER-UPSTREAM VK-TOKEN-FETCHER-SHA256SUMS VK-TOKEN-FETCHER-LICENSE
           sha256sum vk-token-fetcher-linux-arm64.tar.gz
 
       - name: Upload isolated VK token fetcher
