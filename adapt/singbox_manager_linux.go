@@ -131,6 +131,7 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 
 	dir := filepath.Dir(m.configPath)
 	if err := os.MkdirAll(dir, 0700); err != nil { return fmt.Errorf("create sing-box config directory: %w", err) }
+	if err := m.validateRuleSetCachePath(input); err != nil { return fmt.Errorf("unsafe Rule Set cache path: %w", err) }
 	f, err := os.CreateTemp(dir, ".sing-box-config-*.json")
 	if err != nil { return fmt.Errorf("create temporary sing-box config: %w", err) }
 	tmp := f.Name()
@@ -490,6 +491,12 @@ func (m *SingBoxManager) validateRuleSetCachePath(input singBoxConfigInput) erro
 	if input.RuleSetCachePath != expected || !filepath.IsAbs(input.RuleSetCachePath) || filepath.Clean(input.RuleSetCachePath) != input.RuleSetCachePath {
 		return fmt.Errorf("remote Rule Set cache path must be the manager-owned cache file")
 	}
+	if dirInfo, err := os.Lstat(filepath.Dir(m.configPath)); err == nil {
+		if !dirInfo.IsDir() || dirInfo.Mode()&os.ModeSymlink != 0 { return fmt.Errorf("sing-box manager directory is not a safe directory") }
+	} else if !errors.Is(err, os.ErrNotExist) { return fmt.Errorf("inspect sing-box manager directory: %w", err) }
+	if cacheInfo, err := os.Lstat(input.RuleSetCachePath); err == nil {
+		if cacheInfo.Mode()&os.ModeSymlink != 0 || !cacheInfo.Mode().IsRegular() { return fmt.Errorf("remote Rule Set cache must be a regular non-symlink file") }
+	} else if !errors.Is(err, os.ErrNotExist) { return fmt.Errorf("inspect remote Rule Set cache: %w", err) }
 	return nil
 }
 
