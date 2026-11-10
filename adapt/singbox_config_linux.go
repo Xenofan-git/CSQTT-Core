@@ -342,7 +342,9 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		port := input.DNSPort
 		if port == 0 { port = 53 }
 		if port < 1 || port > 65535 { return nil, fmt.Errorf("UDP DNS server port must be between 1 and 65535") }
-		dnsServer = map[string]any{"type": "udp", "tag": singBoxDNSLocalTag, "server": host, "server_port": port, "detour": singBoxDirectTag}
+		// Leave detour unset: sing-box uses its default outbound for DNS transport;
+		// explicitly detouring to the empty DIRECT outbound is rejected by 1.14.4.
+		dnsServer = map[string]any{"type": "udp", "tag": singBoxDNSLocalTag, "server": host, "server_port": port}
 	default:
 		return nil, fmt.Errorf("DNS mode must be local or udp")
 	}
