@@ -330,6 +330,45 @@ func TestSingBoxRoutesDomainThroughRealCSQTTSocks5Server(t *testing.T) {
 	select{case target:=<-targets:if target!="route-csqtt.test:443"{t.Fatalf("CSQTT received %q",target)};case <-time.After(3*time.Second):t.Fatal("real CSQTT SOCKS5 did not receive domain")}
 }
 
+func TestSingBoxFirstMatchingRuleWinsAndFinalOutboundIsUsed(t *testing.T) {
+	binaryPath:=strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"));if binaryPath==""{t.Skip("requires pinned sing-box binary from CI")}
+	echo,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer echo.Close()
+	go func(){for{conn,e:=echo.Accept();if e!=nil{return};go func(c net.Conn){defer c.Close();_,_=io.Copy(c,c)}(conn)}}()
+	startCapture:=func(name string)(*Socks5Server,<-chan string){
+		t.Helper();targets:=make(chan string,4);server:=NewSocks5Server("127.0.0.1:0")
+		server.dialTCPOverride=func(target string)(net.Conn,error){select{case targets<-target:default:};return net.DialTimeout("tcp",echo.Addr().String(),2*time.Second)}
+		if err:=server.Start();err!=nil{t.Fatalf("start %s SOCKS5: %v",name,err)};t.Cleanup(func(){_=server.Stop()});return server,targets
+	}
+	first,firstTargets:=startCapture("first-match");second,secondTargets:=startCapture("later-match");fallback,fallbackTargets:=startCapture("final")
+	input:=singBoxConfigInput{ListenAddress:reserveSingBoxTestAddress(t),FinalOutbound:"socks-final",SOCKS5:[]singBoxSOCKS5Outbound{
+		{ID:"first",Server:"127.0.0.1",ServerPort:mustPort(t,first.Status().Address),Enabled:true},
+		{ID:"second",Server:"127.0.0.1",ServerPort:mustPort(t,second.Status().Address),Enabled:true},
+		{ID:"final",Server:"127.0.0.1",ServerPort:mustPort(t,fallback.Status().Address),Enabled:true},
+	},Rules:[]singBoxRouteRule{
+		{ID:"suffix-first",DomainSuffixes:[]string{"example.test"},Outbound:"socks-first",Enabled:true},
+		{ID:"exact-second",Domains:[]string{"api.example.test"},Outbound:"socks-second",Enabled:true},
+	}}
+	config,err:=buildSingBoxConfig(input);if err!=nil{t.Fatal(err)}
+	path:=filepath.Join(t.TempDir(),"sing-box-order.json");if err:=os.WriteFile(path,config,0600);err!=nil{t.Fatal(err)}
+	cmd:=exec.Command(binaryPath,"run","-c",path);output:=&singBoxTestLogBuffer{};cmd.Stdout,cmd.Stderr=output,output
+	if err:=cmd.Start();err!=nil{t.Fatalf("start sing-box: %v",err)};defer func(){_=cmd.Process.Kill();_=cmd.Wait()}()
+	dial:=func(host string)net.Conn{
+		t.Helper();var conn net.Conn;deadline:=time.Now().Add(8*time.Second)
+		for time.Now().Before(deadline){conn,err=net.DialTimeout("tcp",input.ListenAddress,200*time.Millisecond);if err==nil{break};time.Sleep(50*time.Millisecond)}
+		if conn==nil{t.Fatalf("sing-box inbound not ready: %v; logs: %s",err,output.String())};_=conn.SetDeadline(time.Now().Add(8*time.Second))
+		if _,err:=conn.Write([]byte{5,1,0});err!=nil{t.Fatal(err)};var greeting [2]byte;if _,err:=io.ReadFull(conn,greeting[:]);err!=nil{t.Fatal(err)};if greeting!=[2]byte{5,0}{t.Fatalf("SOCKS greeting=%v",greeting)}
+		request:=[]byte{5,1,0,3,byte(len(host))};request=append(request,[]byte(host)...);request=append(request,1,187)
+		if _,err:=conn.Write(request);err!=nil{t.Fatal(err)};var reply [10]byte;if _,err:=io.ReadFull(conn,reply[:]);err!=nil{t.Fatalf("CONNECT %s: %v; logs: %s",host,err,output.String())};if reply[1]!=0{t.Fatalf("CONNECT %s failed: %v; logs: %s",host,reply,output.String())};return conn
+	}
+	matched:=dial("api.example.test");defer matched.Close()
+	select{case target:=<-firstTargets:if target!="api.example.test:443"{t.Fatalf("first matching outbound received %q",target)};case <-time.After(3*time.Second):t.Fatal("first matching route was not selected")}
+	select{case target:=<-secondTargets:t.Fatalf("later exact rule incorrectly overrode first suffix rule: %q",target);case <-time.After(200*time.Millisecond):}
+	unmatched:=dial("unmatched.test");defer unmatched.Close()
+	select{case target:=<-fallbackTargets:if target!="unmatched.test:443"{t.Fatalf("final outbound received %q",target)};case <-time.After(3*time.Second):t.Fatal("explicit route.final outbound was not selected for unmatched traffic")}
+}
+
+func mustPort(t *testing.T,address string)int{t.Helper();_,port,err:=net.SplitHostPort(address);if err!=nil{t.Fatal(err)};n,err:=strconv.Atoi(port);if err!=nil{t.Fatal(err)};return n}
+
 func TestSingBoxUDPAssociateRelaysThroughRealCSQTTSocks5Server(t *testing.T) {
 	binaryPath:=strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"));if binaryPath==""{t.Skip("requires pinned sing-box binary from CI")}
 	echo,err:=net.ListenUDP("udp4",&net.UDPAddr{IP:net.ParseIP("127.0.0.1")});if err!=nil{t.Fatal(err)};defer echo.Close()
