@@ -496,7 +496,7 @@ func TestSingBoxDNSHijackAndReverseMappingThroughSOCKSInbound(t *testing.T) {
 	if !bytes.Equal(echoed, payload) { t.Fatalf("echoed payload = %q, want %q", echoed, payload) }
 	select {
 	case target := <-targets:
-		if !strings.HasSuffix(target, ":443") { t.Fatalf("CSQTT received unexpected target %q", target) }
+		if target != "dns-route.test:443" { t.Fatalf("reverse mapping did not preserve the queried domain; CSQTT received %q", target) }
 	case <-time.After(2 * time.Second):
 		t.Fatal("CSQTT outbound was not selected after DNS reverse mapping")
 	}
