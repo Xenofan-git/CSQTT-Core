@@ -552,57 +552,6 @@ func TestSingBoxManagerMigratesLegacyDirectExclusions(t *testing.T) {
 	}
 }
 
-func TestSingBoxManagerLoadSavePreservesDNSAndExplicitDirectRoute(t *testing.T) {
-	dir := t.TempDir()
-	config := filepath.Join(dir, "config.json")
-	manager := NewSingBoxManager(newFakeSingBox(t, "if [ \"$1\" = check ]; then exit 0; fi\nexit 0"), config, filepath.Join(dir, "sing-box.log"))
-	input := singBoxConfigInput{
-		ListenAddress: "127.0.0.1:19080",
-		CSQTTAddress: "127.0.0.1:19081",
-		DNSMode: "udp", DNSServer: "127.0.0.1", DNSPort: 5353, DNSStrategy: "ipv6_only",
-		DirectDomains: []string{"bypass.example"},
-		Rules: []singBoxRouteRule{{ID: "route-direct", Domains: []string{"route-direct.example"}, Outbound: singBoxDirectTag, Enabled: true}},
-	}
-	if err := manager.SaveConfig(input); err != nil { t.Fatalf("SaveConfig: %v", err) }
-	loaded, err := manager.LoadConfig()
-	if err != nil { t.Fatalf("LoadConfig: %v", err) }
-	if loaded.DNSMode != "udp" || loaded.DNSServer != "127.0.0.1" || loaded.DNSPort != 5353 || loaded.DNSStrategy != "ipv6_only" {
-		t.Fatalf("DNS settings did not round-trip: %#v", loaded)
-	}
-	if len(loaded.DirectDomains) != 1 || loaded.DirectDomains[0] != "bypass.example" {
-		t.Fatalf("Direct exclusions changed: %#v", loaded.DirectDomains)
-	}
-	if len(loaded.Rules) != 1 || loaded.Rules[0].Outbound != singBoxDirectTag || len(loaded.Rules[0].Domains) != 1 || loaded.Rules[0].Domains[0] != "route-direct.example" {
-		t.Fatalf("explicit Route -> DIRECT rule was folded into Direct exclusions: %#v", loaded.Rules)
-	}
-	if err := manager.SaveConfig(loaded); err != nil { t.Fatalf("SaveConfig after reload: %v", err) }
-	data, err := os.ReadFile(config)
-	if err != nil { t.Fatal(err) }
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil { t.Fatal(err) }
-	rules := raw["route"].(map[string]any)["rules"].([]any)
-	var bypass, explicit bool
-	for _, item := range rules {
-		rule := item.(map[string]any)
-		if rule["outbound"] == singBoxDirectBypassTag && len(stringSlice(rule["domain"])) > 0 && stringSlice(rule["domain"])[0] == "bypass.example" { bypass = true }
-		if rule["outbound"] == singBoxDirectTag && len(stringSlice(rule["domain"])) > 0 && stringSlice(rule["domain"])[0] == "route-direct.example" { explicit = true }
-	}
-	if !bypass || !explicit { t.Fatalf("Direct and Route DIRECT were not kept distinct: %#v", rules) }
-}
-
-func TestSingBoxManagerMigratesLegacyDirectExclusions(t *testing.T) {
-	dir := t.TempDir()
-	config := filepath.Join(dir, "config.json")
-	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), config, filepath.Join(dir, "sing-box.log"))
-	legacy := `{"inbounds":[{"type":"socks","tag":"csqtt-route-in","listen":"127.0.0.1","listen_port":19080}],"outbounds":[{"type":"direct","tag":"direct"},{"type":"socks","tag":"csqtt","server":"127.0.0.1","server_port":19081,"version":"5"}],"route":{"rules":[{"inbound":["csqtt-route-in"],"action":"sniff"},{"inbound":["csqtt-route-in"],"action":"route","domain":["legacy-bypass.example"],"outbound":"direct"}],"final":"csqtt","rule_set":[]}}`
-	if err := os.WriteFile(config, []byte(legacy), 0600); err != nil { t.Fatal(err) }
-	loaded, err := manager.LoadConfig()
-	if err != nil { t.Fatalf("load legacy config: %v", err) }
-	if len(loaded.DirectDomains) != 1 || loaded.DirectDomains[0] != "legacy-bypass.example" || len(loaded.Rules) != 0 {
-		t.Fatalf("legacy Direct exclusion was not migrated: %#v", loaded)
-	}
-}
-
 func TestSingBoxManagerRoundTripsExternalDefaultWithoutCSQTT(t *testing.T) {
 	dir := t.TempDir()
 	config := filepath.Join(dir, "config.json")
