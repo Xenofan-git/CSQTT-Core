@@ -465,7 +465,8 @@ func (a *udpAssociation) target(host string, port uint16) (*udpTarget, error) {
 	if target.IP.To4() == nil {
 		network, local = "udp6", "[::]:0"
 	}
-	pc, err := (net.ListenConfig{Control: a.server.socketControl}).ListenPacket(a.ctx, network, local)
+	lc := net.ListenConfig{Control: a.server.socketControl}
+	pc, err := lc.ListenPacket(a.ctx, network, local)
 	if err != nil {
 		a.mu.Unlock()
 		return nil, err
