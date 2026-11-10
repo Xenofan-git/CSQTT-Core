@@ -14,7 +14,7 @@
 Развить существующую адаптацию LaLune/CSQTT в Linux-платформу, объединяющую два независимых сетевых ядра под одной панелью:
 
 1. **CSQTT Core** — исходный CSQTT VPN-механизм, VK-авторизация и получение токена, туннель, клиентская/серверная части и Deploy.
-2. **sing-box** — независимое второе ядро для локального SOCKS5 inbound, нескольких SOCKS5 outbound, доменных/IP/Rule Set правил, DIRECT и выбора исходящего подключения. DNS/sniffing остаются отдельной зоной проверки и не должны считаться полностью покрытыми только по TCP/UDP relay-тестам.
+2. **sing-box** — интегрированное независимое второе ядро для локального SOCKS5 inbound, нескольких SOCKS5 outbound, доменных/IP/Rule Set правил, DIRECT и выбора исходящего подключения. DNS/sniffing остаются отдельной зоной проверки и не должны считаться полностью покрытыми только по TCP/UDP relay-тестам.
 
 Панель должна предоставлять единое управление, сохраняя независимые процессы, конфигурации, журналы и жизненные циклы ядер. Остановка или отказ одного ядра не должны останавливать второе.
 
@@ -73,9 +73,9 @@ TCP и UDP relay проверяются E2E через реальную реал
 - **Условия пользовательских правил** — домены, доменные суффиксы/ключевые слова/регулярные выражения, IPv4/IPv6 CIDR, Rule Set и поддерживаемые дополнительные matcher-поля. Правила ссылаются на существующий включённый outbound. Неизвестные и конфликтующие поля должны отклоняться валидатором.
 - **Редактор** — явные кнопки перемещения вверх/вниз доступны для CSQTT и пользовательских карточек; для DIRECT эти действия недоступны. Добавление/удаление доступно только для пользовательских правил. Порядок передаётся в генератор runtime `route.rules` sing-box. Полная модель панели, включая выключенные карточки, сохраняется в отдельном sidecar-файле с контрольной суммой активной sing-box-конфигурации; служебные поля не добавляются в JSON sing-box.
 
-**Статус реализации на SHA `925dd28995445dd42132ad833b84c263b84920ba` (PR #9 открыт):** реализованы системные карточки DIRECT/CSQTT, переключатели, перемещение CSQTT и пользовательских правил вверх/вниз, серверная защита зарезервированных ID и позиции DIRECT, реальный порядок генерации `route.rules`, а также checksum-bound sidecar для сохранения выключенных карточек и приоритетов. Legacy-конфигурации мигрируют состояние CSQTT из существующего outbound; новые запросы обязаны согласовывать состояние карточки и outbound.
+**Статус реализации на HEAD `c086798e052b33a0367e225f79a7fb7ec602a7a6` ветки `fix/explicit-singbox-default-outbound` (PR #9, Draft):** реализованы системные карточки DIRECT/CSQTT, переключатели, перемещение CSQTT и пользовательских правил вверх/вниз, серверная защита зарезервированных ID и позиции DIRECT, реальный порядок генерации `route.rules`, checksum-bound sidecar для сохранения выключенных карточек и приоритетов, а также явный `route.final`. CSQTT можно отключать и перемещать; он не удаляется и не становится скрытым fallback. DIRECT закреплён первым, его можно включать/выключать, но нельзя удалять или перемещать. Legacy-конфигурации мигрируют состояние CSQTT из существующего outbound; новые запросы обязаны согласовывать состояние системной карточки и outbound.
 
-**Проверки:** Chromium smoke test с проверкой DIRECT toggle, обоих направлений перемещения CSQTT, недоступного outbound и сохранения выбранного `route.final` прошёл на SHA `bc8fae9` (CI #1388). Go-тесты, race-тесты, pinned sing-box config validation и ARM64 compile прошли на SHA `917483d` (CI #1384). Дополнительная проверка восстановления legacy CSQTT-карточки выполняется в CI #1390. Полный ARM64 pipeline ещё не завершён; PR не объединять до его успешного окончания.
+**Проверки:** CI #1429 / Run ID `42595496997` на указанном HEAD завершился `SUCCESS` по обоим jobs. Chromium smoke проверяет DIRECT toggle, запрет удаления/перемещения DIRECT, включение/выключение и перемещение CSQTT в обоих направлениях, сохранение пользовательского outbound, а также сохранение `route.final`. ARM64 system VM дополнительно проверяет SOCKS5 TCP/UDP SO_MARK E2E, Direct IPv4/IPv6 с nftables и Linux routes, Deploy lifecycle/API, WIRE-4 same-process recovery и clean Debian 13 ARM64 runtime. Это CI-приёмка в изолированной VM, а не аппаратное испытание на NanoPi.
 ### Вкладка «Sing-Box» и Rule Set
 
 Вкладка «Sing-Box» содержит независимые настройки/статус/start/stop/logs движка и реестр наборов маршрутизации:
@@ -139,7 +139,7 @@ TCP и UDP relay проверяются E2E через реальную реал
 
 GitHub Actions собирает и проверяет существующую ARM64 адаптацию на основе закреплённого upstream LaLune. Проверки включают исходную адаптацию, панель и API, Chromium smoke test, DeployManager, ARM64 сборку, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с nftables и Linux routes, а также испытания в изолированной Debian ARM64 system VM.
 
-Последний полностью проверенный успешный контрольный запуск до документационного обновления: [CI run #1370](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64/actions/runs/42506708908) на SHA `1593de47145611ef9dadd24249280497aef4be9f`. Оба job завершились успешно: pinned sing-box 1.14.4 config validation, сборка ARM64, Chromium smoke test, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с реальными nftables/Linux routes, Deploy API и lifecycle, recovery, clean-runtime acceptance в Debian 13 ARM64 system VM. Это подтверждает только сценарии, реально входившие в запуск; это не заменяет аппаратное тестирование на NanoPi и не означает готовность для всех ARM64 устройств.
+Последний полностью проверенный запуск: [CI #1429 / Run ID `42595496997`](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64/actions/runs/42595496997), commit `c086798e052b33a0367e225f79a7fb7ec602a7a6`, ветка `fix/explicit-singbox-default-outbound`. Оба job завершились `SUCCESS`: ARM64 build и Debian 13 ARM64 system VM. Подтверждены pinned sing-box 1.14.4 config validation, Chromium panel smoke, сборка CSQTT ARM64 client/server и DeployManager, SOCKS5 TCP/UDP SO_MARK E2E, Direct IPv4/IPv6 с реальными nftables/Linux routes, Deploy API/lifecycle, VK call hash, WIRE-4 same-process recovery и clean-runtime acceptance. CI не подтверждает аппаратное поведение на NanoPi и не закрывает отдельные сценарии DNS/sniffing/domain matching.
 
 ## Репозиторий и правила разработки
 
@@ -156,9 +156,10 @@ GitHub Actions собирает и проверяет существующую A
 
 1. Завершить аудит полезных изменений upstream CSQTT v2.5.0 относительно закреплённой базы v2.1.9; не переносить Android-only функции или крупные изменения dataplane без отдельного обоснования.
 2. Сверить recovery/diagnostics и Deploy security (включая optional secret path) с текущей Linux-реализацией; переносить только недостающие и совместимые улучшения.
-3. Продолжить отдельные проверки DNS/sniffing/domain matching для TLS/SNI, HTTP Host, QUIC, ECH и случаев, когда имя заранее разрешено в IP.
-4. Провести полный аппаратный acceptance на NanoPi R3S LTS после отдельного разрешения: ресурсы, независимый lifecycle ядер, SOCKS5 TCP/UDP и маршруты без изменения Keenetic Direct/HydraRoute/3x-ui.
-5. Зафиксировать результаты в журнале NanoPi и библиотечных инструкциях после readback/hash-проверки.
+3. Провести сетевой аудит sing-box: DNS/sniffing/domain matching для TLS/SNI, HTTP Host, QUIC, ECH и случаев, когда имя заранее разрешено в IP; отдельно проверить внешние SOCKS5 outbound с авторизацией, UDP ASSOCIATE, переключение выходов, перезапуск и восстановление после отказа upstream, сохранение конфигурации и отсутствие циклов.
+4. После закрытия sing-box провести полный аудит независимости движков и точечно сравнить совместимые улучшения CSQTT v2.1.9/v2.5.0.
+5. Провести аппаратный acceptance на NanoPi R3S LTS только после отдельного разрешения: ресурсы, независимый lifecycle ядер, SOCKS5 TCP/UDP и маршруты без изменения Keenetic Direct/HydraRoute/3x-ui.
+6. Зафиксировать результаты в журнале NanoPi и библиотечных инструкциях после readback/hash-проверки.
 
 ## Критерии готовности
 
