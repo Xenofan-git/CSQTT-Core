@@ -23,6 +23,7 @@ const (
 	singBoxDirectRuleID     = "system-direct"
 	singBoxCSQTTRuleID      = "system-csqtt"
 	singBoxDNSLocalTag      = "csqtt-dns-local"
+	singBoxRuleSetHTTPClientTag = "csqtt-ruleset-http"
 )
 
 type singBoxSOCKS5Outbound struct {
@@ -71,6 +72,7 @@ type singBoxConfigInput struct {
 	DirectIPCIDRs        []string
 	SOCKS5        []singBoxSOCKS5Outbound
 	RuleSets      []singBoxRuleSet
+	RuleSetCachePath string
 	Rules         []singBoxRouteRule
 }
 
@@ -79,6 +81,8 @@ type singBoxConfig struct {
 	DNS      map[string]any      `json:"dns"`
 	Inbounds []map[string]any    `json:"inbounds"`
 	Outbounds []map[string]any   `json:"outbounds"`
+	HTTPClients []map[string]any `json:"http_clients,omitempty"`
+	Experimental map[string]any `json:"experimental,omitempty"`
 	Route    map[string]any      `json:"route"`
 }
 
@@ -410,6 +414,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			}
 			if set.Path != "" { return nil, fmt.Errorf("remote Rule Set %q cannot have a local path", set.Tag) }
 			entry["type"], entry["url"] = "remote", set.URL
+			if input.RuleSetCachePath != "" { entry["http_client"] = singBoxRuleSetHTTPClientTag }
 			if set.UpdateInterval != "" { entry["update_interval"] = set.UpdateInterval }
 		default:
 			return nil, fmt.Errorf("Rule Set %q type must be local or remote", set.Tag)
@@ -512,6 +517,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	}
 	if _, ok := knownOutbounds[finalOutbound]; !ok { return nil, fmt.Errorf("default outbound %q is not configured", finalOutbound) }
 
+	routeConfig := map[string]any{"rules": rules, "rule_set": ruleSetConfigs, "final": finalOutbound}
 	config := singBoxConfig{
 		Log: map[string]any{"level": "info", "timestamp": true},
 		DNS: dnsConfig,
@@ -520,7 +526,14 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			"listen": listenHost, "listen_port": listenPort,
 		}},
 		Outbounds: outbounds,
-		Route: map[string]any{"rules": rules, "rule_set": ruleSetConfigs, "final": finalOutbound},
+		Route: routeConfig,
+	}
+	if input.RuleSetCachePath != "" {
+		// sing-box 1.14 deprecated the implicit remote Rule Set HTTP client;
+		// use an explicit shared client and persist remote Rule Set cache.
+		config.HTTPClients = []map[string]any{{"tag": singBoxRuleSetHTTPClientTag}}
+		config.Experimental = map[string]any{"cache_file": map[string]any{"enabled": true, "path": input.RuleSetCachePath}}
+		routeConfig["default_http_client"] = singBoxRuleSetHTTPClientTag
 	}
 	encoded, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
