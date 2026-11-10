@@ -265,7 +265,7 @@ def main():
             page.locator("#singboxDNSPort").fill("53")
             page.locator("#singboxDNSStrategy").select_option("prefer_ipv4")
             outbound_options = page.locator("#singboxFinalOutbound option").all_text_contents()
-            assert "socks-hydra" in outbound_options and "csqtt" in outbound_options and "socks-disabled" not in outbound_options, outbound_options
+            assert "socks-hydra" in outbound_options and "CSQTT" in outbound_options and "socks-disabled" not in outbound_options, outbound_options
             page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
