@@ -34,6 +34,11 @@ jobs:
           mkdir -p vm/real
           tar -xzf vm/artifact/lalune-original-linux-arm64.tar.gz -C vm/real
           test -s vm/real/server-assets/csqtt-lalune-linux-arm64
+          test -s vm/real/server-assets/sing-box-linux-arm64
+          test -s vm/real/server-assets/sing-box-linux-amd64
+          vm/real/server-assets/sing-box-linux-arm64 version | grep -Fq 'sing-box version 1.14.4'
+          test -s vm/real/deploy-e2e/server-assets/sing-box-linux-arm64
+          test -s vm/real/deploy-e2e/server-assets/sing-box-linux-amd64
           test -x vm/real/server-assets/deploy-csqtt-lalune.sh
           test -s vm/real/client-linux-arm64
           test -x vm/real/socks5-marked-e2e-arm64.test
@@ -940,7 +945,7 @@ jobs:
           EOF
           done
           $SCP vm/real/client-linux-arm64 tester@127.0.0.1:/home/tester/
-          $SCP "$DEPLOY_SCRIPT" "$BINARY" vm/real/client-tun-tests-arm64 vm/csqtt.service vm/csqtt-47000.service vm/csqtt-47000-netns.service vm/port-blocker.py vm/csqtt-vm-probe.py vm/csqtt-server-listener-restart.py tester@127.0.0.1:/home/tester/
+          $SCP "$DEPLOY_SCRIPT" "$BINARY" vm/real/server-assets/sing-box-linux-arm64 vm/real/client-tun-tests-arm64 vm/csqtt.service vm/csqtt-47000.service vm/csqtt-47000-netns.service vm/port-blocker.py vm/csqtt-vm-probe.py vm/csqtt-server-listener-restart.py tester@127.0.0.1:/home/tester/
           $SSH 'set -eux
             sudo install -d -m 0700 /opt/lalune-package
             sudo install -m 0755 /home/tester/deploy-csqtt-lalune.sh /opt/lalune-package/deploy-csqtt-lalune.sh
@@ -959,6 +964,7 @@ jobs:
             grep -Fq -- "Нужны -peer и хеши VK" /tmp/csqtt-client-argument-smoke.log
             echo REAL_RUNTIME_CSQTT_CLIENT_ARM64_EXECUTABLE_PASS
             sudo install -m 0755 /home/tester/csqtt-lalune-linux-arm64 /opt/lalune-package/.csqtt-lalune-upload-server
+            sudo install -m 0755 /home/tester/sing-box-linux-arm64 /opt/lalune-package/.csqtt-lalune-upload-sing-box
             sudo install -m 0755 /home/tester/client-tun-tests-arm64 /usr/local/bin/client-tun-tests-arm64
             /usr/local/bin/client-tun-tests-arm64 -test.v
               file /opt/lalune-package/.csqtt-lalune-upload-server
@@ -1079,6 +1085,7 @@ jobs:
             # Failed preflight deliberately removes staged upload files; recreate them
             # before the real install so only a clean preflight can reach cutover.
             sudo install -m 0755 /home/tester/csqtt-lalune-linux-arm64 /opt/lalune-package/.csqtt-lalune-upload-server
+            sudo install -m 0755 /home/tester/sing-box-linux-arm64 /opt/lalune-package/.csqtt-lalune-upload-sing-box
             sudo install -m 0600 /dev/null /opt/lalune-package/.csqtt-lalune-upload-web.env
             sudo tee /opt/lalune-package/.csqtt-lalune-upload-web.env >/dev/null <<'WEBENV'
           CSQTT_WEB_USER=wire-user
@@ -1154,6 +1161,7 @@ jobs:
             curl -k -fsS -b "$cookie" --connect-timeout 2 --max-time 4 https://127.0.0.1:47002/api/settings > /tmp/csqtt-lalune-dns-before-redeploy.json
             python3 -c "import json; s=json.load(open(\"/tmp/csqtt-lalune-dns-before-redeploy.json\")); assert (s.get(\"dns_primary\"),s.get(\"dns_secondary\")) == (\"111.88.96.50\",\"111.88.96.51\"), s"
             sudo install -m 0755 /home/tester/csqtt-lalune-linux-arm64 /opt/lalune-package/.csqtt-lalune-upload-server
+            sudo install -m 0755 /home/tester/sing-box-linux-arm64 /opt/lalune-package/.csqtt-lalune-upload-sing-box
             sudo install -m 0600 /dev/null /opt/lalune-package/.csqtt-lalune-upload-web.env
             sudo tee /opt/lalune-package/.csqtt-lalune-upload-web.env >/dev/null <<'WEBENV'
           CSQTT_WEB_USER=wire-user

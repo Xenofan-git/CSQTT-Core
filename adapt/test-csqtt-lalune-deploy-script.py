@@ -30,6 +30,10 @@ if 'readonly CSQTT_WIRE_PROTOCOL_REVISION="CSQTT-WIRE-3"' in script:
     raise SystemExit("derived deploy script still rejects the production WIRE-4 server")
 need('uploaded_wire_protocol="$(timeout 5 "$UPLOAD_BINARY" --protocol-revision 2>/dev/null || true)"')
 need('[ "$uploaded_wire_protocol" = "$CSQTT_WIRE_PROTOCOL_REVISION" ]')
+need('readonly UPLOAD_SING_BOX="${CSQTT_DEPLOY_STAGE:-/tmp}/.csqtt-lalune-upload-sing-box"')
+need('install_sing_box_binary()')
+need('Pinned sing-box 1.14.4 asset is missing')
+need('Environment=CSQTT_SING_BOX_BINARY=/usr/local/lib/csqtt-lalune/sing-box/1.14.4/sing-box')
 
 # Keep the original deployment pipeline rather than replacing it with a second installer.
 for function in [

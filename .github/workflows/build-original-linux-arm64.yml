@@ -334,19 +334,38 @@ jobs:
         run: |
           set -euxo pipefail
           go mod download
-      - name: Install pinned sing-box config validator
+      - name: Install pinned sing-box 1.14.4 binaries for config validation and deployment
         run: |
           set -euxo pipefail
           archive=/tmp/sing-box-1.14.4-linux-amd64.tar.gz
           curl -fL --retry 3 --retry-delay 2 -o "$archive" "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-amd64.tar.gz"
           echo "699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968  $archive" | sha256sum -c -
-          install_dir=/tmp/sing-box-1.14.4
+          install_dir=/tmp/sing-box-1.14.4-amd64
           mkdir -p "$install_dir"
           tar -xzf "$archive" -C "$install_dir"
           binary="$(find "$install_dir" -type f -name sing-box -print -quit)"
           test -n "$binary"
           chmod 0755 "$binary"
-          "$binary" version
+          "$binary" version | grep -Fq "sing-box version 1.14.4"
+          file "$binary" | grep -Eq 'x86-64|x86_64'
+
+          archive_arm64=/tmp/sing-box-1.14.4-linux-arm64.tar.gz
+          curl -fL --retry 3 --retry-delay 2 -o "$archive_arm64" "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-arm64.tar.gz"
+          echo "436441f76ee2f7fe21b5b2d426d3cb261a480455a704865789ad533e4273ec26  $archive_arm64" | sha256sum -c -
+          install_dir_arm64=/tmp/sing-box-1.14.4-arm64
+          mkdir -p "$install_dir_arm64"
+          tar -xzf "$archive_arm64" -C "$install_dir_arm64"
+          binary_arm64="$(find "$install_dir_arm64" -type f -name sing-box -print -quit)"
+          test -n "$binary_arm64"
+          chmod 0755 "$binary_arm64"
+          "$binary_arm64" version | grep -Fq "sing-box version 1.14.4"
+          file "$binary_arm64" | grep -Fq 'ARM aarch64'
+
+          mkdir -p server-assets
+          install -m 0755 "$binary" server-assets/sing-box-linux-amd64
+          install -m 0755 "$binary_arm64" server-assets/sing-box-linux-arm64
+          file server-assets/sing-box-linux-amd64 | grep -Eq 'x86-64|x86_64'
+          file server-assets/sing-box-linux-arm64 | grep -Fq 'ARM aarch64'
           echo "CSQTT_SING_BOX_BINARY=$binary" >> "$GITHUB_ENV"
       - name: Test deploy access policy and CAPTCHA lifecycle
         working-directory: upstream-lalune/Desktop/Linux
@@ -688,9 +707,19 @@ jobs:
           install -m 0755 server-assets/deploy-csqtt-lalune.sh dist/deploy-e2e/server-assets/deploy-csqtt-lalune.sh
           install -m 0755 server-assets/csqtt-lalune-linux-arm64 dist/deploy-e2e/server-assets/csqtt-lalune-linux-arm64
           install -m 0755 server-assets/csqtt-lalune-linux-amd64 dist/deploy-e2e/server-assets/csqtt-lalune-linux-amd64
+          install -m 0755 server-assets/sing-box-linux-arm64 dist/deploy-e2e/server-assets/sing-box-linux-arm64
+          install -m 0755 server-assets/sing-box-linux-amd64 dist/deploy-e2e/server-assets/sing-box-linux-amd64
+          test -s dist/deploy-e2e/server-assets/sing-box-linux-arm64
+          test -s dist/deploy-e2e/server-assets/sing-box-linux-amd64
           file dist/deploy-e2e/lalune-original-linux-amd64 | grep -Eq 'x86-64|x86_64'
           file dist/deploy-e2e/deploy-manager | grep -Eq 'x86-64|x86_64'
           cp -a server-assets dist/server-assets
+          test -s dist/server-assets/sing-box-linux-arm64
+          test -s dist/server-assets/sing-box-linux-amd64
+          file dist/server-assets/sing-box-linux-arm64 | grep -Fq 'ARM aarch64'
+          file dist/server-assets/sing-box-linux-amd64 | grep -Eq 'x86-64|x86_64'
+          dist/server-assets/sing-box-linux-arm64 version | grep -Fq 'sing-box version 1.14.4'
+          dist/server-assets/sing-box-linux-amd64 version | grep -Fq 'sing-box version 1.14.4'
           # Ship only the patched, namespaced deployment flow and server binaries.
           # Keep the raw upstream deploy.sh and generic CSQTT assets in the CI
           # workspace for provenance/tests, but never put them in the app bundle.
