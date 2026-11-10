@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - refactor/csqtt-2.5.0-core
+    paths:
+      - .github/workflows/csqtt-2.5.0-arm64-source-baseline.yml
 
 permissions:
   contents: read
@@ -42,7 +44,11 @@ jobs:
           grep -Fq 'VK_JS_BOOTSTRAP:' rust-client/main.rs
           grep -Fq 'tun_uds' rust-client/main.rs
           test -s app/src/main/assets/deploy.sh
-          sha256sum rust-client/Cargo.toml rust-client/Cargo.lock rust-server/Cargo.toml rust-server/Cargo.lock app/src/main/assets/deploy.sh | tee "$GITHUB_WORKSPACE/csqtt-2.5.0-source-sha256.txt"
+          # The Rust client embeds ../domains.txt; stage the canonical CSQTT asset
+          # at the path expected by include_str! without modifying upstream source.
+          install -m 0644 app/src/main/assets/domains.txt domains.txt
+          cmp app/src/main/assets/domains.txt domains.txt
+          sha256sum rust-client/Cargo.toml rust-client/Cargo.lock rust-server/Cargo.toml rust-server/Cargo.lock app/src/main/assets/domains.txt app/src/main/assets/deploy.sh | tee "$GITHUB_WORKSPACE/csqtt-2.5.0-source-sha256.txt"
 
       - name: Install native build dependencies
         run: |
