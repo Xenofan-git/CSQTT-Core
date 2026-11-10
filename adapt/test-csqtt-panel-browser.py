@@ -109,7 +109,7 @@ def main():
         elif path == "/singbox/status":
             body = {"running": False, "pid": 0, "configured": True, "log_path": "/tmp/sing-box.log"}
         elif path == "/singbox/config" and method == "GET":
-            body = {"configured": True, "config": {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:12500","CSQTTEnabled":False,"FinalOutbound":"socks-hydra","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[{"ID":"hydra","Server":"192.0.2.10","ServerPort":1080,"Enabled":True},{"ID":"disabled","Server":"192.0.2.11","ServerPort":1080,"Enabled":False}],"Rules":[]}}
+            body = {"configured": True, "config": singbox_saved or {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:12500","CSQTTEnabled":False,"FinalOutbound":"socks-hydra","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[{"ID":"hydra","Server":"192.0.2.10","ServerPort":1080,"Enabled":True},{"ID":"disabled","Server":"192.0.2.11","ServerPort":1080,"Enabled":False}],"Rules":[]}}
         elif path == "/singbox/config" and method == "PUT":
             singbox_saved.update(json.loads(request.post_data or "{}"))
             body = {"ok": True}
