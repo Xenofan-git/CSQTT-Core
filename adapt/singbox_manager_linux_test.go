@@ -31,7 +31,7 @@ func writeSingBoxPanelStateForTest(t *testing.T, configPath string, input singBo
 	state := singBoxPanelState{Version:1, ConfigSHA256:hex.EncodeToString(hash[:]), Config:input}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil { t.Fatal(err) }
-	if err := os.WriteFile(configPath+".panel.json", append(data, '\\n'), 0600); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(configPath+".panel.json", append(data, '\n'), 0600); err != nil { t.Fatal(err) }
 }
 
 func writeValidSingBoxConfigForTest(t *testing.T, path string) {
