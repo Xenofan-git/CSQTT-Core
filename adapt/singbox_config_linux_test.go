@@ -217,7 +217,12 @@ func TestBuildSingBoxConfigPreservesSystemRouteCardOrder(t *testing.T) {
 	if len(got)!=len(want){t.Fatalf("ordered route count=%d want=%d: %#v",len(got),len(want),got)}
 	for i:=range want{if got[i]!=want[i]{t.Fatalf("route order=%#v want=%#v",got,want)}}
 	if config["route"].(map[string]any)["final"]!=singBoxDirectTag{t.Fatalf("system card must not become hidden route.final: %#v",config["route"])}
-	csqttRule := rules[2].(map[string]any)
+	var csqttRule map[string]any
+	for _, raw := range rules {
+		candidate, ok := raw.(map[string]any)
+		if ok && candidate["outbound"] == singBoxCSQTTTag { csqttRule = candidate; break }
+	}
+	if csqttRule == nil { t.Fatal("enabled CSQTT route rule was not generated") }
 	if domains := stringSlice(csqttRule["domain"]); len(domains) != 1 || domains[0] != "csqtt-only.test" {
 		t.Fatalf("CSQTT system rule lost its domain matcher: %#v", csqttRule)
 	}

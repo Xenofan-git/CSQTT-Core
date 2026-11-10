@@ -423,16 +423,21 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 			continue
 		}
 		if outbound == "" || known[outbound] == nil { return input, fmt.Errorf("route references missing outbound %q", outbound) }
+		matcherCount := len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs)+len(ruleSets)+len(advanced)
 		id := fmt.Sprintf("loaded-%d", len(input.Rules)+1)
+		enabled := true
 		if outbound == singBoxDirectTag && !directSystemSeen {
 			id = singBoxDirectRuleID
 			directSystemSeen = true
 		}
-		if outbound == singBoxCSQTTTag && !csqttSystemSeen {
+		if outbound == singBoxCSQTTTag && matcherCount == 0 && !csqttSystemSeen {
+			// The legacy system CSQTT rule was a catch-all. Migrate it disabled;
+			// matcher-based CSQTT rules with a sidecar remain fully preserved.
 			id = singBoxCSQTTRuleID
 			csqttSystemSeen = true
+			enabled = false
 		}
-		input.Rules=append(input.Rules,singBoxRouteRule{ID:id,Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Advanced:advanced,Outbound:outbound,Enabled:true})
+		input.Rules=append(input.Rules,singBoxRouteRule{ID:id,Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Advanced:advanced,Outbound:outbound,Enabled:enabled})
 	}
 	// Migrate the former implicit CSQTT route.final fallback into an explicit
 	// catch-all card at the end of the ordered queue. Unmatched traffic then
