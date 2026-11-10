@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -304,6 +305,142 @@ func TestSingBoxUDPAssociateRelaysThroughRealCSQTTSocks5Server(t *testing.T) {
 	response:=make([]byte,2048);n,err:=client.Read(response);if err!=nil{t.Fatalf("UDP response: %v; sing-box logs: %s",err,output.String())}
 	if n<10||response[0]!=0||response[1]!=0||response[2]!=0{t.Fatalf("invalid SOCKS UDP response: %v",response[:n])}
 	if string(response[n-len(payload):n])!=string(payload){t.Fatalf("UDP payload=%q want=%q",response[n-len(payload):n],payload)}
+}
+
+func TestSingBoxDNSHijackAndReverseMappingThroughSOCKSInbound(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" { t.Skip("requires pinned sing-box binary from CI") }
+
+	upstream, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil { t.Fatal(err) }
+	defer upstream.Close()
+	go func() {
+		buf := make([]byte, 2048)
+		_ = upstream.SetReadDeadline(time.Now().Add(15 * time.Second))
+		n, peer, readErr := upstream.ReadFromUDP(buf)
+		if readErr != nil { return }
+		query := append([]byte(nil), buf[:n]...)
+		questionEnd := 12
+		for questionEnd < len(query) {
+			labelLen := int(query[questionEnd])
+			questionEnd++
+			if labelLen == 0 { break }
+			questionEnd += labelLen
+		}
+		if questionEnd+4 > len(query) { return }
+		questionEnd += 4
+		response := make([]byte, 12)
+		copy(response, query[:12])
+		response[2], response[3] = 0x81, 0x80
+		response[6], response[7] = 0, 1
+		response[8], response[9], response[10], response[11] = 0, 0, 0, 0
+		response = append(response, query[12:questionEnd]...)
+		response = append(response, 0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 198, 51, 100, 42)
+		_, _ = upstream.WriteToUDP(response, peer)
+	}()
+
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer echo.Close()
+	go func() {
+		for {
+			conn, acceptErr := echo.Accept()
+			if acceptErr != nil { return }
+			go func(c net.Conn) { defer c.Close(); _, _ = io.Copy(c, c) }(conn)
+		}
+	}()
+	targets := make(chan string, 1)
+	csqtt := NewSocks5Server("127.0.0.1:0")
+	csqtt.dialTCPOverride = func(target string) (net.Conn, error) {
+		select { case targets <- target: default: }
+		return net.DialTimeout("tcp", echo.Addr().String(), 2*time.Second)
+	}
+	if err := csqtt.Start(); err != nil { t.Fatalf("start CSQTT SOCKS5: %v", err) }
+	defer csqtt.Stop()
+
+	input := singBoxConfigInput{
+		ListenAddress: reserveSingBoxTestAddress(t),
+		CSQTTAddress: csqtt.Status().Address,
+		FinalOutbound: singBoxDirectTag,
+		DNSMode: "udp", DNSServer: "127.0.0.1", DNSPort: upstream.LocalAddr().(*net.UDPAddr).Port, DNSStrategy: "ipv4_only",
+		Rules: []singBoxRouteRule{{ID: "dns-domain", Domains: []string{"dns-route.test"}, Outbound: singBoxCSQTTTag, Enabled: true}},
+	}
+	config, err := buildSingBoxConfig(input)
+	if err != nil { t.Fatal(err) }
+	configPath := filepath.Join(t.TempDir(), "sing-box-dns.json")
+	if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	output := &singBoxTestLogBuffer{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Start(); err != nil { t.Fatalf("start sing-box: %v", err) }
+	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+	dialInbound := func() net.Conn {
+		t.Helper()
+		var conn net.Conn
+		deadline := time.Now().Add(8 * time.Second)
+		for time.Now().Before(deadline) {
+			conn, err = net.DialTimeout("tcp", input.ListenAddress, 200*time.Millisecond)
+			if err == nil { break }
+			time.Sleep(50 * time.Millisecond)
+		}
+		if conn == nil { t.Fatalf("sing-box inbound not ready: %v; logs: %s", err, output.String()) }
+		_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
+		if _, err := conn.Write([]byte{5, 1, 0}); err != nil { t.Fatal(err) }
+		var greeting [2]byte
+		if _, err := io.ReadFull(conn, greeting[:]); err != nil { t.Fatal(err) }
+		if greeting != [2]byte{5, 0} { t.Fatalf("SOCKS greeting: %v", greeting) }
+		return conn
+	}
+
+	// A TCP DNS request to an external resolver address must be hijacked by
+	// sing-box and answered by the local fake UDP DNS server, without Internet.
+	dnsConn := dialInbound()
+	defer dnsConn.Close()
+	dnsConnect := []byte{5, 1, 0, 1, 8, 8, 8, 8, 0, 53}
+	if _, err := dnsConn.Write(dnsConnect); err != nil { t.Fatal(err) }
+	var connectReply [10]byte
+	if _, err := io.ReadFull(dnsConn, connectReply[:]); err != nil { t.Fatalf("DNS CONNECT: %v; logs: %s", err, output.String()) }
+	if connectReply[1] != 0 { t.Fatalf("DNS CONNECT was not hijacked: %v; logs: %s", connectReply, output.String()) }
+
+	dnsQuery := make([]byte, 12)
+	binary.BigEndian.PutUint16(dnsQuery[0:2], 0x1234)
+	binary.BigEndian.PutUint16(dnsQuery[2:4], 0x0100)
+	binary.BigEndian.PutUint16(dnsQuery[4:6], 1)
+	for _, label := range strings.Split("dns-route.test", ".") {
+		dnsQuery = append(dnsQuery, byte(len(label)))
+		dnsQuery = append(dnsQuery, []byte(label)...)
+	}
+	dnsQuery = append(dnsQuery, 0, 0, 1, 0, 1)
+	var frameLen [2]byte
+	binary.BigEndian.PutUint16(frameLen[:], uint16(len(dnsQuery)))
+	if _, err := dnsConn.Write(append(frameLen[:], dnsQuery...)); err != nil { t.Fatal(err) }
+	if _, err := io.ReadFull(dnsConn, frameLen[:]); err != nil { t.Fatalf("DNS response length: %v; logs: %s", err, output.String()) }
+	response := make([]byte, int(binary.BigEndian.Uint16(frameLen[:])))
+	if _, err := io.ReadFull(dnsConn, response); err != nil { t.Fatalf("DNS response: %v; logs: %s", err, output.String()) }
+	if len(response) < 4 || !bytes.Equal(response[len(response)-4:], []byte{198, 51, 100, 42}) {
+		t.Fatalf("DNS answer did not contain the expected address: %v", response)
+	}
+
+	// The client now connects by IP. reverse_mapping must recover the DNS
+	// domain so the ordered domain rule selects CSQTT rather than route.final=direct.
+	dataConn := dialInbound()
+	defer dataConn.Close()
+	connectIP := []byte{5, 1, 0, 1, 198, 51, 100, 42, 1, 187}
+	if _, err := dataConn.Write(connectIP); err != nil { t.Fatal(err) }
+	if _, err := io.ReadFull(dataConn, connectReply[:]); err != nil { t.Fatalf("reverse-mapped CONNECT: %v; logs: %s", err, output.String()) }
+	if connectReply[1] != 0 { t.Fatalf("reverse-mapped domain did not select CSQTT: %v; logs: %s", connectReply, output.String()) }
+	payload := []byte("dns-reverse-mapping-e2e")
+	if _, err := dataConn.Write(payload); err != nil { t.Fatal(err) }
+	echoed := make([]byte, len(payload))
+	if _, err := io.ReadFull(dataConn, echoed); err != nil { t.Fatalf("CSQTT echo: %v", err) }
+	if !bytes.Equal(echoed, payload) { t.Fatalf("echoed payload = %q, want %q", echoed, payload) }
+	select {
+	case target := <-targets:
+		if !strings.HasSuffix(target, ":443") { t.Fatalf("CSQTT received unexpected target %q", target) }
+	case <-time.After(2 * time.Second):
+		t.Fatal("CSQTT outbound was not selected after DNS reverse mapping")
+	}
 }
 
 func TestBuildSingBoxConfigPassesPinnedBinaryCheck(t *testing.T) {
