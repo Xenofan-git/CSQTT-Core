@@ -315,13 +315,20 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		entry, ok := item.(map[string]any); if !ok { continue }
 		tag, _ := entry["tag"].(string); known[tag] = entry
 	}
-	if csqtt := known[singBoxCSQTTTag]; csqtt != nil {
+	csqtt := known[singBoxCSQTTTag]
+	if csqtt == nil {
+		if disabled := known[singBoxCSQTTDisabledTag]; disabled != nil {
+			csqtt = disabled
+			input.CSQTTExplicitlyDisabled = true
+		}
+	}
+	if csqtt != nil {
 		if csqtt["type"] != "socks" { return input, fmt.Errorf("invalid CSQTT outbound type") }
 		csqttHost, _ := csqtt["server"].(string)
 		csqttPort, ok := csqtt["server_port"].(float64)
 		if csqttHost == "" || !ok || csqttPort < 1 || csqttPort > 65535 { return input, fmt.Errorf("invalid CSQTT SOCKS endpoint") }
 		input.CSQTTAddress = net.JoinHostPort(csqttHost, strconv.Itoa(int(csqttPort)))
-		input.CSQTTEnabled = true
+		input.CSQTTEnabled = !input.CSQTTExplicitlyDisabled
 	}
 	for tag, entry := range known {
 		if !strings.HasPrefix(tag, "socks-") { continue }
@@ -346,24 +353,42 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		input.RuleSets = append(input.RuleSets, item)
 	}
 	rules, _ := route["rules"].([]any)
+	directSystemSeen, csqttSystemSeen := false, false
 	for _, item := range rules {
 		rule, ok := item.(map[string]any); if !ok || rule["action"] != "route" { continue }
 		outbound, _ := rule["outbound"].(string)
 		domains, suffixes := stringSlice(rule["domain"]), stringSlice(rule["domain_suffix"])
 		keywords, regexes, cidrs := stringSlice(rule["domain_keyword"]), stringSlice(rule["domain_regex"]), stringSlice(rule["ip_cidr"])
 		ruleSets := stringSlice(rule["rule_set"])
+		advanced := singBoxAdvancedFieldsFromRule(rule)
 		if outbound == singBoxDirectBypassTag || (legacyDirectExclusions && outbound == singBoxDirectTag) {
-			if len(keywords)+len(regexes)+len(ruleSets)+len(singBoxAdvancedFieldsFromRule(rule)) > 0 {
-				return input, fmt.Errorf("Direct exclusions contain unsupported advanced matchers; refusing to discard them")
-			}
+			if len(keywords)+len(regexes)+len(ruleSets)+len(advanced) > 0 { return input, fmt.Errorf("Direct exclusions contain unsupported advanced matchers; refusing to discard them") }
 			input.DirectDomains=append(input.DirectDomains,domains...)
 			input.DirectDomainSuffixes=append(input.DirectDomainSuffixes,suffixes...)
 			input.DirectIPCIDRs=append(input.DirectIPCIDRs,cidrs...)
 			continue
 		}
 		if outbound == "" || known[outbound] == nil { return input, fmt.Errorf("route references missing outbound %q", outbound) }
-		input.Rules=append(input.Rules,singBoxRouteRule{ID:fmt.Sprintf("loaded-%d",len(input.Rules)+1),Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Advanced:singBoxAdvancedFieldsFromRule(rule),Outbound:outbound,Enabled:true})
+		matcherCount := len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs)+len(ruleSets)+len(advanced)
+		id := fmt.Sprintf("loaded-%d", len(input.Rules)+1)
+		if outbound == singBoxDirectTag && !directSystemSeen {
+			id = singBoxDirectRuleID
+			directSystemSeen = true
+		}
+		if outbound == singBoxCSQTTTag && matcherCount == 0 && !csqttSystemSeen {
+			id = singBoxCSQTTRuleID
+			csqttSystemSeen = true
+		}
+		input.Rules=append(input.Rules,singBoxRouteRule{ID:id,Domains:domains,DomainSuffixes:suffixes,DomainKeywords:keywords,DomainRegexes:regexes,IPCIDRs:cidrs,RuleSets:ruleSets,Advanced:advanced,Outbound:outbound,Enabled:true})
 	}
+	// Migrate the former implicit CSQTT route.final fallback into an explicit
+	// catch-all card at the end of the ordered queue. Unmatched traffic then
+	// falls back to DIRECT instead of silently selecting CSQTT.
+	if input.FinalOutbound == singBoxCSQTTTag && input.CSQTTEnabled && !csqttSystemSeen {
+		input.Rules = append(input.Rules, singBoxRouteRule{ID:singBoxCSQTTRuleID, Outbound:singBoxCSQTTTag, Enabled:true})
+		csqttSystemSeen = true
+	}
+	if input.FinalOutbound == singBoxCSQTTTag { input.FinalOutbound = singBoxDirectTag }
 	return input,nil
 }
 func anySlice(value any) []any { items, _ := value.([]any); return items }
