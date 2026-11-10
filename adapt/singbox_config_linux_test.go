@@ -181,6 +181,42 @@ func TestBuildSingBoxConfigDNSModesAndValidation(t *testing.T) {
 	for _, tc := range invalid { t.Run(tc.name, func(t *testing.T) { if _, err := buildSingBoxConfig(tc.input); err == nil { t.Fatal("invalid DNS configuration was accepted") } }) }
 }
 
+func TestBuildSingBoxConfigPreservesSystemRouteCardOrder(t *testing.T) {
+	input := singBoxConfigInput{
+		ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500", CSQTTEnabled: true,
+		SOCKS5: []singBoxSOCKS5Outbound{{ID:"one",Server:"192.0.2.10",ServerPort:1080,Enabled:true},{ID:"two",Server:"192.0.2.11",ServerPort:1080,Enabled:true}},
+		Rules: []singBoxRouteRule{
+			{ID:singBoxDirectRuleID,Domains:[]string{"direct-first.test"},Outbound:singBoxDirectTag,Enabled:true},
+			{ID:"user-one",Domains:[]string{"first.test"},Outbound:"socks-one",Enabled:true},
+			{ID:singBoxCSQTTRuleID,Outbound:singBoxCSQTTTag,Enabled:true},
+			{ID:"user-two",Domains:[]string{"after-csqtt.test"},Outbound:"socks-two",Enabled:true},
+		},
+	}
+	encoded,err:=buildSingBoxConfig(input);if err!=nil{t.Fatal(err)}
+	var config map[string]any;if err:=json.Unmarshal(encoded,&config);err!=nil{t.Fatal(err)}
+	rules:=config["route"].(map[string]any)["rules"].([]any)
+	got:=[]string{}
+	for _,raw:=range rules{rule:=raw.(map[string]any);if rule["action"]=="route"{got=append(got,rule["outbound"].(string))}}
+	want:=[]string{singBoxDirectBypassTag,singBoxDirectTag,"socks-one",singBoxCSQTTTag,"socks-two"}
+	if len(got)!=len(want){t.Fatalf("ordered route count=%d want=%d: %#v",len(got),len(want),got)}
+	for i:=range want{if got[i]!=want[i]{t.Fatalf("route order=%#v want=%#v",got,want)}}
+	if config["route"].(map[string]any)["final"]!=singBoxDirectTag{t.Fatalf("system card must not become hidden route.final: %#v",config["route"])}
+}
+
+func TestBuildSingBoxConfigRejectsInvalidSystemRouteCardsAndRuleOverflow(t *testing.T) {
+	base:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500",CSQTTEnabled:true}
+	badOrder:=base;badOrder.Rules=[]singBoxRouteRule{{ID:"user",Domains:[]string{"x.test"},Outbound:singBoxCSQTTTag,Enabled:true},{ID:singBoxDirectRuleID,Domains:[]string{"direct.test"},Outbound:singBoxDirectTag,Enabled:true}}
+	if _,err:=buildSingBoxConfig(badOrder);err==nil||!strings.Contains(err.Error(),"top of the Route queue"){t.Fatalf("misplaced DIRECT card error=%v",err)}
+	badCSQTT:=base;badCSQTT.CSQTTExplicitlyDisabled=true;badCSQTT.CSQTTEnabled=false;badCSQTT.Rules=[]singBoxRouteRule{{ID:singBoxCSQTTRuleID,Outbound:singBoxCSQTTTag,Enabled:true}}
+	if _,err:=buildSingBoxConfig(badCSQTT);err==nil||!strings.Contains(err.Error(),"connection is disabled"){t.Fatalf("enabled disabled-CSQTT card error=%v",err)}
+	overflow:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",SOCKS5:[]singBoxSOCKS5Outbound{{ID:"proxy",Server:"192.0.2.10",ServerPort:1080,Enabled:true}}}
+	for i:=0;i<16;i++{overflow.Rules=append(overflow.Rules,singBoxRouteRule{ID:fmt.Sprintf("rule-%d",i),Domains:[]string{fmt.Sprintf("r%d.test",i)},Outbound:"socks-proxy",Enabled:true})}
+	if _,err:=buildSingBoxConfig(overflow);err==nil||!strings.Contains(err.Error(),"15 user route rules"){t.Fatalf("route rule overflow error=%v",err)}
+	tooMany:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180"}
+	for i:=0;i<16;i++{tooMany.SOCKS5=append(tooMany.SOCKS5,singBoxSOCKS5Outbound{ID:fmt.Sprintf("proxy-%d",i),Server:"192.0.2.10",ServerPort:1080,Enabled:false})}
+	if _,err:=buildSingBoxConfig(tooMany);err==nil||!strings.Contains(err.Error(),"15 user SOCKS5 outbounds"){t.Fatalf("SOCKS5 outbound overflow error=%v",err)}
+}
+
 func TestBuildSingBoxConfigUsesDIRECTAsExplicitDefaultFallback(t *testing.T) {
 	got, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500"})
 	if err != nil { t.Fatal(err) }
