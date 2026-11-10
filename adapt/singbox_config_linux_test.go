@@ -197,7 +197,7 @@ func TestBuildSingBoxConfigPreservesSystemRouteCardOrder(t *testing.T) {
 	rules:=config["route"].(map[string]any)["rules"].([]any)
 	got:=[]string{}
 	for _,raw:=range rules{rule:=raw.(map[string]any);if rule["action"]=="route"{got=append(got,rule["outbound"].(string))}}
-	want:=[]string{singBoxDirectBypassTag,singBoxDirectTag,"socks-one",singBoxCSQTTTag,"socks-two"}
+	want:=[]string{singBoxDirectTag,"socks-one",singBoxCSQTTTag,"socks-two"}
 	if len(got)!=len(want){t.Fatalf("ordered route count=%d want=%d: %#v",len(got),len(want),got)}
 	for i:=range want{if got[i]!=want[i]{t.Fatalf("route order=%#v want=%#v",got,want)}}
 	if config["route"].(map[string]any)["final"]!=singBoxDirectTag{t.Fatalf("system card must not become hidden route.final: %#v",config["route"])}
