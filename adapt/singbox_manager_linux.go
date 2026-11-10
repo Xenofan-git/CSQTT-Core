@@ -307,7 +307,15 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		if err != nil { return input, fmt.Errorf("validate sing-box panel state: %w", err) }
 		if string(expected) != string(data) { return input, fmt.Errorf("sing-box panel state and active config diverge; refusing to discard panel settings") }
 		return state.Config, nil
-	} else if !errors.Is(stateErr, os.ErrNotExist) {
+	} else if errors.Is(stateErr, os.ErrNotExist) {
+		var marker struct { Outbounds []struct { Tag string `json:"tag"` } `json:"outbounds"` }
+		if err := json.Unmarshal(data, &marker); err != nil { return input, fmt.Errorf("decode sing-box config: %w", err) }
+		for _, outbound := range marker.Outbounds {
+			if outbound.Tag == singBoxDirectBypassTag || outbound.Tag == singBoxCSQTTDisabledTag {
+				return input, fmt.Errorf("sing-box panel state is missing for a managed config; refusing to discard disabled settings")
+			}
+		}
+	} else {
 		return input, fmt.Errorf("read sing-box panel state: %w", stateErr)
 	}
 	var raw map[string]any
