@@ -296,9 +296,9 @@ marker_install = "setup_csqtt_binary() {"
 if src.count(marker_install) != 1:
     raise SystemExit("expected exactly one CSQTT binary installation function")
 src = src.replace(marker_install, sing_box_installer + marker_install, 1)
-old_binary = '''    install -m 0755 "$UPLOAD_BINARY" /usr/local/bin/csqtt || \\
-        die "Не удалось установить новый бинарник csqtt"
-    echo "✓ csqtt установлен"'''
+old_binary = '''    install -m 0755 "$UPLOAD_BINARY" /usr/local/bin/csqtt-lalune || \\
+        die "Не удалось установить новый бинарник csqtt-lalune"
+    echo "✓ csqtt-lalune установлен"'''
 new_binary = old_binary + '''
     install_sing_box_binary'''
 if src.count(old_binary) != 1:
