@@ -332,6 +332,11 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	}
 	route, _ := raw["route"].(map[string]any)
 	input.FinalOutbound, _ = route["final"].(string)
+	// Older generated configs used the ordinary "direct" outbound for the
+	// separate Direct-exclusions list. New configs carry a dedicated internal
+	// direct-bypass outbound, allowing explicit Route -> DIRECT rules to remain
+	// in the ordered queue without being folded into the Direct tab.
+	legacyDirectExclusions := known[singBoxDirectBypassTag] == nil
 	for _, rawSet := range anySlice(route["rule_set"]) {
 		set, ok := rawSet.(map[string]any); if !ok { continue }
 		item := singBoxRuleSet{}
@@ -347,7 +352,7 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		domains, suffixes := stringSlice(rule["domain"]), stringSlice(rule["domain_suffix"])
 		keywords, regexes, cidrs := stringSlice(rule["domain_keyword"]), stringSlice(rule["domain_regex"]), stringSlice(rule["ip_cidr"])
 		ruleSets := stringSlice(rule["rule_set"])
-		if outbound == singBoxDirectBypassTag {
+		if outbound == singBoxDirectBypassTag || (legacyDirectExclusions && outbound == singBoxDirectTag) {
 			if len(keywords)+len(regexes)+len(ruleSets)+len(singBoxAdvancedFieldsFromRule(rule)) > 0 {
 				return input, fmt.Errorf("Direct exclusions contain unsupported advanced matchers; refusing to discard them")
 			}
