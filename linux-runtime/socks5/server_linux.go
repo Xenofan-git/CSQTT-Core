@@ -182,6 +182,9 @@ func (s *Server) acceptLoop(ctx context.Context, ln net.Listener, done chan stru
 		s.handlers.Wait()
 		s.mu.Lock()
 		if s.done == done {
+			if s.cancel != nil {
+				s.cancel()
+			}
 			s.listener = nil
 			s.running = false
 		}
@@ -291,6 +294,10 @@ func (s *Server) handleClient(serverCtx context.Context, client net.Conn) {
 }
 
 func (s *Server) handleConnect(ctx context.Context, client net.Conn, host string, port uint16) {
+	if port == 0 {
+		_ = writeReply(client, replyAddress, nil)
+		return
+	}
 	dialCtx, cancel := context.WithTimeout(ctx, s.cfg.DialTimeout)
 	defer cancel()
 	target, err := s.resolveTarget(dialCtx, host, port)
@@ -648,9 +655,6 @@ func readAddress(r io.Reader) (string, uint16, error) {
 		return "", 0, err
 	}
 	port := binary.BigEndian.Uint16(portBytes[:])
-	if port == 0 {
-		return "", 0, errors.New("SOCKS5 destination port must be non-zero")
-	}
 	return host, port, nil
 }
 
@@ -665,6 +669,9 @@ func parseUDPDatagram(packet []byte) (string, uint16, []byte, error) {
 	host, port, err := readAddress(reader)
 	if err != nil {
 		return "", 0, nil, err
+	}
+	if port == 0 {
+		return "", 0, nil, errors.New("SOCKS5 UDP destination port must be non-zero")
 	}
 	offset := len(packet) - reader.Len()
 	if offset > len(packet) {
