@@ -521,7 +521,9 @@ func TestSingBoxDNSHijackAndReverseMappingThroughSOCKSInbound(t *testing.T) {
 	}
 
 	// The client now connects by IP. reverse_mapping must recover the DNS
-	// domain so the ordered domain rule selects CSQTT rather than route.final=direct.
+	// domain for route matching, selecting CSQTT rather than route.final=direct.
+	// The SOCKS outbound may still receive the original IP as its destination;
+	// reverse_mapping is route metadata, not a requirement to rewrite SOCKS ATYP.
 	dataConn := dialInbound()
 	defer dataConn.Close()
 	connectIP := []byte{5, 1, 0, 1, 198, 51, 100, 42, 1, 187}
@@ -535,7 +537,7 @@ func TestSingBoxDNSHijackAndReverseMappingThroughSOCKSInbound(t *testing.T) {
 	if !bytes.Equal(echoed, payload) { t.Fatalf("echoed payload = %q, want %q", echoed, payload) }
 	select {
 	case target := <-targets:
-		if target != "dns-route.test:443" { t.Fatalf("reverse mapping did not preserve the queried domain; CSQTT received %q", target) }
+		if target != "198.51.100.42:443" { t.Fatalf("reverse-mapped domain rule selected CSQTT, but outbound destination was %q", target) }
 	case <-time.After(2 * time.Second):
 		t.Fatal("CSQTT outbound was not selected after DNS reverse mapping")
 	}
