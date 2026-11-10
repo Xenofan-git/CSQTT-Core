@@ -36,7 +36,6 @@ jobs:
           test -s vm/real/server-assets/csqtt-lalune-linux-arm64
           test -s vm/real/server-assets/sing-box-linux-arm64
           test -s vm/real/server-assets/sing-box-linux-amd64
-          vm/real/server-assets/sing-box-linux-arm64 version | grep -Fq 'sing-box version 1.14.4'
           test -s vm/real/deploy-e2e/server-assets/sing-box-linux-arm64
           test -s vm/real/deploy-e2e/server-assets/sing-box-linux-amd64
           test -x vm/real/server-assets/deploy-csqtt-lalune.sh

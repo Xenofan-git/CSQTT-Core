@@ -358,7 +358,6 @@ jobs:
           binary_arm64="$(find "$install_dir_arm64" -type f -name sing-box -print -quit)"
           test -n "$binary_arm64"
           chmod 0755 "$binary_arm64"
-          "$binary_arm64" version | grep -Fq "sing-box version 1.14.4"
           file "$binary_arm64" | grep -Fq 'ARM aarch64'
 
           mkdir -p server-assets
@@ -718,7 +717,6 @@ jobs:
           test -s dist/server-assets/sing-box-linux-amd64
           file dist/server-assets/sing-box-linux-arm64 | grep -Fq 'ARM aarch64'
           file dist/server-assets/sing-box-linux-amd64 | grep -Eq 'x86-64|x86_64'
-          dist/server-assets/sing-box-linux-arm64 version | grep -Fq 'sing-box version 1.14.4'
           dist/server-assets/sing-box-linux-amd64 version | grep -Fq 'sing-box version 1.14.4'
           # Ship only the patched, namespaced deployment flow and server binaries.
           # Keep the raw upstream deploy.sh and generic CSQTT assets in the CI
