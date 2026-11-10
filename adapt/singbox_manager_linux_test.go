@@ -547,6 +547,15 @@ func TestSingBoxManagerOwnsRemoteRuleSetCachePath(t *testing.T) {
 	if err:=manager.validateRuleSetCachePath(loaded);err==nil{t.Fatal("external cache path was accepted")}
 }
 
+func TestSingBoxManagerRejectsSymlinkedRemoteRuleSetCache(t *testing.T) {
+	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
+	manager:=NewSingBoxManager(newFakeSingBox(t,"exit 0"),config,filepath.Join(dir,"sing-box.log"))
+	input:=singBoxConfigInput{ListenAddress:"127.0.0.1:19080",RuleSets:[]singBoxRuleSet{{Type:"remote",Tag:"geo-test",Format:"binary",URL:"https://example.org/geo-test.srs"}}}
+	if err:=manager.normalizeRuleSetCachePath(&input);err!=nil{t.Fatal(err)}
+	if err:=os.Symlink(filepath.Join(dir,"outside.db"),input.RuleSetCachePath);err!=nil{t.Fatal(err)}
+	if err:=manager.validateRuleSetCachePath(input);err==nil||!strings.Contains(err.Error(),"non-symlink") {t.Fatalf("symlinked cache path was accepted: %v",err)}
+}
+
 func TestSingBoxManagerRejectsMissingPanelStateForManagedConfig(t *testing.T) {
 	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
 	manager:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexit 0"),config,filepath.Join(dir,"sing-box.log"))
