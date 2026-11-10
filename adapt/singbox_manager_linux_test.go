@@ -533,6 +533,16 @@ func TestSingBoxManagerPanelStatePreservesDisabledRulesAndOutbounds(t *testing.T
 	if !disabledCSQTT||disabledSOCKS{t.Fatalf("disabled connection state leaked into active routing config: %#v",outbounds)}
 }
 
+func TestSingBoxManagerRejectsMissingPanelStateForManagedConfig(t *testing.T) {
+	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
+	manager:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexit 0"),config,filepath.Join(dir,"sing-box.log"))
+	if err:=manager.SaveConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080",FinalOutbound:singBoxDirectTag});err!=nil{t.Fatal(err)}
+	if err:=os.Remove(manager.panelStatePath());err!=nil{t.Fatal(err)}
+	if _,err:=manager.LoadConfig();err==nil||!strings.Contains(err.Error(),"panel state is missing"){
+		t.Fatalf("missing panel state was not rejected: %v",err)
+	}
+}
+
 func TestSingBoxManagerRejectsPanelStateWhenActiveConfigChanges(t *testing.T) {
 	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
 	manager:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexit 0"),config,filepath.Join(dir,"sing-box.log"))
