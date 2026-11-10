@@ -578,9 +578,12 @@ func TestBuildSingBoxConfigSupportsExternalDefaultWithoutCSQTT(t *testing.T) {
 	if gotFinal := config["route"].(map[string]any)["final"]; gotFinal != "socks-hydra" { t.Fatalf("route.final=%v, want socks-hydra", gotFinal) }
 }
 
-func TestBuildSingBoxConfigRejectsMissingFallbackWhenCSQTTDisabled(t *testing.T) {
-	_, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19180"})
-	if err == nil || !strings.Contains(err.Error(), "select a default outbound") { t.Fatalf("missing explicit fallback error = %v", err) }
+func TestBuildSingBoxConfigUsesDIRECTFallbackWhenCSQTTDisabled(t *testing.T) {
+	encoded, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19180"})
+	if err != nil { t.Fatalf("DIRECT fallback should be available without CSQTT: %v", err) }
+	var config map[string]any
+	if err := json.Unmarshal(encoded, &config); err != nil { t.Fatal(err) }
+	if got := config["route"].(map[string]any)["final"]; got != singBoxDirectTag { t.Fatalf("route.final=%v, want DIRECT", got) }
 }
 
 
