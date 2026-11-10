@@ -1,0 +1,46 @@
+name: CSQTT Linux runtime adapter tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/csqtt-2.5.0-core
+    paths:
+      - linux-runtime/**
+      - .github/workflows/csqtt-linux-runtime-tests.yml
+
+permissions:
+  contents: read
+
+jobs:
+  linux-arm64:
+    name: Test independent CSQTT Linux runtime primitives on ARM64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.0
+          cache-dependency-path: linux-runtime/go.mod
+
+      - name: Check formatting
+        working-directory: linux-runtime
+        run: |
+          set -euxo pipefail
+          test -z "$(gofmt -l .)"
+
+      - name: Run race-enabled unit tests
+        working-directory: linux-runtime
+        run: |
+          set -euxo pipefail
+          go test -race -count=1 -v ./...
+
+      - name: Run static analysis
+        working-directory: linux-runtime
+        run: |
+          set -euxo pipefail
+          go vet ./...
