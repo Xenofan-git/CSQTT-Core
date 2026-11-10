@@ -337,7 +337,7 @@ func TestSingBoxFirstMatchingRuleWinsAndFinalOutboundIsUsed(t *testing.T) {
 	startCapture:=func(name string)(*Socks5Server,<-chan string){
 		t.Helper();targets:=make(chan string,4);server:=NewSocks5Server("127.0.0.1:0")
 		server.dialTCPOverride=func(target string)(net.Conn,error){select{case targets<-target:default:};return net.DialTimeout("tcp",echo.Addr().String(),2*time.Second)}
-		if err:=server.Start();err!=nil{t.Fatalf("start %s SOCKS5: %v",name,err)};t.Cleanup(func(){_=server.Stop()});return server,targets
+		if err:=server.Start();err!=nil{t.Fatalf("start %s SOCKS5: %v",name,err)};t.Cleanup(func(){server.Stop()});return server,targets
 	}
 	first,firstTargets:=startCapture("first-match");second,secondTargets:=startCapture("later-match");fallback,fallbackTargets:=startCapture("final")
 	input:=singBoxConfigInput{ListenAddress:reserveSingBoxTestAddress(t),FinalOutbound:"socks-final",SOCKS5:[]singBoxSOCKS5Outbound{
