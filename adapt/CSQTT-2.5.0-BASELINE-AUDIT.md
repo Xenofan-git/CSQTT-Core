@@ -76,7 +76,7 @@ Important source groups:
 - Rust server: `rust-server/main.rs`, `dataplane.rs`, `tokio_io.rs`, `net_setup.rs`, `tun_device.rs`, `tproxy.rs`, `proxy_route.rs`, `web_panel.rs`, `protocol.rs`, `model.rs`.
 - Android application/control plane: `MainActivity.kt`, `TunnelManager.kt`, `TunnelService.kt`, `SettingsStore.kt`, `DeployManager.kt`, `DeployTab.kt`, `DeployOperations.kt`, recovery policies, security stores, VK flows and CAPTCHA flows.
 
-The Rust client source has Unix support and a `--tun-uds` option; the server has Linux-specific dependencies and native TUN handling. This is a concrete basis for an ARM64 Linux port, but a successful Android build or an existing forked binary is not proof that the exact supplied 2.5.0 source builds and passes runtime acceptance on Debian ARM64. Build and test the exact pinned source.
+The Rust client source has Unix support and a `--tun-uds` option; the server has Linux-specific dependencies and native TUN handling. The client embeds `../domains.txt`, while the canonical file in the source tree is `app/src/main/assets/domains.txt`; the Linux build workflow must stage that exact asset at the expected path without editing upstream Rust code. The first baseline CI attempt exposed this packaging omission; the workflow now stages and hashes the canonical file before tests. This is a concrete basis for an ARM64 Linux port, but a successful Android build or an existing forked binary is not proof that the exact supplied 2.5.0 source builds and passes runtime acceptance on Debian ARM64. Build and test the exact pinned source.
 
 ## 5. Critical routing boundary and SOCKS5 gap
 
