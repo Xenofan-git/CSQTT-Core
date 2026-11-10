@@ -531,6 +531,22 @@ func TestSingBoxManagerPanelStatePreservesDisabledRulesAndOutbounds(t *testing.T
 	if !disabledCSQTT||disabledSOCKS{t.Fatalf("disabled connection state leaked into active routing config: %#v",outbounds)}
 }
 
+func TestSingBoxManagerOwnsRemoteRuleSetCachePath(t *testing.T) {
+	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
+	manager:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexit 0"),config,filepath.Join(dir,"sing-box.log"))
+	input:=singBoxConfigInput{ListenAddress:"127.0.0.1:19080",RuleSets:[]singBoxRuleSet{{Type:"remote",Tag:"geo-test",Format:"binary",URL:"https://example.org/geo-test.srs"}}}
+	if err:=manager.SaveConfig(input);err!=nil{t.Fatalf("SaveConfig remote Rule Set: %v",err)}
+	loaded,err:=manager.LoadConfig();if err!=nil{t.Fatalf("LoadConfig: %v",err)}
+	want:=filepath.Join(dir,"sing-box-cache.db")
+	if loaded.RuleSetCachePath!=want{t.Fatalf("cache path=%q want %q",loaded.RuleSetCachePath,want)}
+	data,err:=os.ReadFile(config);if err!=nil{t.Fatal(err)}
+	var raw map[string]any;if err:=json.Unmarshal(data,&raw);err!=nil{t.Fatal(err)}
+	cache:=raw["experimental"].(map[string]any)["cache_file"].(map[string]any)
+	if cache["path"]!=want||cache["enabled"]!=true{t.Fatalf("manager cache config=%#v",cache)}
+	loaded.RuleSetCachePath=filepath.Join(dir,"..","outside-cache.db")
+	if err:=manager.validateRuleSetCachePath(loaded);err==nil{t.Fatal("external cache path was accepted")}
+}
+
 func TestSingBoxManagerRejectsMissingPanelStateForManagedConfig(t *testing.T) {
 	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
 	manager:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexit 0"),config,filepath.Join(dir,"sing-box.log"))
