@@ -16,8 +16,10 @@ import (
 
 const (
 	singBoxInboundTag = "csqtt-route-in"
-	singBoxDirectTag  = "direct"
-	singBoxCSQTTTag   = "csqtt"
+	singBoxDirectTag        = "direct"
+	singBoxDirectBypassTag  = "direct-bypass"
+	singBoxCSQTTTag         = "csqtt"
+	singBoxDNSLocalTag      = "csqtt-dns-local"
 )
 
 type singBoxSOCKS5Outbound struct {
@@ -56,6 +58,10 @@ type singBoxConfigInput struct {
 	CSQTTAddress  string
 	CSQTTEnabled  bool
 	FinalOutbound string
+	DNSMode       string
+	DNSServer     string
+	DNSPort       int
+	DNSStrategy   string
 	DirectDomains        []string
 	DirectDomainSuffixes []string
 	DirectIPCIDRs        []string
@@ -66,6 +72,7 @@ type singBoxConfigInput struct {
 
 type singBoxConfig struct {
 	Log      map[string]any      `json:"log"`
+	DNS      map[string]any      `json:"dns"`
 	Inbounds []map[string]any    `json:"inbounds"`
 	Outbounds []map[string]any   `json:"outbounds"`
 	Route    map[string]any      `json:"route"`
@@ -280,8 +287,11 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	if listenIP == nil || listenIP.IsUnspecified() || listenIP.IsMulticast() || listenIP.IsLinkLocalUnicast() || (!listenIP.IsLoopback() && !listenIP.IsPrivate()) {
 		return nil, fmt.Errorf("listen address must be loopback or a specific private LAN address; wildcard/public binds are forbidden")
 	}
-	outbounds := []map[string]any{{"type": "direct", "tag": singBoxDirectTag}}
-	knownOutbounds := map[string]struct{}{singBoxDirectTag: {}}
+	outbounds := []map[string]any{
+		{"type": "direct", "tag": singBoxDirectTag},
+		{"type": "direct", "tag": singBoxDirectBypassTag},
+	}
+	knownOutbounds := map[string]struct{}{singBoxDirectTag: {}, singBoxDirectBypassTag: {}}
 	csqttEnabled := input.CSQTTEnabled || strings.TrimSpace(input.CSQTTAddress) != ""
 	if csqttEnabled {
 		csqttHost, csqttPort, err := singBoxHostPort(input.CSQTTAddress, "CSQTT SOCKS address")
@@ -299,6 +309,40 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	if err != nil { return nil, fmt.Errorf("Direct domain suffixes: %w", err) }
 	directCIDRs, err := normalizeSingBoxCIDRs(input.DirectIPCIDRs)
 	if err != nil { return nil, fmt.Errorf("Direct IP/CIDR: %w", err) }
+
+	dnsMode := strings.ToLower(strings.TrimSpace(input.DNSMode))
+	if dnsMode == "" { dnsMode = "local" }
+	dnsStrategy := strings.TrimSpace(input.DNSStrategy)
+	if dnsStrategy == "" { dnsStrategy = "prefer_ipv4" }
+	switch dnsStrategy {
+	case "prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only":
+	default:
+		return nil, fmt.Errorf("DNS strategy must be prefer_ipv4, prefer_ipv6, ipv4_only, or ipv6_only")
+	}
+	dnsServer := map[string]any{"type": "local", "tag": singBoxDNSLocalTag, "prefer_go": true}
+	switch dnsMode {
+	case "local":
+		if strings.TrimSpace(input.DNSServer) != "" || input.DNSPort != 0 {
+			return nil, fmt.Errorf("local DNS mode does not accept a custom server or port")
+		}
+	case "udp":
+		host := strings.TrimSpace(input.DNSServer)
+		if net.ParseIP(host) == nil {
+			return nil, fmt.Errorf("UDP DNS server must be an IP address to avoid resolver bootstrap loops")
+		}
+		port := input.DNSPort
+		if port == 0 { port = 53 }
+		if port < 1 || port > 65535 { return nil, fmt.Errorf("UDP DNS server port must be between 1 and 65535") }
+		dnsServer = map[string]any{"type": "udp", "tag": singBoxDNSLocalTag, "server": host, "server_port": port, "detour": singBoxDirectTag}
+	default:
+		return nil, fmt.Errorf("DNS mode must be local or udp")
+	}
+	dnsConfig := map[string]any{
+		"servers": []map[string]any{dnsServer},
+		"final": singBoxDNSLocalTag,
+		"strategy": dnsStrategy,
+		"reverse_mapping": true,
+	}
 
 	for _, proxy := range input.SOCKS5 {
 		if !proxy.Enabled {
@@ -362,13 +406,22 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		ruleSetConfigs = append(ruleSetConfigs, entry)
 	}
 
-	rules := make([]map[string]any, 0, 2+len(input.Rules))
+	rules := make([]map[string]any, 0, 3+len(input.Rules))
+	// DNS sent through the SOCKS inbound is handed to sing-box's own DNS
+	// module before sniffing or ordinary outbound selection. No system DNS
+	// settings, listeners, routes, or firewall rules are modified.
+	rules = append(rules, map[string]any{
+		"inbound": []string{singBoxInboundTag},
+		"network": []string{"tcp", "udp"},
+		"port": []int{53},
+		"action": "hijack-dns",
+	})
 	rules = append(rules, map[string]any{
 		"inbound": []string{singBoxInboundTag},
 		"action": "sniff",
 	})
 	if len(directDomains) > 0 || len(directSuffixes) > 0 || len(directCIDRs) > 0 {
-		rules = append(rules, makeSingBoxRouteRule(directDomains, directSuffixes, nil, nil, directCIDRs, singBoxDirectTag))
+		rules = append(rules, makeSingBoxRouteRule(directDomains, directSuffixes, nil, nil, directCIDRs, singBoxDirectBypassTag))
 	}
 
 	seenRuleIDs := make(map[string]struct{}, len(input.Rules))
@@ -407,6 +460,9 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			if _, ok := seenTags[tag]; ok { return nil, fmt.Errorf("route rule %q contains duplicate Rule Set %q", item.ID, tag) }
 			seenTags[tag] = struct{}{}
 		}
+		if item.Outbound == singBoxDirectBypassTag {
+			return nil, fmt.Errorf("route rule %q cannot target the internal Direct-exclusions outbound", item.ID)
+		}
 		if _, exists := knownOutbounds[item.Outbound]; !exists {
 			return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound)
 		}
@@ -428,10 +484,14 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	finalOutbound := strings.TrimSpace(input.FinalOutbound)
 	if finalOutbound == "" && csqttEnabled { finalOutbound = singBoxCSQTTTag }
 	if finalOutbound == "" { return nil, fmt.Errorf("select a default outbound for unmatched traffic") }
+	if finalOutbound == singBoxDirectBypassTag {
+		return nil, fmt.Errorf("default outbound cannot use the internal Direct-exclusions outbound")
+	}
 	if _, ok := knownOutbounds[finalOutbound]; !ok { return nil, fmt.Errorf("default outbound %q is not configured", finalOutbound) }
 
 	config := singBoxConfig{
 		Log: map[string]any{"level": "info", "timestamp": true},
+		DNS: dnsConfig,
 		Inbounds: []map[string]any{{
 			"type": "socks", "tag": singBoxInboundTag,
 			"listen": listenHost, "listen_port": listenPort,
