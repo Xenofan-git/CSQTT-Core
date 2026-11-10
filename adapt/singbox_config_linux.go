@@ -296,6 +296,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		{"type": "direct", "tag": singBoxDirectBypassTag},
 	}
 	knownOutbounds := map[string]struct{}{singBoxDirectTag: {}, singBoxDirectBypassTag: {}}
+	allOutbounds := map[string]struct{}{singBoxDirectTag: {}, singBoxDirectBypassTag: {}, singBoxCSQTTTag: {}}
 	csqttAddress := strings.TrimSpace(input.CSQTTAddress)
 	csqttEnabled := input.CSQTTEnabled || (csqttAddress != "" && !input.CSQTTExplicitlyDisabled)
 	if input.CSQTTExplicitlyDisabled { csqttEnabled = false }
@@ -354,16 +355,15 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 
 	if len(input.SOCKS5) > 15 { return nil, fmt.Errorf("at most 15 user SOCKS5 outbounds are allowed") }
 	for _, proxy := range input.SOCKS5 {
-		if !proxy.Enabled {
-			continue
-		}
 		if !singBoxIDPattern.MatchString(proxy.ID) {
 			return nil, fmt.Errorf("invalid SOCKS5 outbound ID %q", proxy.ID)
 		}
 		tag := "socks-" + proxy.ID
-		if _, exists := knownOutbounds[tag]; exists {
+		if _, exists := allOutbounds[tag]; exists {
 			return nil, fmt.Errorf("duplicate outbound tag %q", tag)
 		}
+		allOutbounds[tag] = struct{}{}
+		if !proxy.Enabled { continue }
 		host, port, err := singBoxOutboundHostPort(proxy.Server, strconv.Itoa(proxy.ServerPort), "SOCKS5 outbound "+tag)
 		if err != nil {
 			return nil, err
@@ -454,7 +454,6 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			if item.Outbound != singBoxCSQTTTag { return nil, fmt.Errorf("the system CSQTT rule must use the CSQTT outbound") }
 			if item.Enabled && !csqttEnabled { return nil, fmt.Errorf("the system CSQTT rule is enabled while the CSQTT connection is disabled") }
 		}
-		if !item.Enabled { continue }
 		domains, err := normalizeSingBoxDomains(item.Domains, false)
 		if err != nil { return nil, fmt.Errorf("route rule %q domains: %w", item.ID, err) }
 		suffixes, err := normalizeSingBoxDomains(item.DomainSuffixes, true)
@@ -467,21 +466,26 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		if err != nil { return nil, fmt.Errorf("route rule %q IP/CIDR: %w", item.ID, err) }
 		if err := validateSingBoxAdvancedRouteFields(item.Advanced); err != nil { return nil, fmt.Errorf("route rule %q advanced fields: %w", item.ID, err) }
 		matcherCount := len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs)+len(item.RuleSets)
-		if isCSQTTSystem {
-			if matcherCount != 0 || singBoxAdvancedHasMatcher(item.Advanced) { return nil, fmt.Errorf("system CSQTT rule is a catch-all connection and cannot contain matchers") }
-			rules = append(rules, map[string]any{"inbound": []string{singBoxInboundTag}, "action": "route", "outbound": singBoxCSQTTTag})
-			continue
-		}
-		if matcherCount == 0 && !singBoxAdvancedHasMatcher(item.Advanced) { return nil, fmt.Errorf("route rule %q has no matchers", item.ID) }
 		seenTags := make(map[string]struct{}, len(item.RuleSets))
 		for _, tag := range item.RuleSets {
 			if _, ok := knownRuleSets[tag]; !ok { return nil, fmt.Errorf("route rule %q references unknown Rule Set %q", item.ID, tag) }
 			if _, ok := seenTags[tag]; ok { return nil, fmt.Errorf("route rule %q contains duplicate Rule Set %q", item.ID, tag) }
 			seenTags[tag] = struct{}{}
 		}
+		if isCSQTTSystem {
+			if matcherCount != 0 || singBoxAdvancedHasMatcher(item.Advanced) { return nil, fmt.Errorf("system CSQTT rule is a catch-all connection and cannot contain matchers") }
+			if item.Enabled {
+				if !csqttEnabled { return nil, fmt.Errorf("the system CSQTT rule is enabled while the CSQTT connection is disabled") }
+				rules = append(rules, map[string]any{"inbound": []string{singBoxInboundTag}, "action": "route", "outbound": singBoxCSQTTTag})
+			}
+			continue
+		}
 		if item.Outbound == singBoxDirectBypassTag { return nil, fmt.Errorf("route rule %q cannot target the internal Direct-exclusions outbound", item.ID) }
-		if _, exists := knownOutbounds[item.Outbound]; !exists { return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound) }
+		if _, exists := allOutbounds[item.Outbound]; !exists { return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound) }
 		if isDirectSystem && item.Outbound != singBoxDirectTag { return nil, fmt.Errorf("system DIRECT rule must target DIRECT") }
+		if !item.Enabled { continue }
+		if matcherCount == 0 && !singBoxAdvancedHasMatcher(item.Advanced) { return nil, fmt.Errorf("route rule %q has no matchers", item.ID) }
+		if _, exists := knownOutbounds[item.Outbound]; !exists { return nil, fmt.Errorf("route rule %q references unavailable outbound %q", item.ID, item.Outbound) }
 		rule := makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs, item.Outbound)
 		if item.Advanced["type"] != nil {
 			var ruleType string
