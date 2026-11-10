@@ -302,18 +302,18 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	knownOutbounds := map[string]struct{}{singBoxDirectTag: {}, singBoxDirectBypassTag: {}}
 	allOutbounds := map[string]struct{}{singBoxDirectTag: {}, singBoxDirectBypassTag: {}, singBoxCSQTTTag: {}}
 	csqttAddress := strings.TrimSpace(input.CSQTTAddress)
-	csqttEnabled := input.CSQTTEnabled || (csqttAddress != "" && !input.CSQTTExplicitlyDisabled)
-	if input.CSQTTExplicitlyDisabled { csqttEnabled = false }
-	if csqttEnabled && csqttAddress == "" { return nil, fmt.Errorf("CSQTT is enabled but its SOCKS endpoint is empty") }
+	// CSQTT Core runtime state is independent from route-rule activation.
+	// Keep its SOCKS outbound configured whenever the endpoint exists; the
+	// first-tab Connect button owns the Core process, while system-csqtt owns
+	// the traffic matchers and its own enabled state in the Route queue.
 	if csqttAddress != "" {
 		csqttHost, csqttPort, err := singBoxHostPort(csqttAddress, "CSQTT SOCKS address")
 		if err != nil { return nil, err }
 		csqttIP := net.ParseIP(csqttHost)
 		if csqttIP == nil || !csqttIP.IsLoopback() { return nil, fmt.Errorf("CSQTT SOCKS outbound must use the local loopback listener") }
 		if listenHost == csqttHost && listenPort == csqttPort { return nil, fmt.Errorf("sing-box inbound and CSQTT SOCKS outbound must use different endpoints") }
-		tag := singBoxCSQTTDisabledTag
-		if csqttEnabled { tag = singBoxCSQTTTag; knownOutbounds[singBoxCSQTTTag] = struct{}{} }
-		outbounds = append(outbounds, map[string]any{"type":"socks","tag":tag,"server":csqttHost,"server_port":csqttPort,"version":"5"})
+		outbounds = append(outbounds, map[string]any{"type":"socks","tag":singBoxCSQTTTag,"server":csqttHost,"server_port":csqttPort,"version":"5"})
+		knownOutbounds[singBoxCSQTTTag] = struct{}{}
 	}
 
 	directDomains, err := normalizeSingBoxDomains(input.DirectDomains, false)
@@ -459,7 +459,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			if systemCSQTTSeen { return nil, fmt.Errorf("the system CSQTT rule may appear only once") }
 			systemCSQTTSeen = true
 			if item.Outbound != singBoxCSQTTTag { return nil, fmt.Errorf("the system CSQTT rule must use the CSQTT outbound") }
-			if item.Enabled && !csqttEnabled { return nil, fmt.Errorf("the system CSQTT rule is enabled while the CSQTT connection is disabled") }
+			if item.Enabled && csqttAddress == "" { return nil, fmt.Errorf("the CSQTT route rule is enabled but its SOCKS endpoint is empty") }
 		}
 		domains, err := normalizeSingBoxDomains(item.Domains, false)
 		if err != nil { return nil, fmt.Errorf("route rule %q domains: %w", item.ID, err) }
@@ -479,13 +479,8 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 			if _, ok := seenTags[tag]; ok { return nil, fmt.Errorf("route rule %q contains duplicate Rule Set %q", item.ID, tag) }
 			seenTags[tag] = struct{}{}
 		}
-		if isCSQTTSystem {
-			if matcherCount != 0 || singBoxAdvancedHasMatcher(item.Advanced) { return nil, fmt.Errorf("system CSQTT rule is a catch-all connection and cannot contain matchers") }
-			if item.Enabled {
-				if !csqttEnabled { return nil, fmt.Errorf("the system CSQTT rule is enabled while the CSQTT connection is disabled") }
-				rules = append(rules, map[string]any{"inbound": []string{singBoxInboundTag}, "action": "route", "outbound": singBoxCSQTTTag})
-			}
-			continue
+		if isCSQTTSystem && item.Enabled && matcherCount == 0 && !singBoxAdvancedHasMatcher(item.Advanced) {
+			return nil, fmt.Errorf("the CSQTT route rule must contain at least one domain, IP/CIDR, or Rule Set matcher")
 		}
 		if item.Outbound == singBoxDirectBypassTag { return nil, fmt.Errorf("route rule %q cannot target the internal Direct-exclusions outbound", item.ID) }
 		if _, exists := allOutbounds[item.Outbound]; !exists { return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound) }

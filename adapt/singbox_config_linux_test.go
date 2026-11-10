@@ -199,12 +199,12 @@ func TestBuildSingBoxConfigValidatesDisabledRuleReferences(t *testing.T) {
 
 func TestBuildSingBoxConfigPreservesSystemRouteCardOrder(t *testing.T) {
 	input := singBoxConfigInput{
-		ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500", CSQTTEnabled: true,
+		ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:12500", CSQTTEnabled: false, CSQTTExplicitlyDisabled: true,
 		SOCKS5: []singBoxSOCKS5Outbound{{ID:"one",Server:"192.0.2.10",ServerPort:1080,Enabled:true},{ID:"two",Server:"192.0.2.11",ServerPort:1080,Enabled:true}},
 		Rules: []singBoxRouteRule{
 			{ID:singBoxDirectRuleID,Domains:[]string{"direct-first.test"},Outbound:singBoxDirectTag,Enabled:true},
 			{ID:"user-one",Domains:[]string{"first.test"},Outbound:"socks-one",Enabled:true},
-			{ID:singBoxCSQTTRuleID,Outbound:singBoxCSQTTTag,Enabled:true},
+			{ID:singBoxCSQTTRuleID,Domains:[]string{"csqtt-only.test"},Outbound:singBoxCSQTTTag,Enabled:true},
 			{ID:"user-two",Domains:[]string{"after-csqtt.test"},Outbound:"socks-two",Enabled:true},
 		},
 	}
@@ -217,14 +217,25 @@ func TestBuildSingBoxConfigPreservesSystemRouteCardOrder(t *testing.T) {
 	if len(got)!=len(want){t.Fatalf("ordered route count=%d want=%d: %#v",len(got),len(want),got)}
 	for i:=range want{if got[i]!=want[i]{t.Fatalf("route order=%#v want=%#v",got,want)}}
 	if config["route"].(map[string]any)["final"]!=singBoxDirectTag{t.Fatalf("system card must not become hidden route.final: %#v",config["route"])}
+	csqttRule := rules[2].(map[string]any)
+	if domains := stringSlice(csqttRule["domain"]); len(domains) != 1 || domains[0] != "csqtt-only.test" {
+		t.Fatalf("CSQTT system rule lost its domain matcher: %#v", csqttRule)
+	}
+	var csqttOutbound bool
+	for _, raw := range config["outbounds"].([]any) {
+		if raw.(map[string]any)["tag"] == singBoxCSQTTTag { csqttOutbound = true }
+	}
+	if !csqttOutbound { t.Fatal("CSQTT outbound must remain configured while Core runtime state is disabled") }
 }
 
 func TestBuildSingBoxConfigRejectsInvalidSystemRouteCardsAndRuleOverflow(t *testing.T) {
 	base:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500",CSQTTEnabled:true}
 	badOrder:=base;badOrder.Rules=[]singBoxRouteRule{{ID:"user",Domains:[]string{"x.test"},Outbound:singBoxCSQTTTag,Enabled:true},{ID:singBoxDirectRuleID,Domains:[]string{"direct.test"},Outbound:singBoxDirectTag,Enabled:true}}
 	if _,err:=buildSingBoxConfig(badOrder);err==nil||!strings.Contains(err.Error(),"top of the Route queue"){t.Fatalf("misplaced DIRECT card error=%v",err)}
-	badCSQTT:=base;badCSQTT.CSQTTExplicitlyDisabled=true;badCSQTT.CSQTTEnabled=false;badCSQTT.Rules=[]singBoxRouteRule{{ID:singBoxCSQTTRuleID,Outbound:singBoxCSQTTTag,Enabled:true}}
-	if _,err:=buildSingBoxConfig(badCSQTT);err==nil||!strings.Contains(err.Error(),"connection is disabled"){t.Fatalf("enabled disabled-CSQTT card error=%v",err)}
+	badCSQTT:=base;badCSQTT.CSQTTAddress="";badCSQTT.CSQTTEnabled=false;badCSQTT.CSQTTExplicitlyDisabled=true;badCSQTT.Rules=[]singBoxRouteRule{{ID:singBoxCSQTTRuleID,Domains:[]string{"csqtt.test"},Outbound:singBoxCSQTTTag,Enabled:true}}
+	if _,err:=buildSingBoxConfig(badCSQTT);err==nil||!strings.Contains(err.Error(),"SOCKS endpoint is empty"){t.Fatalf("enabled CSQTT rule without endpoint error=%v",err)}
+	disabledCSQTT:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",Rules:[]singBoxRouteRule{{ID:singBoxCSQTTRuleID,Outbound:singBoxCSQTTTag,Enabled:false}}}
+	if _,err:=buildSingBoxConfig(disabledCSQTT);err!=nil{t.Fatalf("disabled CSQTT rule without endpoint should remain editable: %v",err)}
 	overflow:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",SOCKS5:[]singBoxSOCKS5Outbound{{ID:"proxy",Server:"192.0.2.10",ServerPort:1080,Enabled:true}}}
 	for i:=0;i<16;i++{overflow.Rules=append(overflow.Rules,singBoxRouteRule{ID:fmt.Sprintf("rule-%d",i),Domains:[]string{fmt.Sprintf("r%d.test",i)},Outbound:"socks-proxy",Enabled:true})}
 	if _,err:=buildSingBoxConfig(overflow);err==nil||!strings.Contains(err.Error(),"15 user route rules"){t.Fatalf("route rule overflow error=%v",err)}

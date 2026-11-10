@@ -526,9 +526,11 @@ func TestSingBoxManagerPanelStatePreservesDisabledRulesAndOutbounds(t *testing.T
 	if info.Mode().Perm()!=0600{t.Fatalf("panel state permissions=%o, want 0600",info.Mode().Perm())}
 	data,err:=os.ReadFile(config);if err!=nil{t.Fatal(err)}
 	var raw map[string]any;if err:=json.Unmarshal(data,&raw);err!=nil{t.Fatal(err)}
-	outbounds:=raw["outbounds"].([]any);var disabledCSQTT,disabledSOCKS bool
-	for _,item:=range outbounds{entry:=item.(map[string]any);if entry["tag"]==singBoxCSQTTDisabledTag{disabledCSQTT=true};if entry["tag"]=="socks-disabled"{disabledSOCKS=true}}
-	if !disabledCSQTT||disabledSOCKS{t.Fatalf("disabled connection state leaked into active routing config: %#v",outbounds)}
+	outbounds:=raw["outbounds"].([]any);var configuredCSQTT,disabledSOCKS bool
+	for _,item:=range outbounds{entry:=item.(map[string]any);if entry["tag"]==singBoxCSQTTTag{configuredCSQTT=true};if entry["tag"]==singBoxCSQTTDisabledTag{t.Fatal("legacy disabled CSQTT tag must be migrated to the configured endpoint")};if entry["tag"]=="socks-disabled"{disabledSOCKS=true}}
+	if !configuredCSQTT||disabledSOCKS{t.Fatalf("CSQTT outbound must stay configured independently of Core runtime state: %#v",outbounds)}
+	routeRules:=raw["route"].(map[string]any)["rules"].([]any)
+	for _,item:=range routeRules{if item.(map[string]any)["outbound"]==singBoxCSQTTTag{t.Fatal("disabled CSQTT route card must not emit an active route rule")}}
 }
 
 func TestSingBoxManagerOwnsRemoteRuleSetCachePath(t *testing.T) {
@@ -624,8 +626,8 @@ func TestSingBoxManagerMigratesLegacyDirectExclusions(t *testing.T) {
 	if err := os.WriteFile(config, []byte(legacy), 0600); err != nil { t.Fatal(err) }
 	loaded, err := manager.LoadConfig()
 	if err != nil { t.Fatalf("load legacy config: %v", err) }
-	if len(loaded.DirectDomains) != 1 || loaded.DirectDomains[0] != "legacy-bypass.example" || len(loaded.Rules) != 1 || loaded.Rules[0].ID != singBoxCSQTTRuleID || !loaded.Rules[0].Enabled || loaded.FinalOutbound != singBoxDirectTag {
-		t.Fatalf("legacy Direct exclusion / CSQTT fallback migration failed: %#v", loaded)
+	if len(loaded.DirectDomains) != 1 || loaded.DirectDomains[0] != "legacy-bypass.example" || len(loaded.Rules) != 1 || loaded.Rules[0].ID != singBoxCSQTTRuleID || loaded.Rules[0].Enabled || loaded.FinalOutbound != singBoxDirectTag {
+		t.Fatalf("legacy Direct exclusion / CSQTT catch-all must migrate to a disabled editable CSQTT rule: %#v", loaded)
 	}
 }
 

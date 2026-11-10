@@ -381,7 +381,8 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 		csqttPort, ok := csqtt["server_port"].(float64)
 		if csqttHost == "" || !ok || csqttPort < 1 || csqttPort > 65535 { return input, fmt.Errorf("invalid CSQTT SOCKS endpoint") }
 		input.CSQTTAddress = net.JoinHostPort(csqttHost, strconv.Itoa(int(csqttPort)))
-		input.CSQTTEnabled = !input.CSQTTExplicitlyDisabled
+		// Endpoint configuration is independent of whether the Core process is currently connected.
+		input.CSQTTEnabled = input.CSQTTAddress != ""
 	}
 	for tag, entry := range known {
 		if !strings.HasPrefix(tag, "socks-") { continue }
@@ -422,13 +423,12 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 			continue
 		}
 		if outbound == "" || known[outbound] == nil { return input, fmt.Errorf("route references missing outbound %q", outbound) }
-		matcherCount := len(domains)+len(suffixes)+len(keywords)+len(regexes)+len(cidrs)+len(ruleSets)+len(advanced)
 		id := fmt.Sprintf("loaded-%d", len(input.Rules)+1)
 		if outbound == singBoxDirectTag && !directSystemSeen {
 			id = singBoxDirectRuleID
 			directSystemSeen = true
 		}
-		if outbound == singBoxCSQTTTag && matcherCount == 0 && !csqttSystemSeen {
+		if outbound == singBoxCSQTTTag && !csqttSystemSeen {
 			id = singBoxCSQTTRuleID
 			csqttSystemSeen = true
 		}
@@ -437,8 +437,10 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 	// Migrate the former implicit CSQTT route.final fallback into an explicit
 	// catch-all card at the end of the ordered queue. Unmatched traffic then
 	// falls back to DIRECT instead of silently selecting CSQTT.
-	if input.FinalOutbound == singBoxCSQTTTag && input.CSQTTEnabled && !csqttSystemSeen {
-		input.Rules = append(input.Rules, singBoxRouteRule{ID:singBoxCSQTTRuleID, Outbound:singBoxCSQTTTag, Enabled:true})
+	if input.FinalOutbound == singBoxCSQTTTag && !csqttSystemSeen {
+		// Legacy route.final=csqtt was an implicit catch-all. Do not recreate it
+		// as an unconditional rule: migrate it to a disabled, editable CSQTT card.
+		input.Rules = append(input.Rules, singBoxRouteRule{ID:singBoxCSQTTRuleID, Outbound:singBoxCSQTTTag, Enabled:false})
 		csqttSystemSeen = true
 	}
 	if input.FinalOutbound == singBoxCSQTTTag { input.FinalOutbound = singBoxDirectTag }
