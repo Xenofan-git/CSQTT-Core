@@ -483,6 +483,9 @@ func (m *SingBoxManager) validateRuleSetCachePath(input singBoxConfigInput) erro
 		if input.RuleSetCachePath != "" { return fmt.Errorf("unexpected Rule Set cache path without remote Rule Sets") }
 		return nil
 	}
+	// Legacy configs created before persistent Rule Set caching may still
+	// start; the next SaveConfig migrates them to the manager-owned cache.
+	if input.RuleSetCachePath == "" { return nil }
 	expected := filepath.Join(filepath.Dir(m.configPath), "sing-box-cache.db")
 	if input.RuleSetCachePath != expected || !filepath.IsAbs(input.RuleSetCachePath) || filepath.Clean(input.RuleSetCachePath) != input.RuleSetCachePath {
 		return fmt.Errorf("remote Rule Set cache path must be the manager-owned cache file")
