@@ -168,8 +168,9 @@ func TestBuildSingBoxConfigDNSModesAndValidation(t *testing.T) {
 	if err := json.Unmarshal(udp, &udpConfig); err != nil { t.Fatal(err) }
 	udpDNS := udpConfig["dns"].(map[string]any)
 	udpServer := udpDNS["servers"].([]any)[0].(map[string]any)
-	if udpServer["type"] != "udp" || udpServer["server"] != "127.0.0.1" || udpServer["server_port"] != float64(5353) || udpServer["detour"] != singBoxDirectTag || udpDNS["strategy"] != "ipv6_only" {
-		t.Fatalf("UDP DNS server configuration: %#v / %#v", udpDNS, udpServer)
+	_, hasDNSDetour := udpServer["detour"]
+	if udpServer["type"] != "udp" || udpServer["server"] != "127.0.0.1" || udpServer["server_port"] != float64(5353) || hasDNSDetour || udpDNS["strategy"] != "ipv6_only" {
+		t.Fatalf("UDP DNS server configuration must not set an explicit DIRECT detour: %#v / %#v", udpDNS, udpServer)
 	}
 
 	invalid := []struct{name string; input singBoxConfigInput}{
