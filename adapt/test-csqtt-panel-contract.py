@@ -286,9 +286,12 @@ if "Переподключите туннель CSQTT" not in html:
 for token in ('id="page-singbox"', 'id="singboxStart"', 'id="singboxStop"', 'id="singboxSave"', 'id="singboxSaveEngine"', 'id="singboxLoadEngine"', 'id="singboxDNSMode"', 'id="singboxDNSServer"', 'id="singboxDNSPort"', 'id="singboxDNSStrategy"', "req('/singbox/config')", "req('/singbox/status')", "req('/singbox/logs')"):
     if token not in html:
         raise SystemExit("sing-box panel contract missing: " + token)
-for token in ("function refreshSingBoxDNSMode()", "DNSMode:dnsMode", "DNSServer:dnsMode==='udp'?", "DNSPort:dnsMode==='udp'?", "DNSStrategy:$('singboxDNSStrategy').value", "ID:'system-direct'", "ID:'system-csqtt'", "function moveRouteRule(index,delta)", "userRules.length>=15", "CSQTTExplicitlyDisabled:!csqttEnabled"):
+for token in ("function refreshSingBoxDNSMode()", "DNSMode:dnsMode", "DNSServer:dnsMode==='udp'?", "DNSPort:dnsMode==='udp'?", "DNSStrategy:$('singboxDNSStrategy').value", "ID:'system-direct'", "ID:'system-csqtt'", "function moveRouteRule(index,delta)", "userRules.length>=15", "function singBoxOutboundTags(includeDisabled=false)", "if($('singboxCsqtt').value.trim())tags.push('csqtt')", "RuleSets:ruleSets()", "Enabled:!!get('Enabled')?.checked"):
     if token not in js:
         raise SystemExit("sing-box DNS / route panel contract missing: " + token)
+
+if 'singboxCsqttEnabled' in html or 'singboxCsqttEnabled' in js or 'CSQTTEnabled:' in js or 'CSQTTExplicitlyDisabled:' in js:
+    raise SystemExit("CSQTT Core runtime state must not be coupled to Sing-Box route rule activation")
 
 print(
     f"CSQTT panel contract OK: {len(parser.button_ids)} fixed buttons, "

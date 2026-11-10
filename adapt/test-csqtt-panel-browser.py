@@ -109,7 +109,7 @@ def main():
         elif path == "/singbox/status":
             body = {"running": False, "pid": 0, "configured": True, "log_path": "/tmp/sing-box.log"}
         elif path == "/singbox/config" and method == "GET":
-            body = {"configured": True, "config": {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"","CSQTTEnabled":False,"FinalOutbound":"socks-hydra","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[{"ID":"hydra","Server":"192.0.2.10","ServerPort":1080,"Enabled":True},{"ID":"disabled","Server":"192.0.2.11","ServerPort":1080,"Enabled":False}],"Rules":[]}}
+            body = {"configured": True, "config": {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:12500","CSQTTEnabled":False,"FinalOutbound":"socks-hydra","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[{"ID":"hydra","Server":"192.0.2.10","ServerPort":1080,"Enabled":True},{"ID":"disabled","Server":"192.0.2.11","ServerPort":1080,"Enabled":False}],"Rules":[]}}
         elif path == "/singbox/config" and method == "PUT":
             singbox_saved.update(json.loads(request.post_data or "{}"))
             body = {"ok": True}
@@ -226,6 +226,9 @@ def main():
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert route_cards.count() == 3
             route_cards.nth(1).locator('[data-field="Domains"]').fill("user-route.example")
+            route_cards.nth(1).locator('[data-field="Outbound"]').select_option("socks-hydra")
+            route_cards.nth(2).locator('[data-field="Enabled"]').check()
+            route_cards.nth(2).locator('[data-field="Domains"]').fill("csqtt-route.example")
             route_cards.nth(2).locator("[data-move-route-rule]").first.click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert [route_cards.nth(i).get_attribute("data-system-rule") for i in range(3)] == ["direct", "csqtt", None], (
@@ -234,7 +237,7 @@ def main():
             page.locator("#singboxSave").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('Конфигурация проверена sing-box и сохранена')")
             assert singbox_saved["Rules"][0]["ID"] == "system-direct" and singbox_saved["Rules"][0]["Domains"] == ["direct-route.example"]
-            assert singbox_saved["Rules"][1]["ID"] == "system-csqtt"
+            assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Enabled"] is True and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"]
             assert singbox_saved["Rules"][2]["Domains"] == ["user-route.example"]
             # The limit counts user rules only; DIRECT and CSQTT system cards are excluded.
             for _ in range(15):
@@ -250,7 +253,8 @@ def main():
             assert page.locator("#page-singbox").evaluate("el => el.classList.contains('active')")
             assert page.locator("#singboxListen").input_value() == "127.0.0.1:19180"
             assert page.locator("#singboxDirectDomains").input_value() == "example.ru"
-            assert page.locator("#singboxCsqttEnabled").is_checked() is False
+            assert page.locator("#singboxCsqtt").input_value() == "127.0.0.1:12500"
+            assert "CSQTT Core" in page.locator("#page-singbox").inner_text()
             assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
             assert page.locator("#singboxDNSMode").input_value() == "local"
             assert page.locator("#singboxDNSStrategy").input_value() == "prefer_ipv4"
@@ -261,12 +265,14 @@ def main():
             page.locator("#singboxDNSPort").fill("53")
             page.locator("#singboxDNSStrategy").select_option("prefer_ipv4")
             outbound_options = page.locator("#singboxFinalOutbound option").all_text_contents()
-            assert "socks-hydra" in outbound_options and "csqtt" not in outbound_options and "socks-disabled" not in outbound_options, outbound_options
+            assert "socks-hydra" in outbound_options and "csqtt" in outbound_options and "socks-disabled" not in outbound_options, outbound_options
             page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
-            assert singbox_saved.get("CSQTTEnabled") is False and singbox_saved.get("CSQTTAddress") == ""
+            assert "CSQTTEnabled" not in singbox_saved and "CSQTTExplicitlyDisabled" not in singbox_saved
+            assert singbox_saved.get("CSQTTAddress") == "127.0.0.1:12500"
+            assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"]
             assert singbox_saved.get("FinalOutbound") == "socks-hydra"
             assert singbox_saved.get("DNSMode") == "udp" and singbox_saved.get("DNSServer") == "192.168.4.1"
             assert singbox_saved.get("DNSPort") == 53 and singbox_saved.get("DNSStrategy") == "prefer_ipv4"
