@@ -169,7 +169,7 @@ Keep sing-box as a separate module. Do not discard its tested routing work durin
 - No change to Keenetic Direct rules, HydraRoute Neo, QuatroVPN keys, 3x-ui/Xray or Tailscale access.
 - No production NanoPi install during source/VM migration.
 - Do not weaken tests to obtain green CI.
-- Preserve CSQTT license notices and the supplied PolyForm Noncommercial 1.0.0 terms. The source archive's LICENSE includes required copyright, commercial-license and attribution notices; retain them in derived distributions. This audit is not legal advice.
+- Preserve CSQTT license notices and the supplied PolyForm Noncommercial 1.0.0 terms. The audited integration branch had no root LICENSE file; the exact upstream CSQTT LICENSE text and required notices have now been restored on this refactor branch (commit `44c963bdf24750916757d4a5f925797f5f61f5ed`). Retain them in derived distributions. This audit is not legal advice.
 
 ## 10. Audit conclusion
 
