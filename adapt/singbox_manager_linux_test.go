@@ -136,6 +136,7 @@ func TestSingBoxManagerSaveConfigIsAtomicAndValidated(t *testing.T) {
 	if err := manager.SaveConfig(input); err != nil { t.Fatalf("SaveConfig valid config: %v", err) }
 	before, err := os.ReadFile(config); if err != nil { t.Fatal(err) }
 	if len(before) == 0 { t.Fatal("empty config persisted") }
+	stateBefore, err := os.ReadFile(manager.panelStatePath()); if err != nil { t.Fatalf("panel state missing: %v", err) }
 	loaded, err := manager.LoadConfig()
 	if err != nil { t.Fatalf("LoadConfig: %v", err) }
 	if len(loaded.DirectDomainSuffixes) != 1 || loaded.DirectDomainSuffixes[0] != ".example.org" { t.Fatalf("Direct suffix did not round-trip: %#v", loaded.DirectDomainSuffixes) }
@@ -145,6 +146,8 @@ func TestSingBoxManagerSaveConfigIsAtomicAndValidated(t *testing.T) {
 	if err := manager.SaveConfig(invalid); err == nil { t.Fatal("invalid config accepted") }
 	after, err := os.ReadFile(config); if err != nil { t.Fatal(err) }
 	if string(after) != string(before) { t.Fatal("invalid config replaced the last known-good config") }
+	stateAfter, err := os.ReadFile(manager.panelStatePath()); if err != nil { t.Fatal(err) }
+	if string(stateAfter) != string(stateBefore) { t.Fatal("invalid config changed the last known-good panel state") }
 	info, err := os.Stat(config); if err != nil { t.Fatal(err) }
 	if info.Mode().Perm() != 0600 { t.Fatalf("config permissions = %o, want 0600", info.Mode().Perm()) }
 }
