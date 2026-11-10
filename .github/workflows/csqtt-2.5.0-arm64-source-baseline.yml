@@ -1,0 +1,109 @@
+name: CSQTT 2.5.0 native ARM64 source baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/csqtt-2.5.0-core
+
+permissions:
+  contents: read
+
+env:
+  CSQTT_REPOSITORY: amurcanov/csqtt
+  CSQTT_COMMIT: fd936ef087c34cc46f26111dc2361f43b8b03c07
+  RUST_TOOLCHAIN: 1.97.1
+
+jobs:
+  csqtt-2-5-0-arm64:
+    name: Build and test original CSQTT 2.5.0 on Linux ARM64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - name: Checkout integration repository
+        uses: actions/checkout@v4
+
+      - name: Checkout exact CSQTT 2.5.0 source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CSQTT_REPOSITORY }}
+          ref: ${{ env.CSQTT_COMMIT }}
+          path: upstream-csqtt
+          persist-credentials: false
+
+      - name: Verify source provenance and package versions
+        working-directory: upstream-csqtt
+        run: |
+          set -euxo pipefail
+          test "$(git rev-parse HEAD)" = "$CSQTT_COMMIT"
+          grep -Fq 'version = "2.5.0"' rust-client/Cargo.toml
+          grep -Fq 'version = "2.5.0"' rust-server/Cargo.toml
+          grep -Fq 'versionName = "2.5.0"' app/build.gradle.kts
+          grep -Fq 'VK_JS_BOOTSTRAP:' rust-client/main.rs
+          grep -Fq 'tun_uds' rust-client/main.rs
+          test -s app/src/main/assets/deploy.sh
+          sha256sum rust-client/Cargo.toml rust-client/Cargo.lock rust-server/Cargo.toml rust-server/Cargo.lock app/src/main/assets/deploy.sh | tee "$GITHUB_WORKSPACE/csqtt-2.5.0-source-sha256.txt"
+
+      - name: Install native build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake clang pkg-config perl binutils
+
+      - name: Install pinned Rust toolchain
+        run: |
+          set -euxo pipefail
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+          cargo --version
+          rustup target add aarch64-unknown-linux-gnu
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "aarch64-unknown-linux-gnu"
+
+      - name: Run original CSQTT 2.5.0 client tests
+        working-directory: upstream-csqtt/rust-client
+        run: |
+          set -euxo pipefail
+          cargo test --locked --bin client
+
+      - name: Run original CSQTT 2.5.0 server tests
+        working-directory: upstream-csqtt/rust-server
+        run: |
+          set -euxo pipefail
+          cargo test --locked --bin csqtt
+
+      - name: Build original CSQTT 2.5.0 ARM64 client
+        working-directory: upstream-csqtt/rust-client
+        run: |
+          set -euxo pipefail
+          cargo build --locked --release --target aarch64-unknown-linux-gnu --bin client
+          install -D -m 0755 target/aarch64-unknown-linux-gnu/release/client "$GITHUB_WORKSPACE/dist/csqtt-client-2.5.0-linux-arm64"
+          file "$GITHUB_WORKSPACE/dist/csqtt-client-2.5.0-linux-arm64"
+          readelf -h "$GITHUB_WORKSPACE/dist/csqtt-client-2.5.0-linux-arm64" | grep -Fq 'AArch64'
+
+      - name: Build original CSQTT 2.5.0 ARM64 server
+        working-directory: upstream-csqtt/rust-server
+        run: |
+          set -euxo pipefail
+          cargo build --locked --release --target aarch64-unknown-linux-gnu --bin csqtt
+          install -D -m 0755 target/aarch64-unknown-linux-gnu/release/csqtt "$GITHUB_WORKSPACE/dist/csqtt-server-2.5.0-linux-arm64"
+          file "$GITHUB_WORKSPACE/dist/csqtt-server-2.5.0-linux-arm64"
+          readelf -h "$GITHUB_WORKSPACE/dist/csqtt-server-2.5.0-linux-arm64" | grep -Fq 'AArch64'
+
+      - name: Package source provenance and binaries
+        run: |
+          set -euxo pipefail
+          cp csqtt-2.5.0-source-sha256.txt dist/
+          printf '%s\n' "$CSQTT_REPOSITORY@$CSQTT_COMMIT" > dist/CSQTT-UPSTREAM
+          (cd dist && sha256sum csqtt-client-2.5.0-linux-arm64 csqtt-server-2.5.0-linux-arm64 csqtt-2.5.0-source-sha256.txt CSQTT-UPSTREAM > SHA256SUMS)
+          (cd dist && sha256sum -c SHA256SUMS)
+          tar -C dist -czf csqtt-2.5.0-linux-arm64-source-baseline.tar.gz .
+          sha256sum csqtt-2.5.0-linux-arm64-source-baseline.tar.gz
+
+      - name: Upload exact CSQTT 2.5.0 ARM64 baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: csqtt-2.5.0-linux-arm64-source-baseline
+          path: csqtt-2.5.0-linux-arm64-source-baseline.tar.gz
+          if-no-files-found: error
+          retention-days: 14
