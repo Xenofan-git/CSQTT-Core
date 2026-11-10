@@ -186,7 +186,7 @@ new = """assert_peer_port_is_available() {
         [ -n "$pid" ] || continue
         if ! csqtt_process_owns_peer_port "$pid"; then
             log_error "UDP/${PEER_PORT} занят посторонним процессом PID ${pid}; он не будет остановлен"
-            printf '%s\\n' "$listeners" | tee -a "$LOG_FILE" >&2
+            printf '%s\n' "$listeners" | tee -a "$LOG_FILE" >&2
             die "Порт UDP/${PEER_PORT} занят посторонним процессом; конфликтующий процесс не изменён"
         fi
     done < <(peer_port_listener_pids)
@@ -265,28 +265,28 @@ sing_box_installer = r'''install_sing_box_binary() {
         [ -f "$root_marker" ] && [ "$(cat "$root_marker")" = "$marker_value" ] || die "$root exists without our ownership marker; refusing to adopt it"
     else
         install -d -m 0755 "$root"
-        printf '%s\\n' "$marker_value" > "$root_marker"
+        printf '%s\n' "$marker_value" > "$root_marker"
         chmod 0644 "$root_marker"
     fi
     if [ -e "$version_dir" ]; then
         [ -f "$version_marker" ] && [ "$(cat "$version_marker")" = "$marker_value" ] || die "$version_dir exists without our ownership marker; refusing to adopt it"
     else
         install -d -m 0755 "$version_dir"
-        printf '%s\\n' "$marker_value" > "$version_marker"
+        printf '%s\n' "$marker_value" > "$version_marker"
         chmod 0644 "$version_marker"
     fi
     if [ -e "$data_dir" ]; then
         [ -f "$data_marker" ] && [ "$(cat "$data_marker")" = "$data_marker_value" ] || die "$data_dir exists without our ownership marker; refusing to adopt it"
     else
         install -d -m 0700 "$data_dir"
-        printf '%s\\n' "$data_marker_value" > "$data_marker"
+        printf '%s\n' "$data_marker_value" > "$data_marker"
         chmod 0600 "$data_marker"
     fi
     [ ! -L "${binary}.new" ] || die "temporary sing-box binary path is a symlink"
     rm -f -- "${binary}.new"
     install -m 0755 "$UPLOAD_SING_BOX" "${binary}.new"
     version_output="$("${binary}.new" version 2>&1)" || die "bundled sing-box binary cannot execute: $version_output"
-    printf '%s\\n' "$version_output" | grep -Fq "sing-box version 1.14.4" || die "bundled sing-box version mismatch: $version_output"
+    printf '%s\n' "$version_output" | grep -Fq "sing-box version 1.14.4" || die "bundled sing-box version mismatch: $version_output"
     mv -f -- "${binary}.new" "$binary"
     log_info "Pinned sing-box 1.14.4 installed in the LaLune-owned directory"
 }
@@ -311,7 +311,7 @@ new_upload = old_upload + '''
         die "Pinned sing-box 1.14.4 asset is not uploaded" "$EXIT_PREFLIGHT_FAILED"
     local sing_box_version
     sing_box_version="$(timeout 5 "$UPLOAD_SING_BOX" version 2>/dev/null || true)"
-    printf '%s\\n' "$sing_box_version" | grep -Fq "sing-box version 1.14.4" || \\
+    printf '%s\n' "$sing_box_version" | grep -Fq "sing-box version 1.14.4" || \\
         die "Uploaded sing-box binary is not the pinned 1.14.4 release" "$EXIT_PREFLIGHT_FAILED"'''
 if src.count(old_upload) != 1:
     raise SystemExit("expected exactly one uploaded release preflight sequence")
