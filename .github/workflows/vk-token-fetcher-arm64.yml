@@ -1,0 +1,83 @@
+name: Isolated LaLune VK token fetcher ARM64
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/csqtt-2.5.0-core
+    paths:
+      - .github/workflows/vk-token-fetcher-arm64.yml
+
+permissions:
+  contents: read
+
+env:
+  LALUNE_REPOSITORY: Endlad2/LaLune
+  LALUNE_COMMIT: e4a6d08b63aef6025bf8ad8f77da660ea552e04b
+
+jobs:
+  build-vk-token-fetcher:
+    name: Build only the permitted VK token helper
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Checkout integration repository
+        uses: actions/checkout@v4
+
+      - name: Checkout only LaLuneTokenFetcher source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.LALUNE_REPOSITORY }}
+          ref: ${{ env.LALUNE_COMMIT }}
+          path: upstream-token-fetcher
+          sparse-checkout: |
+            Core/LaLuneTokenFetcher
+          sparse-checkout-cone-mode: true
+          persist-credentials: false
+
+      - name: Verify isolated source boundary
+        working-directory: upstream-token-fetcher
+        run: |
+          set -euxo pipefail
+          test "$(git rev-parse HEAD)" = "$LALUNE_COMMIT"
+          test -s Core/LaLuneTokenFetcher/Playwright/LaLuneTokenFetcher.Playwright.csproj
+          test -s Core/LaLuneTokenFetcher/Playwright/PlaywrightTokenFetcher.cs
+          test -s Core/LaLuneTokenFetcher/Libs/LaLuneTokenFetcher.Core/VkTokenParser.cs
+          test -s Core/LaLuneTokenFetcher/Libs/LaLuneTokenFetcher.Core/TokenStorage.cs
+          ! test -d Desktop
+          ! test -d Frontend
+          ! test -d Mobile
+          ! test -d OpenWRT
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish self-contained Linux ARM64 token fetcher
+        working-directory: upstream-token-fetcher/Core/LaLuneTokenFetcher/Playwright
+        run: |
+          set -euxo pipefail
+          dotnet publish LaLuneTokenFetcher.Playwright.csproj -c Release -r linux-arm64 --self-contained true -o "$GITHUB_WORKSPACE/dist/vk-token-fetcher"
+          test -s "$GITHUB_WORKSPACE/dist/vk-token-fetcher/LaLuneTokenFetcher"
+          chmod 0755 "$GITHUB_WORKSPACE/dist/vk-token-fetcher/LaLuneTokenFetcher"
+          file "$GITHUB_WORKSPACE/dist/vk-token-fetcher/LaLuneTokenFetcher"
+          readelf -h "$GITHUB_WORKSPACE/dist/vk-token-fetcher/LaLuneTokenFetcher" | grep -Fq 'AArch64'
+          "$GITHUB_WORKSPACE/dist/vk-token-fetcher/LaLuneTokenFetcher" --help
+
+      - name: Package isolated helper with provenance
+        run: |
+          set -euxo pipefail
+          printf '%s\n' "$LALUNE_REPOSITORY@$LALUNE_COMMIT" > dist/VK-TOKEN-FETCHER-UPSTREAM
+          (cd dist && find vk-token-fetcher -type f -print0 | sort -z | xargs -0 sha256sum > VK-TOKEN-FETCHER-SHA256SUMS)
+          (cd dist && sha256sum -c VK-TOKEN-FETCHER-SHA256SUMS)
+          tar -C dist -czf vk-token-fetcher-linux-arm64.tar.gz vk-token-fetcher VK-TOKEN-FETCHER-UPSTREAM VK-TOKEN-FETCHER-SHA256SUMS
+          sha256sum vk-token-fetcher-linux-arm64.tar.gz
+
+      - name: Upload isolated VK token fetcher
+        uses: actions/upload-artifact@v4
+        with:
+          name: vk-token-fetcher-linux-arm64
+          path: vk-token-fetcher-linux-arm64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
