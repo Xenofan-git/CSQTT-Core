@@ -277,7 +277,7 @@ func makeSingBoxRouteRule(domains, suffixes, keywords, regexes, cidrs []string, 
 
 // buildSingBoxConfig creates an explicit SOCKS entrypoint and ordered route rules.
 // It deliberately creates no TUN inbound, auto_route, auto_redirect, or system capture.
-// Direct exclusions and user rules are evaluated in order; unmatched traffic uses CSQTT.
+// Direct exclusions and ordered route rules are evaluated first; unmatched traffic uses the explicit route.final (DIRECT by default).
 func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	listenHost, listenPort, err := singBoxHostPort(input.ListenAddress, "listen address")
 	if err != nil {
