@@ -3,6 +3,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"context"
 	"net"
@@ -23,14 +25,22 @@ func newFakeSingBox(t *testing.T, script string) string {
 	return path
 }
 
+func writeSingBoxPanelStateForTest(t *testing.T, configPath string, input singBoxConfigInput, encoded []byte) {
+	t.Helper()
+	hash := sha256.Sum256(encoded)
+	state := singBoxPanelState{Version:1, ConfigSHA256:hex.EncodeToString(hash[:]), Config:input}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(configPath+".panel.json", append(data, '\\n'), 0600); err != nil { t.Fatal(err) }
+}
+
 func writeValidSingBoxConfigForTest(t *testing.T, path string) {
 	t.Helper()
-	encoded, err := buildSingBoxConfig(singBoxConfigInput{
-		ListenAddress: "127.0.0.1:19080",
-		CSQTTAddress: "127.0.0.1:19081",
-	})
+	input := singBoxConfigInput{ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081"}
+	encoded, err := buildSingBoxConfig(input)
 	if err != nil { t.Fatal(err) }
 	if err := os.WriteFile(path, encoded, 0600); err != nil { t.Fatal(err) }
+	writeSingBoxPanelStateForTest(t,path,input,encoded)
 }
 
 func TestSingBoxListenIPAssignedMatchesExactInterfaceAddress(t *testing.T) {
@@ -186,15 +196,13 @@ func TestSingBoxManagerStartRejectsTamperedPersistedRuleSetPathBeforeBinary(t *t
 	outside := filepath.Join(dir, "outside.srs")
 	if err := os.WriteFile(outside, []byte("fixture"), 0600); err != nil { t.Fatal(err) }
 
-	encoded, err := buildSingBoxConfig(singBoxConfigInput{
-		ListenAddress: "127.0.0.1:19080",
-		CSQTTAddress: "127.0.0.1:19081",
-		RuleSets: []singBoxRuleSet{{Type: "local", Tag: "tampered", Format: "binary", Path: outside}},
-	})
+	input := singBoxConfigInput{ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081",RuleSets:[]singBoxRuleSet{{Type:"local",Tag:"tampered",Format:"binary",Path:outside}}}
+	encoded, err := buildSingBoxConfig(input)
 	if err != nil { t.Fatalf("build persisted tampered config fixture: %v", err) }
 	// Write directly to disk to model post-save/manual config tampering and
 	// deliberately bypass SaveConfig's path-containment validation.
 	if err := os.WriteFile(config, encoded, 0600); err != nil { t.Fatal(err) }
+	writeSingBoxPanelStateForTest(t,config,input,encoded)
 
 	marker := filepath.Join(dir, "binary-invoked")
 	binary := newFakeSingBox(t, "touch "+shellQuoteForTest(marker)+"\nexit 0")
@@ -425,12 +433,11 @@ func TestSingBoxManagerUploadRuleSetRejectsNonCanonicalRegisteredPath(t *testing
 	config := filepath.Join(dir, "config.json")
 	nonCanonical := filepath.Join(setsDir, "other.json")
 	if err := os.WriteFile(nonCanonical, []byte(`{"version":3,"rules":[]}`), 0600); err != nil { t.Fatal(err) }
-	encoded, err := buildSingBoxConfig(singBoxConfigInput{
-		ListenAddress: "127.0.0.1:19080", CSQTTAddress: "127.0.0.1:19081",
-		RuleSets: []singBoxRuleSet{{Type:"local", Tag:"stable", Format:"source", Path:nonCanonical}},
-	})
+	input := singBoxConfigInput{ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081",RuleSets:[]singBoxRuleSet{{Type:"local",Tag:"stable",Format:"source",Path:nonCanonical}}}
+	encoded, err := buildSingBoxConfig(input)
 	if err != nil { t.Fatal(err) }
 	if err := os.WriteFile(config, encoded, 0600); err != nil { t.Fatal(err) }
+	writeSingBoxPanelStateForTest(t,config,input,encoded)
 	manager := NewSingBoxManager(ruleSetValidationFakeBinary(t, "normal"), config, filepath.Join(dir, "sing-box.log"))
 	if _, err := manager.UploadRuleSet("stable", "stable.json", []byte(`{"version":3,"rules":[]}`)); err == nil || !strings.Contains(err.Error(), "managed path") {
 		t.Fatalf("expected non-canonical configured path rejection, got %v", err)
@@ -460,9 +467,11 @@ func TestSingBoxManagerUploadRuleSetRejectsRegisteredRemoteAndFormatChange(t *te
 		t.Run(tc.name, func(t *testing.T) {
 			dir:=t.TempDir()
 			config:=filepath.Join(dir,"config.json")
-			encoded,err:=buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081",RuleSets:[]singBoxRuleSet{tc.set}})
+			input:=singBoxConfigInput{ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081",RuleSets:[]singBoxRuleSet{tc.set}}
+			encoded,err:=buildSingBoxConfig(input)
 			if err!=nil { t.Fatal(err) }
 			if err:=os.WriteFile(config,encoded,0600);err!=nil { t.Fatal(err) }
+			writeSingBoxPanelStateForTest(t,config,input,encoded)
 			manager:=NewSingBoxManager(ruleSetValidationFakeBinary(t,"normal"),config,filepath.Join(dir,"sing-box.log"))
 			if _,err:=manager.UploadRuleSet("shared",tc.filename,[]byte(`{"version":3,"rules":[]}`));err==nil||!strings.Contains(err.Error(),tc.want) {
 				t.Fatalf("expected source/format conflict, got %v",err)
@@ -472,30 +481,19 @@ func TestSingBoxManagerUploadRuleSetRejectsRegisteredRemoteAndFormatChange(t *te
 }
 
 func TestSingBoxManagerDeleteRuleSetRejectsAdvancedNestedRouteReference(t *testing.T) {
- dir := t.TempDir()
- config := filepath.Join(dir, "config.json")
- manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), config, filepath.Join(dir, "sing-box.log"))
- ruleSetDir := filepath.Join(dir, "rule-sets")
- if err := os.MkdirAll(ruleSetDir, 0700); err != nil { t.Fatal(err) }
- path := filepath.Join(ruleSetDir, "hidden-ref.srs")
- if err := os.WriteFile(path, []byte("managed ruleset"), 0600); err != nil { t.Fatal(err) }
- encoded, err := buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080", CSQTTAddress:"127.0.0.1:19081"})
- if err != nil { t.Fatal(err) }
- var raw map[string]any
- if err := json.Unmarshal(encoded, &raw); err != nil { t.Fatal(err) }
- route := raw["route"].(map[string]any)
- route["rules"] = append(route["rules"].([]any), map[string]any{
-  "action":"reject", "any":[]any{map[string]any{"rule_set":[]any{"hidden-ref"}}},
- })
- encoded, err = json.Marshal(raw)
- if err != nil { t.Fatal(err) }
- if err := os.WriteFile(config, encoded, 0600); err != nil { t.Fatal(err) }
- if err := manager.DeleteRuleSet("hidden-ref"); err == nil || !strings.Contains(err.Error(), "referenced by a route rule") {
-  t.Fatalf("expected nested advanced route reference rejection, got %v", err)
- }
- if got, err := os.ReadFile(path); err != nil || string(got) != "managed ruleset" {
-  t.Fatalf("referenced Rule Set was changed: %q, %v", got, err)
- }
+	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
+	manager:=NewSingBoxManager(newFakeSingBox(t,"exit 0"),config,filepath.Join(dir,"sing-box.log"))
+	ruleSetDir:=filepath.Join(dir,"rule-sets");if err:=os.MkdirAll(ruleSetDir,0700);err!=nil{t.Fatal(err)}
+	path:=filepath.Join(ruleSetDir,"hidden-ref.srs");if err:=os.WriteFile(path,[]byte("managed ruleset"),0600);err!=nil{t.Fatal(err)}
+	encoded,err:=buildSingBoxConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080",CSQTTAddress:"127.0.0.1:19081"})
+	if err!=nil{t.Fatal(err)}
+	var raw map[string]any;if err:=json.Unmarshal(encoded,&raw);err!=nil{t.Fatal(err)}
+	route:=raw["route"].(map[string]any);route["rules"]=append(route["rules"].([]any),map[string]any{"action":"reject","any":[]any{map[string]any{"rule_set":[]any{"hidden-ref"}}}})
+	outbounds:=raw["outbounds"].([]any);filtered:=make([]any,0,len(outbounds));for _,item:=range outbounds{if item.(map[string]any)["tag"]!=singBoxDirectBypassTag{filtered=append(filtered,item)}};raw["outbounds"]=filtered
+	encoded,err=json.Marshal(raw);if err!=nil{t.Fatal(err)}
+	if err:=os.WriteFile(config,encoded,0600);err!=nil{t.Fatal(err)}
+	if err:=manager.DeleteRuleSet("hidden-ref");err==nil||!strings.Contains(err.Error(),"referenced by a route rule"){t.Fatalf("expected nested advanced route reference rejection, got %v",err)}
+	if got,err:=os.ReadFile(path);err!=nil||string(got)!="managed ruleset"{t.Fatalf("referenced Rule Set was changed: %q, %v",got,err)}
 }
 
 func TestSingBoxValueReferencesRuleSetRecursive(t *testing.T) {
