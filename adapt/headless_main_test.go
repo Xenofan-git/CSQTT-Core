@@ -632,13 +632,13 @@ func TestSingBoxAPIControlsIndependentManager(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 		return rec
 	}
-	config := `{"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:19181"}`
+	config := `{"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:19181","FinalOutbound":"direct"}`
 	if got := request(http.MethodPut, "/singbox/config", config); got.Code != http.StatusOK { t.Fatalf("save config status=%d body=%s",got.Code,got.Body.String()) }
 	loaded := request(http.MethodGet, "/singbox/config", "")
 	if loaded.Code != http.StatusOK { t.Fatalf("load config status=%d body=%s", loaded.Code, loaded.Body.String()) }
 	var restored struct { Config singBoxConfigInput `json:"config"`; Configured bool `json:"configured"` }
 	if err := json.Unmarshal(loaded.Body.Bytes(), &restored); err != nil { t.Fatalf("decode loaded config: %v", err) }
-	if !restored.Configured || restored.Config.ListenAddress != "127.0.0.1:19180" || restored.Config.CSQTTAddress != "127.0.0.1:19181" { t.Fatalf("loaded config mismatch: %#v", restored) }
+	if !restored.Configured || restored.Config.ListenAddress != "127.0.0.1:19180" || restored.Config.CSQTTAddress != "127.0.0.1:19181" || restored.Config.FinalOutbound != singBoxDirectTag { t.Fatalf("loaded config mismatch: %#v", restored) }
 	if got := request(http.MethodPost, "/singbox/start", ""); got.Code != http.StatusOK { t.Fatalf("start status=%d body=%s",got.Code,got.Body.String()) }
 	if got := request(http.MethodGet, "/singbox/status", ""); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"running":true`) { t.Fatalf("status=%d body=%s",got.Code,got.Body.String()) }
 	if got := request(http.MethodGet, "/singbox/logs", ""); got.Code != http.StatusOK && got.Code != http.StatusNoContent { t.Fatalf("logs status=%d body=%s",got.Code,got.Body.String()) }
@@ -660,4 +660,54 @@ func TestSingBoxAPIRejectsPublicControlAndUnknownConfigFields(t *testing.T) {
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, unknown)
 	if rec.Code != http.StatusBadRequest { t.Fatalf("unknown config field status=%d, want 400",rec.Code) }
+}
+
+
+func TestSingBoxAPIRejectsSystemCardTampering(t *testing.T) {
+	dir := t.TempDir()
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), filepath.Join(dir, "config.json"), filepath.Join(dir, "sing-box.log"))
+	handler := apiHandlerWithSingBox(nil, manager)
+	cases := []struct {
+		name string
+		input singBoxConfigInput
+	}{
+		{
+			name: "Direct cannot be moved",
+			input: singBoxConfigInput{
+				ListenAddress: "127.0.0.1:19180", CSQTTAddress: "127.0.0.1:19181",
+				CSQTTEnabled: true, FinalOutbound: singBoxDirectTag,
+				CSQTTRule: singBoxRouteRule{Enabled: true, Domains: []string{"csqtt.example"}},
+				RouteOrder: []string{"direct", "csqtt"},
+			},
+		},
+		{
+			name: "route order cannot omit disabled user cards",
+			input: singBoxConfigInput{
+				ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
+				RouteOrder: []string{"csqtt"},
+				Rules: []singBoxRouteRule{{ID: "hidden-disabled", Enabled: false, Domains: []string{"disabled.example"}, Outbound: singBoxDirectTag}},
+			},
+		},
+		{
+			name: "disabled CSQTT cannot be referenced",
+			input: singBoxConfigInput{
+				ListenAddress: "127.0.0.1:19180", FinalOutbound: singBoxDirectTag,
+				RouteOrder: []string{"csqtt", "user-route"},
+				Rules: []singBoxRouteRule{{ID: "user-route", Enabled: true, Domains: []string{"proxy.example"}, Outbound: singBoxCSQTTTag}},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(tc.input)
+			if err != nil { t.Fatal(err) }
+			req := httptest.NewRequest(http.MethodPut, "/singbox/config", strings.NewReader(string(body)))
+			req.RemoteAddr = "192.168.1.10:12345"
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("tampered system-card request status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
 }

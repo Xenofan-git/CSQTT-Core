@@ -17,6 +17,7 @@ on:
       - fix/direct-ip-hashmode-captcha-e2e
       - fix/socks5-dns-udp-health-e2e
       - fix/direct-dnsmasq-dualstack-production
+      - fix/explicit-singbox-default-outbound
   workflow_dispatch:
 
 permissions:
@@ -297,7 +298,7 @@ jobs:
           grep -Fq 'func TestSingBoxManagerOwnsIndependentProcessLifecycle' upstream-lalune/Desktop/Linux/singbox_manager_linux_test.go
           grep -Fq 'func TestSingBoxManagerFailsClosedWhenConfigCheckFails' upstream-lalune/Desktop/Linux/singbox_manager_linux_test.go
           grep -Fq 'func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate' upstream-lalune/Desktop/Linux/singbox_config_linux_test.go
-          grep -Fq 'func TestBuildSingBoxConfigUsesCSQTTAsExplicitSystemFallback' upstream-lalune/Desktop/Linux/singbox_config_linux_test.go
+          grep -Fq 'func TestBuildSingBoxConfigDoesNotImplicitlyUseCSQTTAsFallback' upstream-lalune/Desktop/Linux/singbox_config_linux_test.go
           grep -Fq 'func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree' upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
           grep -Fq 'func TestLinuxRunnerSetupRoutesFailureKillsCoreProcessTree' upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
           mkdir -p upstream-lalune/Desktop/Linux/frontend
@@ -335,11 +336,43 @@ jobs:
           set -euxo pipefail
           go mod download
       - name: Install pinned sing-box config validator
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
           archive=/tmp/sing-box-1.14.4-linux-amd64.tar.gz
-          curl -fL --retry 3 --retry-delay 2 -o "$archive" "https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-amd64.tar.gz"
-          echo "699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968  $archive" | sha256sum -c -
+          release_url="https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-amd64.tar.gz"
+          expected_sha256=699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968
+          if ! curl -fL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 180 -o "$archive" "$release_url"; then
+            echo "GitHub browser download failed; resolving the same immutable official release asset through the GitHub API."
+            rm -f "$archive"
+            release_json=/tmp/sing-box-v1.14.4-release.json
+            curl -fL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 60 \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -o "$release_json" \
+              "https://api.github.com/repos/SagerNet/sing-box/releases/tags/v1.14.4"
+            asset_id="$(python3 - "$release_json" <<'PY'
+          import json, sys
+          release = json.load(open(sys.argv[1], encoding="utf-8"))
+          if release.get("tag_name") != "v1.14.4" or release.get("immutable") is not True:
+              raise SystemExit("refusing non-immutable or unexpected sing-box release")
+          matches = [asset for asset in release.get("assets", []) if asset.get("name") == "sing-box-1.14.4-linux-amd64.tar.gz"]
+          if len(matches) != 1 or matches[0].get("digest") != "sha256:699a1b510aa4396b2176d32d1181920399ebf1e267835da6f3b598d0f7c24968":
+              raise SystemExit("official sing-box release asset metadata/digest mismatch")
+          print(matches[0]["id"])
+          PY
+          )"
+            test -n "$asset_id"
+            curl -fL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 180 \
+              -H "Accept: application/octet-stream" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -o "$archive" \
+              "https://api.github.com/repos/SagerNet/sing-box/releases/assets/$asset_id"
+          fi
+          echo "$expected_sha256  $archive" | sha256sum -c -
           install_dir=/tmp/sing-box-1.14.4
           mkdir -p "$install_dir"
           tar -xzf "$archive" -C "$install_dir"
@@ -395,8 +428,38 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p server-assets
-          curl -fL --retry 3 https://github.com/amurcanov/csqtt/releases/download/v2.1.9/CSQTT-arm64-v8a.apk -o /tmp/csqtt-v2.1.9-arm64.apk
-          unzip -p /tmp/csqtt-v2.1.9-arm64.apk assets/csqtt-linux-arm64 > server-assets/csqtt-linux-arm64
+          apk=/tmp/csqtt-v2.1.9-arm64.apk
+          apk_url="https://github.com/amurcanov/csqtt/releases/download/v2.1.9/CSQTT-arm64-v8a.apk"
+          apk_sha256=e0dde838d9df49be2ecab38adaecf808231ab5d65ddb6b4024a24fc2db879e04
+          if ! curl -fL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 180 -o "$apk" "$apk_url"; then
+            echo "GitHub browser download failed; resolving the exact v2.1.9 APK asset through the official GitHub API."
+            rm -f "$apk"
+            release_json=/tmp/csqtt-v2.1.9-release.json
+            curl -fL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 60 \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -o "$release_json" \
+              "https://api.github.com/repos/amurcanov/csqtt/releases/tags/v2.1.9"
+            asset_id="$(python3 - "$release_json" <<'PY'
+          import json, sys
+          release = json.load(open(sys.argv[1], encoding="utf-8"))
+          if release.get("tag_name") != "v2.1.9":
+              raise SystemExit("refusing unexpected CSQTT release tag")
+          matches = [asset for asset in release.get("assets", []) if asset.get("name") == "CSQTT-arm64-v8a.apk"]
+          if len(matches) != 1 or matches[0].get("digest") != "sha256:e0dde838d9df49be2ecab38adaecf808231ab5d65ddb6b4024a24fc2db879e04":
+              raise SystemExit("official CSQTT APK asset metadata/digest mismatch")
+          print(matches[0]["id"])
+          PY
+          )"
+            test -n "$asset_id"
+            curl -fL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 --max-time 180 \
+              -H "Accept: application/octet-stream" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -o "$apk" \
+              "https://api.github.com/repos/amurcanov/csqtt/releases/assets/$asset_id"
+          fi
+          echo "$apk_sha256  $apk" | sha256sum -c -
+          unzip -p "$apk" assets/csqtt-linux-arm64 > server-assets/csqtt-linux-arm64
           unzip -p /tmp/csqtt-v2.1.9-arm64.apk assets/csqtt-linux-amd64 > server-assets/csqtt-linux-amd64
           unzip -p /tmp/csqtt-v2.1.9-arm64.apk assets/csqtt-linux-armv7 > server-assets/csqtt-linux-armv7
           unzip -p /tmp/csqtt-v2.1.9-arm64.apk assets/csqtt.server-provenance.json > server-assets/csqtt.server-provenance.json

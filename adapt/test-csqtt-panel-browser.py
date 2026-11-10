@@ -37,6 +37,7 @@ def main():
     vk_token = {"hasToken": True}
     # A fresh device has no tunnel password; the success path provisions one below.
     tunnel_auth = {"configured": False}
+    singbox_config = {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"","CSQTTEnabled":False,"CSQTTRule":{"ID":"csqtt","Enabled":False,"RuleSets":[],"Domains":[],"DomainSuffixes":[],"DomainKeywords":[],"DomainRegexes":[],"IPCIDRs":[],"Outbound":"csqtt"},"DirectEnabled":True,"RouteOrder":[],"FinalOutbound":"socks-hydra","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[{"ID":"hydra","Server":"192.0.2.10","ServerPort":1080,"Enabled":True},{"ID":"disabled","Server":"192.0.2.11","ServerPort":1080,"Enabled":False}],"Rules":[]}
     singbox_saved = {}
     settings = {
         "authMode": "manual", "workers": 9, "autoApiWorkers": 9,
@@ -109,9 +110,12 @@ def main():
         elif path == "/singbox/status":
             body = {"running": False, "pid": 0, "configured": True, "log_path": "/tmp/sing-box.log"}
         elif path == "/singbox/config" and method == "GET":
-            body = {"configured": True, "config": {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"","CSQTTEnabled":False,"FinalOutbound":"socks-hydra","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[{"ID":"hydra","Server":"192.0.2.10","ServerPort":1080,"Enabled":True},{"ID":"disabled","Server":"192.0.2.11","ServerPort":1080,"Enabled":False}],"Rules":[]}}
+            body = {"configured": True, "config": dict(singbox_config)}
         elif path == "/singbox/config" and method == "PUT":
+            singbox_saved.clear()
             singbox_saved.update(json.loads(request.post_data or "{}"))
+            singbox_config.clear()
+            singbox_config.update(singbox_saved)
             body = {"ok": True}
         elif path == "/singbox/logs":
             body = "fixture sing-box log"
@@ -206,12 +210,93 @@ def main():
                     assert page.locator("#copySocks5Address").is_disabled()
                     socks5_state["listening"] = True
                     socks5_state["address"] = "192.168.4.26:12500"
+                if name == "route":
+                    page.wait_for_function("document.querySelectorAll('#singboxRouteRuleEditor .route-rule').length === 2")
+                    cards = page.locator("#singboxRouteRuleEditor .route-rule")
+                    assert cards.nth(0).get_attribute("data-system-card") == "direct"
+                    assert cards.nth(1).get_attribute("data-system-card") == "csqtt"
+                    assert cards.nth(0).locator("[data-remove-route-rule], [data-move-route-card]").count() == 0, "Direct must be immutable and pinned"
+                    assert cards.nth(1).locator("[data-remove-route-rule]").count() == 0, "CSQTT system card cannot be deleted"
+                    page.locator("#singboxAddRouteRule").click()
+                    user_card = page.locator('#singboxRouteRuleEditor .route-rule[data-card-type="user"]')
+                    assert user_card.count() == 1
+                    user_card.locator('[data-field="Domains"]').fill("priority.example")
+                    direct_toggle = page.locator("#singboxRouteRuleEditor [data-system-enabled='direct']")
+                    direct_toggle.uncheck()
+                    assert direct_toggle.is_checked() is False
+                    direct_toggle.check()
+                    csqtt_card = page.locator('#singboxRouteRuleEditor [data-system-card="csqtt"]')
+                    csqtt_card.locator('[data-move-route-card="down"]').click()
+                    ordered = page.locator("#singboxRouteRuleEditor .route-rule[data-movable='true']").evaluate_all("(els) => els.map(el => el.dataset.routeId)")
+                    assert ordered[0].startswith("route-") and ordered[1] == "csqtt", ordered
+                    csqtt_card.locator('[data-move-route-card="up"]').click()
+                    ordered = page.locator("#singboxRouteRuleEditor .route-rule[data-movable='true']").evaluate_all("(els) => els.map(el => el.dataset.routeId)")
+                    assert ordered[0] == "csqtt" and ordered[1].startswith("route-"), ordered
+                    user_card.locator('[data-move-route-card="up"]').click()
+                    ordered = page.locator("#singboxRouteRuleEditor .route-rule[data-movable='true']").evaluate_all("(els) => els.map(el => el.dataset.routeId)")
+                    assert ordered[0].startswith("route-") and ordered[1] == "csqtt", ordered
+                    assert page.locator("#singboxRouteRuleEditor .route-rule").first.get_attribute("data-system-card") == "direct"
+                    assert direct_toggle.is_checked()
+                    assert page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").is_checked() is False
+                    page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").check()
+                    assert page.locator("#singboxCsqttEnabled").is_checked()
+                    user_card.locator('[data-field="Outbound"]').select_option("csqtt")
+                    page.locator("#singboxRouteRuleEditor [data-system-enabled='csqtt']").uncheck()
+                    assert user_card.locator('[data-field="Outbound"]').input_value() == "csqtt", "disabling CSQTT must not rewrite a disabled rule's selected outbound"
+                    assert user_card.locator('[data-field="Outbound"] option:checked').is_disabled()
+                    page.locator('#singboxRouteRuleEditor [data-card-type="user"] [data-remove-route-rule]').click()
+                    assert page.locator('#singboxRouteRuleEditor [data-card-type="user"]').count() == 0
                 if name == "direct":
                     # Direct editor is a full-screen dialog; close it before using bottom navigation again.
                     page.locator("#routeClose").click()
                     assert page.locator("#page-connect").evaluate("el => el.classList.contains('active')")
 
+            # Hold the first saved-config response while the user edits the form.
+            # Releasing a stale response must not overwrite those in-progress edits.
+            page.evaluate("""() => {
+                const originalFetch = window.fetch.bind(window);
+                let gateUsed = false;
+                window.__singboxConfigGate = { requested: false, release: null };
+                window.fetch = (input, init = {}) => {
+                    const url = typeof input === 'string' ? input : input.url;
+                    const method = (init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+                    if (!gateUsed && method === 'GET' && url.includes('/api/singbox/config')) {
+                        gateUsed = true;
+                        window.__singboxConfigGate.requested = true;
+                        return new Promise(resolve => {
+                            window.__singboxConfigGate.release = () => {
+                                resolve(new Response(
+                                    JSON.stringify({configured: true, config: {
+                                        ListenAddress: "127.0.0.1:19180",
+                                        CSQTTAddress: "",
+                                        CSQTTEnabled: false,
+                                        FinalOutbound: "socks-hydra",
+                                        DirectDomains: ["stale-response.example"],
+                                        DirectIPCIDRs: [],
+                                        SOCKS5: [{ID: "hydra", Server: "192.0.2.10", ServerPort: 1080, Enabled: true}],
+                                        Rules: []
+                                    }}),
+                                    {status: 200, headers: {"Content-Type": "application/json"}}
+                                ));
+                                setTimeout(() => { window.__singboxConfigGate.settled = true; }, 0);
+                            };
+                        });
+                    }
+                    return originalFetch(input, init);
+                };
+            }""")
             page.locator('button[data-page="singbox"]').click()
+            page.wait_for_function("window.__singboxConfigGate?.requested === true")
+            page.locator("#singboxListen").fill("127.0.0.1:19222")
+            page.locator("#singboxDirectDomains").fill("user-edit.example")
+            page.evaluate("window.__singboxConfigGate.release()")
+            page.wait_for_function("window.__singboxConfigGate?.settled === true")
+            assert page.locator("#singboxListen").input_value() == "127.0.0.1:19222"
+            assert page.locator("#singboxDirectDomains").input_value() == "user-edit.example"
+            # Reload normally to restore the baseline fixture for the remaining
+            # default-outbound lifecycle assertions below.
+            page.locator("#singboxLoadEngine").click()
+            page.wait_for_function("document.querySelector('#singboxListen').value === '127.0.0.1:19180' && document.querySelector('#singboxDirectDomains').value === 'example.ru'")
             assert page.locator("#page-singbox").evaluate("el => el.classList.contains('active')")
             assert page.locator("#singboxListen").input_value() == "127.0.0.1:19180"
             assert page.locator("#singboxDirectDomains").input_value() == "example.ru"
@@ -219,13 +304,61 @@ def main():
             assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
             outbound_options = page.locator("#singboxFinalOutbound option").all_text_contents()
             assert "socks-hydra" in outbound_options and "csqtt" not in outbound_options and "socks-disabled" not in outbound_options, outbound_options
-            page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
+            # Exercise the full default-outbound lifecycle in the real Chromium UI:
+            # Direct -> CSQTT -> external SOCKS5, saving and reloading each choice.
+            page.locator("#singboxFinalOutbound").select_option("direct")
+            assert page.locator("#singboxFinalOutbound").input_value() == "direct"
+            page.locator("#singboxEngineConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
             page.locator("#singboxSaveEngine").click()
-            page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
+            page.wait_for_function("document.querySelector('#singboxEngineConfigMessage').textContent.includes('проверена sing-box')")
+            assert singbox_saved.get("FinalOutbound") == "direct"
+            page.locator("#singboxLoadEngine").click()
+            page.wait_for_function("document.querySelector('#singboxFinalOutbound').value === 'direct'")
+            assert page.locator("#singboxCsqttEnabled").is_checked() is False
+
+            page.locator("#singboxCsqttEnabled").check()
+            assert page.locator("#singboxCsqtt").input_value() == "127.0.0.1:12500"
+            page.locator("#singboxFinalOutbound").select_option("csqtt")
+            assert page.locator("#singboxFinalOutbound").input_value() == "csqtt"
+            page.locator("#singboxEngineConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function("document.querySelector('#singboxEngineConfigMessage').textContent.includes('проверена sing-box')")
+            assert singbox_saved.get("CSQTTEnabled") is True
+            assert singbox_saved.get("CSQTTAddress") == "127.0.0.1:12500"
+            assert singbox_saved.get("CSQTTRule", {}).get("Enabled") is True
+            assert singbox_saved.get("DirectEnabled") is True
+            assert "csqtt" in singbox_saved.get("RouteOrder", [])
+            assert singbox_saved.get("FinalOutbound") == "csqtt"
+            page.locator("#singboxLoadEngine").click()
+            page.wait_for_function("document.querySelector('#singboxFinalOutbound').value === 'csqtt'")
+            assert page.locator("#singboxCsqttEnabled").is_checked() is True
+
+            # Disabling CSQTT must not silently rewrite an explicit final choice.
+            page.locator("#singboxCsqttEnabled").uncheck()
+            assert page.locator("#singboxFinalOutbound").input_value() == "csqtt"
+            assert page.locator("#singboxFinalOutbound option:checked").is_disabled()
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function("document.querySelector('#singboxEngineConfigMessage').textContent.includes('CSQTT выключен')")
+            assert singbox_saved.get("FinalOutbound") == "csqtt", "invalid save must not reach the API"
+            page.locator("#singboxCsqttEnabled").check()
+            assert page.locator("#singboxFinalOutbound").input_value() == "csqtt"
+            assert page.locator("#singboxFinalOutbound option:checked").is_enabled()
+
+            page.locator("#singboxFinalOutbound").select_option("socks-hydra")
+            assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
+            page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
+            assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
+            page.locator("#singboxEngineConfigMessage").evaluate("(el) => { el.textContent = ''; el.className = 'notice'; }")
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function("document.querySelector('#singboxEngineConfigMessage').textContent.includes('проверена sing-box')")
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
-            assert singbox_saved.get("CSQTTEnabled") is False and singbox_saved.get("CSQTTAddress") == ""
-            assert singbox_saved.get("FinalOutbound") == "socks-hydra"
+            assert singbox_saved.get("CSQTTEnabled") is True and singbox_saved.get("CSQTTAddress") == "127.0.0.1:12500"
+            page.wait_for_function("() => document.querySelector('#singboxFinalOutbound').value === 'socks-hydra' && document.querySelector('#singboxEngineConfigMessage').textContent.includes('проверена sing-box')")
+            assert singbox_saved.get("FinalOutbound") == "socks-hydra", {"saved":dict(singbox_saved), "recent_calls":calls[-8:]}
             assert [x["ID"] for x in singbox_saved.get("SOCKS5", [])] == ["hydra", "disabled"]
+            page.locator("#singboxLoadEngine").click()
+            page.wait_for_function("document.querySelector('#singboxFinalOutbound').value === 'socks-hydra'")
+            assert page.locator("#singboxCsqttEnabled").is_checked() is True
             assert page.locator("#singboxLogs").inner_text() == "fixture sing-box log"
             page.locator("#singboxStart").click()
             assert any(method == "POST" and path == "/singbox/start" for method, path, _ in calls)
@@ -590,6 +723,59 @@ def main():
                     f"bridge redirected without a valid configured origin: {blocked_page.url}"
                 )
                 blocked_page.close()
+
+            # A save response must not refresh over edits made while PUT is in flight.
+            page.locator('button[data-page="singbox"]').click()
+            page.wait_for_function("document.querySelector('#singboxListen').value === '127.0.0.1:19180'")
+            page.evaluate("""() => {
+                const originalFetch = window.fetch.bind(window);
+                let gateUsed = false;
+                window.__singboxSaveGate = { requested: false, release: null };
+                window.fetch = (input, init = {}) => {
+                    const url = typeof input === 'string' ? input : input.url;
+                    const method = (init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+                    if (!gateUsed && method === 'PUT' && url.includes('/api/singbox/config')) {
+                        gateUsed = true;
+                        return originalFetch(input, init).then(response => new Promise(resolve => {
+                            window.__singboxSaveGate.requested = true;
+                            window.__singboxSaveGate.release = () => {
+                                resolve(response);
+                                setTimeout(() => { window.__singboxSaveGate.settled = true; }, 0);
+                            };
+                        }));
+                    }
+                    return originalFetch(input, init);
+                };
+            }""")
+            page.locator("#singboxDirectDomains").fill("snapshot-before-save.example")
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function("window.__singboxSaveGate?.requested === true")
+            page.locator("#singboxDirectDomains").fill("new-edit-during-save.example")
+            page.evaluate("window.__singboxSaveGate.release()")
+            page.wait_for_function("window.__singboxSaveGate?.settled === true")
+            assert page.locator("#singboxDirectDomains").input_value() == "new-edit-during-save.example", (
+                "save completion refreshed over edits made while PUT was pending"
+            )
+            assert singbox_saved.get("DirectDomains") == ["snapshot-before-save.example"], (
+                f"first save did not persist its original snapshot: {singbox_saved!r}"
+            )
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function("document.querySelector('#singboxRouteConfigMessage').textContent.includes('Конфигурация проверена sing-box и сохранена')")
+
+            # If a managed config was externally changed and cannot be safely
+            # reconstructed, the panel must not leave stale editor state savable.
+            fail_paths.add("/singbox/config")
+            page.locator('button[data-page="route"]').click()
+            page.locator('button[data-page="singbox"]').click()
+            page.wait_for_function("document.querySelector('#singboxSave').disabled && document.querySelector('#singboxSaveEngine').disabled")
+            assert "Сохранение заблокировано" in page.locator("#singboxRouteConfigMessage").inner_text(), (
+                "stale panel state did not explain why saving was blocked"
+            )
+            put_count_before = sum(1 for method, path, _ in calls if method == "PUT" and path == "/singbox/config")
+            page.evaluate("document.querySelector('#singboxSaveEngine').click()")
+            page.wait_for_timeout(50)
+            put_count_after = sum(1 for method, path, _ in calls if method == "PUT" and path == "/singbox/config")
+            assert put_count_after == put_count_before, "stale editor state was still allowed to overwrite the config"
 
             browser.close()
     finally:
