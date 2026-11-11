@@ -6,6 +6,22 @@
 <style>
 :root{color-scheme:light;--bg:#fdfdfe;--surface:#fff;--surface2:#f2f2f4;--text:#111215;--muted:#5f6067;--line:#d7d8dd;--blue:#1a73e8;--blue2:#1565d8;--green:#4caf50;--red:#c62828;--amber:#d27d00;--nav-muted:#9297a1;--power-bg:linear-gradient(145deg,#e8f0fe,#fff);--power-on-bg:linear-gradient(145deg,#ddfff0,#fff);--power-border:#d7e4fb;--power-on-border:#9fe6c7;--console-bg:#0c1119;--console-text:#d4e1f5;--power-on-shadow:0 12px 28px #1a73e822;--nav-shadow:0 6px 22px #11121518;--card-shadow:0 5px 20px #15233a0d;--overlay-shadow:0 20px 70px #0006;--toast-bg:#111824;--shadow:0 6px 22px #11121512} :root[data-theme="dark"]{color-scheme:dark;--bg:#09090a;--surface:#121214;--surface2:#202024;--text:#fafafa;--muted:#c9c9cf;--line:#35353a;--blue:#1565d8;--blue2:#173b72;--green:#4caf50;--red:#ff6b6b;--amber:#ffb74d;--nav-muted:#c9c9cf;--power-bg:linear-gradient(145deg,#173b72,#202024);--power-on-bg:linear-gradient(145deg,#153b30,#121214);--power-border:#35353a;--power-on-border:#28785b;--console-bg:#080b10;--console-text:#d4e1f5;--power-on-shadow:0 12px 28px #0006;--nav-shadow:0 6px 22px #0008;--card-shadow:0 5px 20px #0004;--overlay-shadow:0 20px 70px #0009;--toast-bg:#202024;--shadow:0 6px 22px #0008}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;max-width:900px;padding:0 14px 112px;margin-inline:auto}button,input,select,textarea{font:inherit}button{border:0;border-radius:13px;padding:11px 15px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer}button:hover{filter:brightness(1.07)}button:disabled{opacity:.48;cursor:not-allowed}.secondary{background:var(--surface2);color:var(--text);border:1px solid var(--line)}.danger{background:var(--red)}.small{padding:7px 10px;font-size:13px}.top{display:flex;align-items:center;justify-content:space-between;padding:22px 5px 18px;min-height:92px}.brand{font-size:34px;letter-spacing:-1.8px;font-weight:900;color:var(--blue);line-height:1}.brand small{display:block;font-size:12px;letter-spacing:0;color:var(--blue);font-weight:650;margin:2px 0 0}.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--muted);margin-right:7px}.dot.ok{background:var(--green)}.dot.bad{background:var(--red)}.tabs{position:fixed;z-index:5;left:50%;bottom:9px;transform:translateX(-50%);width:min(850px,calc(100% - 20px));display:flex;gap:3px;padding:7px;background:color-mix(in srgb,var(--surface) 95%,transparent);border:1px solid var(--line);border-radius:34px;box-shadow:var(--nav-shadow);backdrop-filter:blur(18px)}.tab{flex:1;min-width:0;background:transparent;color:var(--nav-muted);padding:9px 2px 8px;border-radius:22px;font-size:12px;box-shadow:none;display:flex;flex-direction:column;align-items:center;gap:3px;font-weight:650}.tab .ico{font-size:21px;line-height:24px;display:grid;place-items:center}.tab .ico svg{width:22px;height:22px;fill:currentColor}.tab.active{background:var(--blue);color:white}.page{display:none}.page.active{display:block}.card{background:var(--surface);border:1px solid var(--line);border-radius:34px;padding:19px;margin:12px 0;box-shadow:var(--card-shadow)}h1{font-size:23px;margin:4px 0 14px;letter-spacing:-.4px}h2{font-size:17px;margin:0 0 13px}h3{font-size:14px;margin:0 0 8px}.muted{color:var(--muted)}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:0}.stack{display:grid;gap:10px}.field{display:grid;gap:5px;margin:10px 0}.field label{font-size:12px;color:var(--muted);font-weight:650}.field input,.field select,.field textarea,input,select,textarea{width:100%;min-width:0;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:12px;padding:11px 12px;outline:none}.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 18%,transparent)}textarea{resize:vertical;min-height:90px}.statusline{display:flex;align-items:center;gap:8px;font-weight:750}.hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:27px 17px}.power{width:116px;height:116px;border-radius:50%;background:var(--power-bg);color:var(--blue);border:1px solid var(--power-border);font-size:54px;display:grid;place-items:center;box-shadow:var(--power-on-shadow)}.power.on{background:var(--power-on-bg);color:var(--green);border-color:var(--power-on-border)}.power:disabled{opacity:.6}.bigstate{font-size:19px;font-weight:800;margin-top:14px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;margin-top:22px}.metric{background:var(--surface2);padding:10px 6px;border-radius:13px}.metric strong{display:block;font-size:13px}.metric span{display:block;color:var(--muted);font-size:11px;margin-top:3px}.profile{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--line);border-radius:14px;margin:7px 0;cursor:pointer}.profile.selected{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 8%,var(--surface))}.profile .pname{font-weight:750;overflow-wrap:anywhere}.profile .pmeta{font-size:12px;color:var(--muted)}.profile input{width:auto}.badge{display:inline-block;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;background:var(--surface2);color:var(--muted)}.badge.ok{background:color-mix(in srgb,var(--green) 14%,var(--surface));color:var(--green)}.badge.warn{background:color-mix(in srgb,var(--amber) 15%,var(--surface));color:var(--amber)}.badge.err{background:color-mix(in srgb,var(--red) 14%,var(--surface));color:var(--red)}.notice{padding:11px 13px;border-radius:13px;background:var(--surface2);color:var(--muted);font-size:13px;margin:10px 0}.notice.error{color:var(--red)}.notice.success{color:var(--green)}.mode{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--line);border-radius:13px;margin:7px 0;cursor:pointer}.mode input{width:auto;margin-top:4px}.mode b{display:block}.mode small{color:var(--muted)}.console{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--console-bg);color:var(--console-text);border-radius:14px;padding:13px;max-height:55vh;overflow:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.hidden{display:none!important}.footer{font-size:11px;color:var(--muted);text-align:center;padding:14px}.overlay{position:fixed;inset:0;background:#0009;z-index:20;display:grid;place-items:center;padding:18px}.modal{width:min(520px,100%);background:var(--surface);border:1px solid var(--line);border-radius:40px;padding:20px;box-shadow:var(--overlay-shadow)}.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:30;background:var(--toast-bg);color:#fff;border-radius:12px;padding:11px 15px;max-width:calc(100% - 24px);box-shadow:0 8px 25px #0003}.spinner{display:inline-block;width:13px;height:13px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}@keyframes spin{to{transform:rotate(360deg)}}/* Route rules: concise visual queue; advanced matchers remain in the selected card editor. */
+#page-route .route-rule{padding:10px 12px;border-radius:16px;margin:7px 0;box-shadow:none;transition:outline-color .12s,opacity .12s}
+#page-route .route-rule.selected{outline:2px solid var(--blue);outline-offset:1px}
+#page-route .route-rule-summary{display:flex;align-items:center;gap:7px;min-height:38px}
+#page-route .route-rule-summary b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#page-route .route-rule-meta{font-size:11px;color:var(--muted);max-width:90px;overflow:hidden;text-overflow:ellipsis}
+#page-route .route-rule-state{font-size:11px;border-radius:20px;padding:3px 7px;background:var(--surface2)}
+#page-route .route-rule-state.on{color:var(--green)}#page-route .route-rule-state.off{color:var(--muted)}
+#page-route .route-rule-grip{color:var(--muted);font-size:18px}
+#page-route .route-rule-description{font-size:11px;margin:3px 0 0 26px}
+#page-route .route-rule.dragging{opacity:.4}#page-route .route-rule.drag-over{outline:2px dashed var(--blue)}
+#page-route .route-rule-editor{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:20px}
+#page-route .route-rule-editor h3{font-size:15px;margin:0}
+#page-route .route-rule-editor .field{margin:9px 0}
+#page-route .route-rule-editor textarea{min-height:54px}
+#page-route .route-rule-editor select[multiple]{width:100%;min-height:72px}
+
 #page-route .route-rule{padding:12px 16px;border-radius:20px;margin:8px 0;box-shadow:none}
 #page-route .route-rule .route-rule-summary{display:flex;align-items:center;gap:10px;min-height:42px}
 #page-route .route-rule .route-rule-summary b{flex:1;min-width:0}
@@ -329,66 +345,64 @@ async function refreshSingBox(){
 }
 async function refreshSingBoxLogs(){try{$('singboxLogs').textContent=await req('/singbox/logs')||'Журнал пока пуст.'}catch(e){$('singboxLogs').textContent='Не удалось загрузить журнал: '+e.message}}
 function routeJSON(id){try{const value=JSON.parse($(id).value||'[]');return Array.isArray(value)?value:[]}catch(_){return []}}
+let selectedRouteRuleId='system-direct';
 function renderRouteRuleEditor(){
  const root=$('singboxRouteRuleEditor');if(!root)return;
  let rules;try{rules=JSON.parse($('singboxRules').value||'[]');if(!Array.isArray(rules))throw new Error('ожидается JSON-массив')}catch(e){toast('JSON правил: '+e.message,true);return}
- const directIndex=rules.findIndex(r=>(r.ID||r.id)==='system-direct');
- if(directIndex<0)rules.unshift({ID:'system-direct',Enabled:false,RuleSets:[],Domains:[],DomainSuffixes:[],DomainKeywords:[],DomainRegexes:[],IPCIDRs:[],Outbound:'direct'});
- else if(directIndex>0){const direct=rules.splice(directIndex,1)[0];rules.unshift(direct)}
- // Backward compatibility: fold the former Sing-box Direct textareas into the
- // single visible system-direct card, then clear the legacy inputs.
- const direct=rules[0];
- const mergeLines=(a,b)=>[...new Set([...(a||[]),...(b||[])].map(x=>String(x).trim()).filter(Boolean))];
- direct.Domains=mergeLines(direct.Domains,splitLines('singboxDirectDomains'));
- direct.DomainSuffixes=mergeLines(direct.DomainSuffixes,splitLines('singboxDirectSuffixes'));
- direct.IPCIDRs=mergeLines(direct.IPCIDRs,splitLines('singboxDirectCIDRs'));
+ const di=rules.findIndex(r=>(r.ID||r.id)==='system-direct');
+ if(di<0)rules.unshift({ID:'system-direct',Enabled:false,RuleSets:[],Domains:[],DomainSuffixes:[],DomainKeywords:[],DomainRegexes:[],IPCIDRs:[],Outbound:'direct'});
+ else if(di>0)rules.unshift(rules.splice(di,1)[0]);
+ const direct=rules[0],merge=(a,b)=>[...new Set([...(a||[]),...(b||[])].map(x=>String(x).trim()).filter(Boolean))];
+ direct.Domains=merge(direct.Domains,splitLines('singboxDirectDomains'));
+ direct.DomainSuffixes=merge(direct.DomainSuffixes,splitLines('singboxDirectSuffixes'));
+ direct.IPCIDRs=merge(direct.IPCIDRs,splitLines('singboxDirectCIDRs'));
  $('singboxDirectDomains').value='';$('singboxDirectSuffixes').value='';$('singboxDirectCIDRs').value='';
- if(!rules.some(r=>(r.ID||r.id)==='system-csqtt')){
-  rules.push({ID:'system-csqtt',Enabled:false,RuleSets:[],Domains:[],DomainSuffixes:[],DomainKeywords:[],DomainRegexes:[],IPCIDRs:[],Outbound:'csqtt'});
- }
+ if(!rules.some(r=>(r.ID||r.id)==='system-csqtt'))rules.push({ID:'system-csqtt',Enabled:false,RuleSets:[],Domains:[],DomainSuffixes:[],DomainKeywords:[],DomainRegexes:[],IPCIDRs:[],Outbound:'csqtt'});
  $('singboxRules').value=JSON.stringify(rules,null,2);
- const sets=routeJSON('singboxRuleSets'),tags=sets.map(x=>x.Tag||x.tag).filter(Boolean),outs=singBoxOutboundTags(true),csqttAvailable=!!$('singboxCsqtt').value.trim();
- const field=(r,name,label)=>'<div class="field"><label>'+label+'</label><textarea rows="2" data-field="'+name+'">'+esc((r[name]||r[name[0].toLowerCase()+name.slice(1)]||[]).join('\n'))+'</textarea></div>';
- const ruleSetField=(selected)=>'<div class="field"><label>Rule Set — теги из реестра</label><select data-field="RuleSets" multiple size="'+Math.max(2,Math.min(5,tags.length||2))+'">'+tags.map(tag=>'<option value="'+esc(tag)+'" '+(selected.includes(tag)?'selected':'')+'>'+esc(tag)+'</option>').join('')+'</select><small class="muted">Можно выбрать несколько наборов (Ctrl/⌘).</small></div>';
- root.innerHTML=rules.map((r,i)=>{
-  const id=r.ID||r.id||('route-'+(i+1)),system=id==='system-direct'?'direct':id==='system-csqtt'?'csqtt':'';
-  const selected=Array.isArray(r.RuleSets||r.rule_sets)?(r.RuleSets||r.rule_sets):[];
-  const enabled=(r.Enabled??r.enabled)!==false;
+ if(!rules.some(r=>(r.ID||r.id)===selectedRouteRuleId))selectedRouteRuleId='system-direct';
+ const tags=routeJSON('singboxRuleSets').map(x=>x.Tag||x.tag).filter(Boolean),outs=singBoxOutboundTags(true),idx=rules.findIndex(r=>(r.ID||r.id)===selectedRouteRuleId),selected=rules[idx];
+ const summary=r=>{const parts=[];for(const [key,label] of [['Domains','домены'],['DomainSuffixes','суффиксы'],['IPCIDRs','IP/CIDR'],['RuleSets','Rule Sets']]){const v=r[key]||[];if(v.length)parts.push(label+': '+v.length)}return parts.join(' · ')||'Условия не заданы'};
+ const cardHTML=rules.map((r,i)=>{
+  const id=r.ID||r.id,system=id==='system-direct'?'direct':id==='system-csqtt'?'csqtt':'',active=(r.Enabled??r.enabled)!==false;
   const move=system==='direct'?'':'<button type="button" class="small" data-move-route-rule="'+i+': -1" '+(i<=1?'disabled':'')+'>↑</button><button type="button" class="small" data-move-route-rule="'+i+': 1" '+(i===rules.length-1?'disabled':'')+'>↓</button>';
-  if(system==='direct'){
-   return '<article class="card route-rule system-rule" data-index="'+i+'" data-system-rule="direct"><div class="row" style="align-items:center;justify-content:space-between"><b>DIRECT</b><label><input type="checkbox" data-field="Enabled" '+(enabled?'checked':'')+'> Включено</label></div><div class="notice">Первое правило очереди. Объединяет прежние исключения «Директ» и условия system-direct; применяется до остальных правил маршрута.</div>'+ruleSetField(selected)+field(r,'Domains','Домены (точное совпадение)')+field(r,'DomainSuffixes','Доменные суффиксы')+field(r,'DomainKeywords','Ключевые слова домена')+field(r,'DomainRegexes','Регулярные выражения домена')+field(r,'IPCIDRs','IP / CIDR')+'</article>';
-  }
-  if(system==='csqtt'){
-   return '<article class="card route-rule system-rule" data-index="'+i+'" data-system-rule="csqtt"><div class="row" style="align-items:center;justify-content:space-between"><b>CSQTT</b><div class="row">'+move+'<label><input type="checkbox" data-field="Enabled" '+(enabled?'checked':'')+' '+(!csqttAvailable?'disabled':'')+'> Включено</label></div></div><div class="notice">Правило маршрутизирует только совпавшие домены, IP/CIDR и Rule Sets в CSQTT. Это не catch-all. Состояние CSQTT Core управляется отдельно во вкладке «Подключение».</div>'+ruleSetField(selected)+field(r,'Domains','Домены (точное совпадение)')+field(r,'DomainSuffixes','Доменные суффиксы')+field(r,'DomainKeywords','Ключевые слова домена')+field(r,'DomainRegexes','Регулярные выражения домена')+field(r,'IPCIDRs','IP / CIDR')+'<small class="muted">SOCKS5: '+esc($('singboxCsqtt').value.trim()||'endpoint не задан')+'</small>'+(csqttAvailable?'':'<div class="notice">Укажите CSQTT SOCKS5 endpoint во вкладке Sing-box, чтобы включить это правило.</div>')+'</article>';
-  }
-  const requestedOut=r.Outbound||r.outbound||'csqtt',out=outs.includes(requestedOut)?requestedOut:(outs.find(x=>x!=='direct')||'direct'),outboundUnavailable=singBoxOutboundUnavailable(out),ruleActive=enabled&&!outboundUnavailable;
-  return '<article class="card route-rule" data-index="'+i+'"><div class="row" style="align-items:center;justify-content:space-between"><b>Правило '+(i)+'</b><div class="row">'+move+'<label><input type="checkbox" data-field="Enabled" '+(ruleActive?'checked':'')+'> Включено</label><button type="button" class="danger small" data-remove-route-rule="'+i+'">Удалить</button></div></div><div class="field"><label>ID правила</label><input data-field="ID" value="'+esc(id)+'" maxlength="32"></div>'+ruleSetField(selected)+field(r,'Domains','Домены (точное совпадение)')+field(r,'DomainSuffixes','Доменные суффиксы')+field(r,'DomainKeywords','Ключевые слова домена')+field(r,'DomainRegexes','Регулярные выражения домена')+field(r,'IPCIDRs','IP / CIDR')+'<div class="field"><label>Outbound</label><select data-field="Outbound">'+outs.map(tag=>'<option value="'+esc(tag)+'" '+(out===tag?'selected':'')+' '+(singBoxOutboundUnavailable(tag)?'disabled':'')+'>'+esc(tag)+(singBoxOutboundUnavailable(tag)?' (отключён)':'')+'</option>').join('')+'</select></div>'+(outboundUnavailable?'<div class="notice">Outbound не настроен или отключён. Правило сохранено, но не применяется, пока outbound не будет доступен.</div>':'')+'</article>';
+  const title=system==='direct'?'DIRECT':system==='csqtt'?'CSQTT':(r.Name||id);
+  const out=system==='direct'?'direct':system==='csqtt'?'csqtt':(r.Outbound||r.outbound||'—');
+  return '<article class="card route-rule '+(system?'system-rule':'')+(id===selectedRouteRuleId?' selected':'')+'" data-index="'+i+'" data-rule-id="'+esc(id)+'" '+(system==='direct'?'':'draggable="true"')+'><div class="route-rule-summary"><span class="route-rule-grip" aria-hidden="true">'+(system==='direct'?'◆':'⠿')+'</span><b>'+esc(title)+'</b><span class="route-rule-meta">'+esc(out)+'</span><span class="route-rule-state '+(active?'on':'off')+'">'+(active?'Вкл':'Выкл')+'</span>'+move+'<button type="button" class="secondary small" data-select-route-rule="'+esc(id)+'">Изменить</button></div><div class="muted route-rule-description">'+esc(summary(r))+'</div></article>';
  }).join('');
- root.querySelectorAll('[data-remove-route-rule]').forEach(b=>b.addEventListener('click',()=>{collectRouteRuleEditor();const idx=Number(b.dataset.removeRouteRule);const rules=routeJSON('singboxRules');if(rules[idx]?.ID==='system-direct'||rules[idx]?.ID==='system-csqtt')return;rules.splice(idx,1);$('singboxRules').value=JSON.stringify(rules,null,2);renderRouteRuleEditor()}));
- root.querySelectorAll('[data-move-route-rule]').forEach(b=>b.addEventListener('click',()=>{const [idx,delta]=b.dataset.moveRouteRule.split(':').map(x=>Number(x.trim()));moveRouteRule(idx,delta)}));
- root.querySelectorAll('[data-system-rule="csqtt"] [data-field="Enabled"]').forEach(b=>b.addEventListener('change',()=>{collectRouteRuleEditor();renderRouteRuleEditor()}));
+ const field=(name,label)=>'<div class="field"><label>'+label+'</label><textarea rows="2" data-field="'+name+'">'+esc((selected[name]||[]).join('\n'))+'</textarea></div>';
+ const selectedSystem=selected.ID==='system-direct'?'direct':selected.ID==='system-csqtt'?'csqtt':'';
+ const enabled=(selected.Enabled??selected.enabled)!==false;
+ const selectedOut=selected.Outbound||'csqtt';
+ const editor='<section class="card route-rule-editor" data-editor-rule="'+esc(selectedRouteRuleId)+'"><div class="row" style="align-items:center;justify-content:space-between"><h3>'+(selectedSystem==='direct'?'DIRECT — условия':selectedSystem==='csqtt'?'CSQTT — условия':'Правило — '+esc(selected.ID||''))+'</h3><label><input type="checkbox" data-field="Enabled" '+(enabled?'checked':'')+' '+(selectedSystem==='csqtt'&&!$('singboxCsqtt').value.trim()?'disabled':'')+'> Включено</label></div><div class="field"><label>Rule Set</label><select data-field="RuleSets" multiple size="'+Math.max(2,Math.min(4,tags.length||2))+'">'+tags.map(t=>'<option value="'+esc(t)+'" '+((selected.RuleSets||[]).includes(t)?'selected':'')+'>'+esc(t)+'</option>').join('')+'</select><small class="muted">Можно выбрать несколько наборов.</small></div>'+field('Domains','Домены (точное совпадение)')+field('DomainSuffixes','Доменные суффиксы')+field('DomainKeywords','Ключевые слова домена')+field('DomainRegexes','Регулярные выражения домена')+field('IPCIDRs','IP / CIDR')+(selectedSystem==='direct'?'':'<div class="field"><label>Outbound</label><select data-field="Outbound">'+outs.map(t=>'<option value="'+esc(t)+'" '+(selectedOut===t?'selected':'')+' '+(singBoxOutboundUnavailable(t)?'disabled':'')+'>'+esc(t)+'</option>').join('')+'</select></div>')+(selectedSystem?'':'<button type="button" class="danger small" data-delete-selected-rule="1">Удалить правило</button>')+'</section>';
+ root.innerHTML='<div class="route-rule-list" aria-label="Очередь правил">'+cardHTML+'</div>'+editor;
+ root.querySelectorAll('[data-select-route-rule]').forEach(b=>b.addEventListener('click',()=>{collectRouteRuleEditor();selectedRouteRuleId=b.dataset.selectRouteRule;renderRouteRuleEditor()}));
+ root.querySelectorAll('.route-rule[data-rule-id]').forEach(card=>card.addEventListener('click',e=>{if(e.target.closest('button'))return;collectRouteRuleEditor();selectedRouteRuleId=card.dataset.ruleId;renderRouteRuleEditor()}));
+ root.querySelectorAll('[data-move-route-rule]').forEach(b=>b.addEventListener('click',()=>{const [i,d]=b.dataset.moveRouteRule.split(':').map(x=>Number(x.trim()));moveRouteRule(i,d)}));
+ root.querySelector('[data-delete-selected-rule]')?.addEventListener('click',()=>{collectRouteRuleEditor();const rules=routeJSON('singboxRules'),i=rules.findIndex(r=>(r.ID||r.id)===selectedRouteRuleId);if(i>0){rules.splice(i,1);selectedRouteRuleId='system-direct';$('singboxRules').value=JSON.stringify(rules,null,2);renderRouteRuleEditor()}});
+ let dragId=null;
+ root.querySelectorAll('.route-rule[draggable=true]').forEach(card=>{
+  card.addEventListener('dragstart',e=>{dragId=card.dataset.ruleId;card.classList.add('dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragId)});
+  card.addEventListener('dragend',()=>{dragId=null;root.querySelectorAll('.dragging,.drag-over').forEach(x=>x.classList.remove('dragging','drag-over'))});
+  card.addEventListener('dragover',e=>{e.preventDefault();card.classList.add('drag-over')});
+  card.addEventListener('dragleave',()=>card.classList.remove('drag-over'));
+  card.addEventListener('drop',e=>{e.preventDefault();card.classList.remove('drag-over');const from=dragId,to=card.dataset.ruleId;if(!from||from===to)return;collectRouteRuleEditor();const a=routeJSON('singboxRules'),fi=a.findIndex(x=>(x.ID||x.id)===from),ti=a.findIndex(x=>(x.ID||x.id)===to);if(fi<=0||ti<=0)return;const [item]=a.splice(fi,1);a.splice(ti,0,item);$('singboxRules').value=JSON.stringify(a,null,2);selectedRouteRuleId=from;renderRouteRuleEditor()});
+ });
+ root.querySelectorAll('.route-rule-editor [data-field]').forEach(el=>el.addEventListener('change',()=>collectRouteRuleEditor()));
 }
 function collectRouteRuleEditor(){
- const raw=$('singboxRules');if(raw?.closest('details')?.open)return;
- const root=$('singboxRouteRuleEditor');if(!root)return;
- const previous=routeJSON('singboxRules');
- const rules=[...root.querySelectorAll('.route-rule')].map((card,index)=>{
-  const existing=previous[index]&&typeof previous[index]==='object'?previous[index]:{};
-  const get=name=>card.querySelector('[data-field="'+name+'"]');
-  const lines=name=>(get(name)?.value||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-  const ruleSets=()=>[...(get('RuleSets')?.selectedOptions||[])].map(x=>x.value);
-  const system=card.dataset.systemRule;
-  if(system==='csqtt')return {...existing,ID:'system-csqtt',Enabled:!!get('Enabled')?.checked,RuleSets:ruleSets(),Domains:lines('Domains'),DomainSuffixes:lines('DomainSuffixes'),DomainKeywords:lines('DomainKeywords'),DomainRegexes:lines('DomainRegexes'),IPCIDRs:lines('IPCIDRs'),Outbound:'csqtt'};
-  if(system==='direct')return {...existing,ID:'system-direct',Enabled:!!get('Enabled')?.checked,RuleSets:ruleSets(),Domains:lines('Domains'),DomainSuffixes:lines('DomainSuffixes'),DomainKeywords:lines('DomainKeywords'),DomainRegexes:lines('DomainRegexes'),IPCIDRs:lines('IPCIDRs'),Outbound:'direct'};
-  const outbound=get('Outbound')?.value||singBoxOutboundTags().find(x=>x!=='direct')||'direct';return {...existing,ID:get('ID')?.value.trim()||'',Enabled:!!get('Enabled')?.checked&&!singBoxOutboundUnavailable(outbound),RuleSets:ruleSets(),Domains:lines('Domains'),DomainSuffixes:lines('DomainSuffixes'),DomainKeywords:lines('DomainKeywords'),DomainRegexes:lines('DomainRegexes'),IPCIDRs:lines('IPCIDRs'),Outbound:outbound};
- });
+ const root=$('singboxRouteRuleEditor'),editor=root?.querySelector('.route-rule-editor');if(!editor)return;
+ const rules=routeJSON('singboxRules'),i=rules.findIndex(r=>(r.ID||r.id)===selectedRouteRuleId);if(i<0)return;
+ const get=n=>editor.querySelector('[data-field="'+n+'"]'),lines=n=>(get(n)?.value||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ const r=rules[i];r.Enabled=!!get('Enabled')?.checked;r.RuleSets=[...(get('RuleSets')?.selectedOptions||[])].map(x=>x.value);
+ for(const n of ['Domains','DomainSuffixes','DomainKeywords','DomainRegexes','IPCIDRs'])r[n]=lines(n);
+ if(r.ID!=='system-direct'&&r.ID!=='system-csqtt')r.Outbound=get('Outbound')?.value||r.Outbound;
  $('singboxRules').value=JSON.stringify(rules,null,2);
 }
 function moveRouteRule(index,delta){
  collectRouteRuleEditor();const rules=routeJSON('singboxRules');if(index<=0)return;
  const target=index+delta;if(target<1||target>=rules.length)return;
  const [item]=rules.splice(index,1);rules.splice(target,0,item);
- $('singboxRules').value=JSON.stringify(rules,null,2);renderRouteRuleEditor();
+ $('singboxRules').value=JSON.stringify(rules,null,2);selectedRouteRuleId=item.ID||item.id;renderRouteRuleEditor();
 }
 function addRouteRule(){
  collectRouteRuleEditor();const rules=routeJSON('singboxRules');
