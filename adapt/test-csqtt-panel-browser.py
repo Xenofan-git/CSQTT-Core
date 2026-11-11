@@ -236,7 +236,7 @@ def main():
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("csqtt-route.example")
             route_cards.nth(2).locator("[data-move-route-rule]").first.click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
-            assert [route_cards.nth(i).get_attribute("data-system-rule") for i in range(3)] == ["direct", "csqtt", None], (
+            assert [route_cards.nth(i).get_attribute("data-system-rule") for i in range(3)] == ["direct", "csqtt", ""], (
                 "CSQTT must be movable above user rules but never above DIRECT"
             )
             route_cards.nth(2).drag_to(route_cards.nth(1))
