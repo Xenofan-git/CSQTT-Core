@@ -221,24 +221,54 @@ def main():
             assert route_cards.nth(0).locator("[data-move-route-rule]").count() == 0
             assert route_cards.nth(0).locator("[data-remove-route-rule]").count() == 0
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").check()
-            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("direct-route.example")
+            assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").input_value() == "example.ru", (
+                "legacy DirectDomains must migrate into the fixed DIRECT rule editor"
+            )
+            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("example.ru\ndirect-route.example")
             page.locator("#singboxAddRouteRule").click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert route_cards.count() == 3
-            route_cards.nth(1).locator('[data-select-route-rule]').click()\n            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("user-route.example")
+            route_cards.nth(1).locator('[data-select-route-rule]').click()
+            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("user-route.example")
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Outbound\"]").select_option("socks-hydra")
-            route_cards.nth(2).locator('[data-select-route-rule]').click()\n            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").check()
+            route_cards.nth(2).locator('[data-select-route-rule]').click()
+            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").check()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("csqtt-route.example")
             route_cards.nth(2).locator("[data-move-route-rule]").first.click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert [route_cards.nth(i).get_attribute("data-system-rule") for i in range(3)] == ["direct", "csqtt", None], (
                 "CSQTT must be movable above user rules but never above DIRECT"
             )
+            route_cards.nth(2).drag_to(route_cards.nth(1))
+            route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
+            assert [route_cards.nth(i).get_attribute("data-rule-id") for i in range(3)] == ["system-direct", "route-1", "system-csqtt"]
+            route_cards.nth(1).drag_to(route_cards.nth(2))
+            route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
+            assert [route_cards.nth(i).get_attribute("data-rule-id") for i in range(3)] == ["system-direct", "system-csqtt", "route-1"]
+            route_cards.nth(1).locator('[data-select-route-rule]').click()
+            toggle = page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]")
+            toggle.uncheck()
+            toggle.check()
             page.locator("#singboxSave").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('Конфигурация проверена sing-box и сохранена')")
-            assert singbox_saved["Rules"][0]["ID"] == "system-direct" and singbox_saved["Rules"][0]["Domains"] == ["direct-route.example"]
+            assert singbox_saved["Rules"][0]["ID"] == "system-direct" and singbox_saved["Rules"][0]["Domains"] == ["example.ru", "direct-route.example"] and singbox_saved["Rules"][0]["Enabled"] is True
             assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Enabled"] is True and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"]
-            assert singbox_saved["Rules"][2]["Domains"] == ["user-route.example"]
+            assert singbox_saved["Rules"][2]["Domains"] == ["user-route.example"] and singbox_saved["Rules"][2]["Outbound"] == "socks-hydra"
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_function("document.querySelector('#profileList .profile') !== null")
+            page.locator('button[data-page="route"]').click()
+            page.wait_for_function("document.querySelectorAll('#singboxRouteRuleEditor .route-rule').length === 3")
+            route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
+            assert [route_cards.nth(i).get_attribute("data-rule-id") for i in range(3)] == ["system-direct", "system-csqtt", "route-1"]
+            route_cards.nth(0).locator('[data-select-route-rule]').click()
+            assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").is_checked()
+            assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").input_value() == "example.ru\ndirect-route.example"
+            route_cards.nth(1).locator('[data-select-route-rule]').click()
+            assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").is_checked()
+            assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").input_value() == "csqtt-route.example"
+            route_cards.nth(2).locator('[data-select-route-rule]').click()
+            assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Outbound\"]").input_value() == "socks-hydra"
+            assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").input_value() == "user-route.example"
             # The limit counts user rules only; DIRECT and CSQTT system cards are excluded.
             for _ in range(15):
                 page.locator("#singboxAddRouteRule").click()
