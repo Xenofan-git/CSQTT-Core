@@ -252,7 +252,7 @@ def main():
             page.locator('button[data-page="singbox"]').click()
             assert page.locator("#page-singbox").evaluate("el => el.classList.contains('active')")
             assert page.locator("#singboxListen").input_value() == "127.0.0.1:19180"
-            assert page.locator("#singboxDirectDomains").input_value() == "example.ru"
+            assert page.locator("#singboxDirectDomains").input_value() == "", "legacy Direct textarea must be hidden and cleared after migration"
             assert page.locator("#singboxCsqtt").input_value() == "127.0.0.1:12500"
             assert "CSQTT Core" in page.locator("#page-singbox").inner_text()
             assert page.locator("#singboxFinalOutbound").input_value() == "socks-hydra"
@@ -266,7 +266,9 @@ def main():
             page.locator("#singboxDNSStrategy").select_option("prefer_ipv4")
             outbound_options = page.locator("#singboxFinalOutbound option").all_text_contents()
             assert "socks-hydra" in outbound_options and "CSQTT" in outbound_options and "socks-disabled" not in outbound_options, outbound_options
-            page.locator("#singboxDirectDomains").fill("example.ru\\napi.example.ru")
+            page.locator('button[data-page="route"]').click()
+            page.locator("#singboxRouteRuleEditor .route-rule").first.locator('[data-field="Domains"]').fill("example.ru\\napi.example.ru")
+            page.locator('button[data-page="singbox"]').click()
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
