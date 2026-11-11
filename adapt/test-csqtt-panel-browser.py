@@ -307,7 +307,7 @@ def main():
             assert singbox_saved.get("CSQTTAddress") == "127.0.0.1:12500"
             assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"]
             assert singbox_saved.get("FinalOutbound") == "socks-hydra"
-            assert singbox_saved.get("DNSMode") == "udp" and singbox_saved.get("DNSServer") == "192.168.4.1"
+            assert singbox_saved.get("DNSMode") == "udp" and singbox_saved.get("DNSServer") == "192.168.4.1", f"DNS payload mismatch: {singbox_saved!r}"
             assert singbox_saved.get("DNSPort") == 53 and singbox_saved.get("DNSStrategy") == "prefer_ipv4"
             assert [x["ID"] for x in singbox_saved.get("SOCKS5", [])] == ["hydra", "disabled"]
             assert page.locator("#singboxLogs").inner_text() == "fixture sing-box log"
