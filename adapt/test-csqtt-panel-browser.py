@@ -220,15 +220,15 @@ def main():
             assert route_cards.nth(1).get_attribute("data-system-rule") == "csqtt"
             assert route_cards.nth(0).locator("[data-move-route-rule]").count() == 0
             assert route_cards.nth(0).locator("[data-remove-route-rule]").count() == 0
-            route_cards.nth(0).locator('[data-field="Enabled"]').check()
-            route_cards.nth(0).locator('[data-field="Domains"]').fill("direct-route.example")
+            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").check()
+            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("direct-route.example")
             page.locator("#singboxAddRouteRule").click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert route_cards.count() == 3
-            route_cards.nth(1).locator('[data-field="Domains"]').fill("user-route.example")
-            route_cards.nth(1).locator('[data-field="Outbound"]').select_option("socks-hydra")
-            route_cards.nth(2).locator('[data-field="Enabled"]').check()
-            route_cards.nth(2).locator('[data-field="Domains"]').fill("csqtt-route.example")
+            route_cards.nth(1).locator('[data-select-route-rule]').click()\n            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("user-route.example")
+            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Outbound\"]").select_option("socks-hydra")
+            route_cards.nth(2).locator('[data-select-route-rule]').click()\n            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").check()
+            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("csqtt-route.example")
             route_cards.nth(2).locator("[data-move-route-rule]").first.click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert [route_cards.nth(i).get_attribute("data-system-rule") for i in range(3)] == ["direct", "csqtt", None], (
