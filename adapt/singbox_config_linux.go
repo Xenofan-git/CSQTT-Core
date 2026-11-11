@@ -297,10 +297,12 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 	}
 	outbounds := []map[string]any{
 		{"type": "direct", "tag": singBoxDirectTag},
-		{"type": "direct", "tag": singBoxDirectBypassTag},
 	}
-	knownOutbounds := map[string]struct{}{singBoxDirectTag: {}, singBoxDirectBypassTag: {}}
-	allOutbounds := map[string]struct{}{singBoxDirectTag: {}, singBoxDirectBypassTag: {}, singBoxCSQTTTag: {}}
+	// DIRECT exclusions and explicit Route -> DIRECT cards share one
+	// outbound and one ordered system-direct rule. The legacy bypass tag is
+	// accepted only by the config migration reader, never emitted.
+	knownOutbounds := map[string]struct{}{singBoxDirectTag: {}}
+	allOutbounds := map[string]struct{}{singBoxDirectTag: {}, singBoxCSQTTTag: {}}
 	csqttAddress := strings.TrimSpace(input.CSQTTAddress)
 	// CSQTT Core runtime state is independent from route-rule activation.
 	// Keep its SOCKS outbound configured whenever the endpoint exists; the
@@ -436,14 +438,35 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		"inbound": []string{singBoxInboundTag},
 		"action": "sniff",
 	})
-	if len(directDomains) > 0 || len(directSuffixes) > 0 || len(directCIDRs) > 0 {
-		rules = append(rules, makeSingBoxRouteRule(directDomains, directSuffixes, nil, nil, directCIDRs, singBoxDirectBypassTag))
+	// Merge legacy Direct-tab lists into the visible system-direct card.
+	// Older clients may provide only the lists, so synthesize the card then.
+	routeInput := append([]singBoxRouteRule(nil), input.Rules...)
+	directCard := -1
+	for i := range routeInput {
+		if routeInput[i].ID == singBoxDirectRuleID {
+			if directCard >= 0 { return nil, fmt.Errorf("the system DIRECT rule may appear only once") }
+			directCard = i
+		}
+	}
+	hasDirectLists := len(directDomains)+len(directSuffixes)+len(directCIDRs) > 0
+	if directCard < 0 && hasDirectLists {
+		routeInput = append([]singBoxRouteRule{{ID: singBoxDirectRuleID, Outbound: singBoxDirectTag, Enabled: true}}, routeInput...)
+		directCard = 0
+	}
+	if directCard >= 0 {
+		card := &routeInput[directCard]
+		if card.Outbound != singBoxDirectTag { return nil, fmt.Errorf("the system DIRECT rule must use the DIRECT outbound") }
+		card.Domains = append(card.Domains, directDomains...)
+		card.DomainSuffixes = append(card.DomainSuffixes, directSuffixes...)
+		card.IPCIDRs = append(card.IPCIDRs, directCIDRs...)
+		// Legacy Direct exclusions were always active. Preserve that behavior.
+		if hasDirectLists { card.Enabled = true }
 	}
 
-	seenRuleIDs := make(map[string]struct{}, len(input.Rules))
+	seenRuleIDs := make(map[string]struct{}, len(routeInput))
 	userRuleCount := 0
 	systemDirectSeen, systemCSQTTSeen := false, false
-	for index, item := range input.Rules {
+	for index, item := range routeInput {
 		isDirectSystem := item.ID == singBoxDirectRuleID
 		isCSQTTSystem := item.ID == singBoxCSQTTRuleID
 		if !isDirectSystem && !isCSQTTSystem { userRuleCount++; if userRuleCount > 15 { return nil, fmt.Errorf("at most 15 user route rules are allowed") } }
@@ -482,7 +505,7 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		if isCSQTTSystem && item.Enabled && matcherCount == 0 && !singBoxAdvancedHasMatcher(item.Advanced) {
 			return nil, fmt.Errorf("the CSQTT route rule must contain at least one domain, IP/CIDR, or Rule Set matcher")
 		}
-		if item.Outbound == singBoxDirectBypassTag { return nil, fmt.Errorf("route rule %q cannot target the internal Direct-exclusions outbound", item.ID) }
+		if item.Outbound == singBoxDirectBypassTag { return nil, fmt.Errorf("route rule %q cannot target the legacy Direct-exclusions outbound", item.ID) }
 		if _, exists := allOutbounds[item.Outbound]; !exists { return nil, fmt.Errorf("route rule %q references unknown outbound %q", item.ID, item.Outbound) }
 		if isDirectSystem && item.Outbound != singBoxDirectTag { return nil, fmt.Errorf("system DIRECT rule must target DIRECT") }
 		if !item.Enabled { continue }
