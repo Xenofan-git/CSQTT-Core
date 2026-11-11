@@ -52,9 +52,12 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 		t.Fatalf("default DNS server is not local/system-resolver mode: %#v", dnsServers)
 	}
 	outbounds := config["outbounds"].([]any)
-	if len(outbounds) != 4 { t.Fatalf("got %d outbounds, want direct + Direct-bypass + CSQTT + one user SOCKS5", len(outbounds)) }
+	if len(outbounds) != 3 { t.Fatalf("got %d outbounds, want DIRECT + CSQTT + one user SOCKS5", len(outbounds)) }
+	for _, raw := range outbounds {
+		if raw.(map[string]any)["tag"] == singBoxDirectBypassTag { t.Fatal("legacy direct-bypass outbound must not be emitted") }
+	}
 	rules := config["route"].(map[string]any)["rules"].([]any)
-	if len(rules) != 5 { t.Fatalf("got %d rules, want DNS hijack + sniff + Direct + 2 enabled routes", len(rules)) }
+	if len(rules) != 5 { t.Fatalf("got %d rules, want DNS hijack + sniff + system-direct + 2 enabled routes", len(rules)) }
 	dnsHijack := rules[0].(map[string]any)
 	if dnsHijack["action"] != "hijack-dns" || dnsHijack["port"].([]any)[0] != float64(53) {
 		t.Fatalf("DNS traffic is not hijacked before ordinary routing: %#v", dnsHijack)
@@ -63,10 +66,11 @@ func TestBuildSingBoxConfigKeepsDirectAndOrderedRouteRulesSeparate(t *testing.T)
 		t.Fatalf("unmatched fallback = %v, want explicit DIRECT", gotFinal)
 	}
 	direct := rules[2].(map[string]any)
-	if direct["outbound"] != singBoxDirectBypassTag { t.Fatalf("Direct bypass is not first after DNS/sniff: %#v", direct) }
+	if direct["outbound"] != singBoxDirectTag { t.Fatalf("system-direct card is not first after DNS/sniff: %#v", direct) }
 	if direct["domain"].([]any)[0] != "local.example" { t.Fatalf("domain normalization/dedup failed: %#v", direct) }
 	if direct["domain_suffix"].([]any)[0] != ".example.org" { t.Fatalf("Direct suffix missing: %#v", direct) }
 	if direct["ip_cidr"].([]any)[0] != "192.0.2.0/24" || direct["ip_cidr"].([]any)[2] != "203.0.113.8/32" { t.Fatalf("CIDR normalization failed: %#v", direct) }
+	if direct["domain"].([]any)[0] != "local.example" || direct["domain_suffix"].([]any)[0] != ".example.org" { t.Fatalf("legacy Direct fields were not merged into system-direct: %#v", direct) }
 	first := rules[3].(map[string]any)
 	second := rules[4].(map[string]any)
 	if first["outbound"] != "socks-proxy-a" || first["domain"].([]any)[0] != "one.example" { t.Fatalf("first user route lost ordering: %#v", first) }
