@@ -609,13 +609,19 @@ func TestSingBoxManagerLoadSavePreservesDNSAndExplicitDirectRoute(t *testing.T) 
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil { t.Fatal(err) }
 	rules := raw["route"].(map[string]any)["rules"].([]any)
-	var bypass, explicit bool
+	var legacyBypass, systemDirect, explicit bool
 	for _, item := range rules {
 		rule := item.(map[string]any)
-		if rule["outbound"] == singBoxDirectBypassTag && stringSlice(rule["domain"])[0] == "bypass.example" { bypass = true }
-		if rule["outbound"] == singBoxDirectTag && stringSlice(rule["domain"])[0] == "route-direct.example" { explicit = true }
+		if rule["outbound"] == singBoxDirectBypassTag { legacyBypass = true }
+		if rule["outbound"] == singBoxDirectTag {
+			domains := stringSlice(rule["domain"])
+			if len(domains) > 0 && domains[0] == "bypass.example" { systemDirect = true }
+			if len(domains) > 0 && domains[0] == "route-direct.example" { explicit = true }
+		}
 	}
-	if !bypass || !explicit { t.Fatalf("Direct and Route DIRECT were not kept distinct: %#v", rules) }
+	if legacyBypass || !systemDirect || !explicit {
+		t.Fatalf("Direct exclusions must be merged into system-direct while explicit Route -> DIRECT remains separate: %#v", rules)
+	}
 }
 
 func TestSingBoxManagerMigratesLegacyDirectExclusions(t *testing.T) {
