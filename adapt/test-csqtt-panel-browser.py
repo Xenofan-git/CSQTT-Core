@@ -298,7 +298,7 @@ def main():
             assert "socks-hydra" in outbound_options and "CSQTT" in outbound_options and "socks-disabled" not in outbound_options, outbound_options
             page.locator('button[data-page="route"]').click()
             page.locator("#singboxRouteRuleEditor .route-rule").first.locator('[data-select-route-rule]').click()
-            page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field="Domains"]").fill("example.ru\napi.example.ru")
+            page.locator('#singboxRouteRuleEditor .route-rule-editor [data-field="Domains"]').fill("example.ru\napi.example.ru")
             page.locator('button[data-page="singbox"]').click()
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
