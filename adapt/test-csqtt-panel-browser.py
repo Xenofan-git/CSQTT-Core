@@ -256,7 +256,7 @@ def main():
             page.locator("#singboxSave").click()
             page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('Конфигурация проверена sing-box и сохранена')")
             assert singbox_saved["Rules"][0]["ID"] == "system-direct" and singbox_saved["Rules"][0]["Domains"] == ["example.ru", "direct-route.example"] and singbox_saved["Rules"][0]["Enabled"] is True
-            assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Enabled"] is True and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"]
+            assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Enabled"] is True and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"], f"saved CSQTT rule mismatch: {json.dumps(singbox_saved.get('Rules', []), ensure_ascii=False)}"
             assert singbox_saved["Rules"][2]["Domains"] == ["user-route.example"] and singbox_saved["Rules"][2]["Outbound"] == "socks-hydra"
             page.reload(wait_until="domcontentloaded")
             page.wait_for_function("document.querySelector('#profileList .profile') !== null")
