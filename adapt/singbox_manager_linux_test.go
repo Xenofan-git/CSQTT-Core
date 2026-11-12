@@ -558,13 +558,21 @@ func TestSingBoxManagerRejectsSymlinkedRemoteRuleSetCache(t *testing.T) {
 	if err:=manager.validateRuleSetCachePath(input);err==nil||!strings.Contains(err.Error(),"non-symlink") {t.Fatalf("symlinked cache path was accepted: %v",err)}
 }
 
-func TestSingBoxManagerRejectsMissingPanelStateForManagedConfig(t *testing.T) {
+func TestSingBoxManagerRejectsMissingPanelStateForLegacyManagedConfig(t *testing.T) {
 	dir:=t.TempDir();config:=filepath.Join(dir,"config.json")
 	manager:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexit 0"),config,filepath.Join(dir,"sing-box.log"))
 	if err:=manager.SaveConfig(singBoxConfigInput{ListenAddress:"127.0.0.1:19080",FinalOutbound:singBoxDirectTag});err!=nil{t.Fatal(err)}
+	data,err:=os.ReadFile(config);if err!=nil{t.Fatal(err)}
+	var raw map[string]any
+	if err:=json.Unmarshal(data,&raw);err!=nil{t.Fatal(err)}
+	outbounds:=raw["outbounds"].([]any)
+	outbounds=append(outbounds,map[string]any{"type":"direct","tag":singBoxDirectBypassTag})
+	raw["outbounds"]=outbounds
+	data,err=json.MarshalIndent(raw,"","  ");if err!=nil{t.Fatal(err)}
+	if err:=os.WriteFile(config,append(data,'\\n'),0600);err!=nil{t.Fatal(err)}
 	if err:=os.Remove(manager.panelStatePath());err!=nil{t.Fatal(err)}
 	if _,err:=manager.LoadConfig();err==nil||!strings.Contains(err.Error(),"panel state is missing"){
-		t.Fatalf("missing panel state was not rejected: %v",err)
+		t.Fatalf("missing panel state was not rejected for a legacy managed marker: %v",err)
 	}
 }
 
