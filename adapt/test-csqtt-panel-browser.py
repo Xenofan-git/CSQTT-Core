@@ -234,11 +234,15 @@ def main():
             route_cards.nth(2).locator('[data-select-route-rule]').click()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").check()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("csqtt-route.example")
+            # CSQTT starts immediately after DIRECT; priority controls can move it below user rules and restore it.
+            route_cards.nth(1).locator("[data-move-route-rule]").last.click()
+            route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
+            assert [route_cards.nth(i).get_attribute("data-rule-id") for i in range(3)] == ["system-direct", "route-1", "system-csqtt"], (
+                "CSQTT must be movable below user rules but never above DIRECT"
+            )
             route_cards.nth(2).locator("[data-move-route-rule]").first.click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
-            assert [route_cards.nth(i).get_attribute("data-system-rule") for i in range(3)] == ["direct", "csqtt", ""], (
-                "CSQTT must be movable above user rules but never above DIRECT"
-            )
+            assert [route_cards.nth(i).get_attribute("data-rule-id") for i in range(3)] == ["system-direct", "system-csqtt", "route-1"]
             route_cards.nth(2).drag_to(route_cards.nth(1))
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert [route_cards.nth(i).get_attribute("data-rule-id") for i in range(3)] == ["system-direct", "route-1", "system-csqtt"]
