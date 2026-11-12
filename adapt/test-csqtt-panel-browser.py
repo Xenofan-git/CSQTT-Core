@@ -305,7 +305,7 @@ def main():
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
             assert "CSQTTEnabled" not in singbox_saved and "CSQTTExplicitlyDisabled" not in singbox_saved
             assert singbox_saved.get("CSQTTAddress") == "127.0.0.1:12500"
-            assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"]
+            assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"], f"Route rules payload mismatch: {singbox_saved.get('Rules')!r}"
             assert singbox_saved.get("FinalOutbound") == "socks-hydra"
             assert singbox_saved.get("DNSMode") == "udp" and singbox_saved.get("DNSServer") == "192.168.4.1", f"DNS payload mismatch: {singbox_saved!r}"
             assert singbox_saved.get("DNSPort") == 53 and singbox_saved.get("DNSStrategy") == "prefer_ipv4"
