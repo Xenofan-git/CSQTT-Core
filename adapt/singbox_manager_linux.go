@@ -355,7 +355,7 @@ func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
 			serverPort, ok := server["server_port"].(float64)
 			if !ok || serverPort < 1 || serverPort > 65535 { return input, fmt.Errorf("invalid persisted UDP DNS server port") }
 			input.DNSPort = int(serverPort)
-			if server["detour"] != singBoxDirectTag { return input, fmt.Errorf("unsupported UDP DNS detour; expected Direct") }
+			if detour, present := server["detour"]; present && detour != nil && detour != "" { return input, fmt.Errorf("unsupported UDP DNS detour; managed UDP DNS must use the default transport") }
 		default:
 			return input, fmt.Errorf("unsupported sing-box DNS server type %v", server["type"])
 		}

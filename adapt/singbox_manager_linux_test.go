@@ -677,3 +677,17 @@ func TestSingBoxManagerRoundTripsExternalDefaultWithoutCSQTT(t *testing.T) {
 		t.Fatalf("SOCKS5 credentials did not round-trip: %#v", loaded.SOCKS5[0])
 	}
 }
+
+func TestSingBoxManagerLegacyUDPDNSConfigWithoutPanelState(t *testing.T) {
+ dir := t.TempDir()
+ config := filepath.Join(dir, "config.json")
+ manager := NewSingBoxManager(newFakeSingBox(t, "if [ \"$1\" = check ]; then exit 0; fi\nexit 0"), config, filepath.Join(dir, "sing-box.log"))
+ input := singBoxConfigInput{ListenAddress:"127.0.0.1:19080", DNSMode:"udp", DNSServer:"127.0.0.1", DNSPort:5353, DNSStrategy:"ipv4_only"}
+ if err:=manager.SaveConfig(input);err!=nil{t.Fatal(err)}
+ if err:=os.Remove(manager.panelStatePath());err!=nil{t.Fatal(err)}
+ loaded,err:=manager.LoadConfig()
+ if err!=nil{t.Fatalf("valid generated UDP DNS config rejected without panel state: %v",err)}
+ if loaded.DNSMode!="udp"||loaded.DNSServer!="127.0.0.1"||loaded.DNSPort!=5353||loaded.DNSStrategy!="ipv4_only" {
+  t.Fatalf("UDP DNS did not survive legacy load: %#v",loaded)
+ }
+}
