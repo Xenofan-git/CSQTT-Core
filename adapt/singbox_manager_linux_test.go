@@ -569,7 +569,7 @@ func TestSingBoxManagerRejectsMissingPanelStateForLegacyManagedConfig(t *testing
 	outbounds=append(outbounds,map[string]any{"type":"direct","tag":singBoxDirectBypassTag})
 	raw["outbounds"]=outbounds
 	data,err=json.MarshalIndent(raw,"","  ");if err!=nil{t.Fatal(err)}
-	if err:=os.WriteFile(config,append(data,'\\n'),0600);err!=nil{t.Fatal(err)}
+	if err:=os.WriteFile(config,append(data,'\n'),0600);err!=nil{t.Fatal(err)}
 	if err:=os.Remove(manager.panelStatePath());err!=nil{t.Fatal(err)}
 	if _,err:=manager.LoadConfig();err==nil||!strings.Contains(err.Error(),"panel state is missing"){
 		t.Fatalf("missing panel state was not rejected for a legacy managed marker: %v",err)
