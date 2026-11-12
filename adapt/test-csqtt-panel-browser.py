@@ -228,10 +228,10 @@ def main():
             page.locator("#singboxAddRouteRule").click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert route_cards.count() == 3
-            route_cards.nth(1).locator('[data-select-route-rule]').click()
+            route_cards.nth(2).locator('[data-select-route-rule]').click()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("user-route.example")
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Outbound\"]").select_option("socks-hydra")
-            route_cards.nth(2).locator('[data-select-route-rule]').click()
+            route_cards.nth(1).locator('[data-select-route-rule]').click()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").check()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("csqtt-route.example")
             # CSQTT starts immediately after DIRECT; priority controls can move it below user rules and restore it.
