@@ -131,7 +131,7 @@ TCP и UDP relay проверяются E2E через реальную реал
 
 GitHub Actions собирает и проверяет существующую ARM64 адаптацию на основе закреплённого upstream LaLune. Проверки включают исходную адаптацию, панель и API, Chromium smoke test, DeployManager, ARM64 сборку, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с nftables и Linux routes, а также испытания в изолированной Debian ARM64 system VM.
 
-Последний зафиксированный успешный контрольный запуск: [CI run #1297](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64/actions/runs/42114527446). Оба job завершились успешно: pinned sing-box 1.14.4 config validation, сборка ARM64, Chromium smoke test, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с реальными nftables/Linux routes, Deploy API и lifecycle, recovery, clean-runtime acceptance в Debian 13 ARM64 system VM. Это подтверждает только сценарии, реально входившие в запуск; это не заменяет аппаратное тестирование на NanoPi и не означает готовность для всех ARM64 устройств.
+Последний подтверждённый успешный контрольный запуск: [CI #1529](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64/actions/runs/43284612321), commit `6a32083b704b908aadd1f6f32e3f9584868aa128`. Оба задания успешны: pinned Go/ARM64 build и испытания реального CSQTT artifact в Debian ARM64 system VM. Дополнительно исправлена несовместимость сохранения/загрузки UDP DNS без явного detour и добавлен регрессионный тест. Это не подтверждает аппаратную готовность NanoPi или полное распознавание доменов для QUIC/ECH/предварительно разрешённых IP.
 
 ## Репозиторий и правила разработки
 
