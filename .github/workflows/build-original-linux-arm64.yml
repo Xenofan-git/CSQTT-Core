@@ -154,6 +154,7 @@ jobs:
           .venv-panel-test/bin/pip install playwright
           .venv-panel-test/bin/python -m playwright install --with-deps chromium
           .venv-panel-test/bin/python adapt/test-csqtt-panel-browser.py
+          .venv-panel-test/bin/python adapt/test-csqtt-server-panel-browser.py
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
