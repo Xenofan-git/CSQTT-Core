@@ -218,6 +218,7 @@ official = r'''fn deploy_official_csqtt(args: &DeployArgs, ports: &Ports) -> Res
         };
         let remote = format!("{}@{}", args.user, remote_host);
         let remote_stage = format!("/tmp/lalune-csqtt-deploy-{}-{nonce:x}", std::process::id());
+        // An SSH transport failure can leave the uploaded staging directory behind.
         // A secret URL is a server routing feature in CSQTT 2.5.0, not
         // a random staging directory. Never advertise one until the
         // matching Rust web router and health probes support it.
