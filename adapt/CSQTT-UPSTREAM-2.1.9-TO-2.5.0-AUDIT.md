@@ -73,3 +73,17 @@
 2. Compare v2.5.0 tunnel recovery semantics with the existing Linux liveness/recovery implementation; add only demonstrably missing, platform-neutral safeguards.
 3. Keep the existing v2.1.9-derived installer and dataplane unchanged unless a narrow, tested improvement is justified.
 4. After the audit decisions are implemented or explicitly deferred, update the project README and NanoPi journal to the verified state.
+
+
+### 2026-11-13: Deploy security trace (CSQTT-Core)
+
+Reviewed `adapt/patch-csqtt-deploy-manager.py`, `adapt/patch-csqtt-deploy-script.py` and `adapt/test-csqtt-lalune-deploy-script.py` without modifying production deployment.
+
+- **SSH host identity:** both SCP and SSH paths must retain `StrictHostKeyChecking=accept-new`; this is TOFU, not a pre-verified host identity. Pin rotation/review UI is not yet implemented.
+- **Credential transport:** DeployManager reads a one-shot local secrets file, removes it after reading, writes two staging credential files with mode 0600 under a 0700 directory, and removes the local bundle after the operation. Remote staging uses a unique 0700 directory with cleanup trap on the main install/uninstall script. Verify cleanup on *every* early SSH/SCP failure path and verify remote file modes in a disposable integration test.
+- **Input and output boundary:** web user/password/main password are constrained to ASCII alphanumeric and device ID to alphanumeric/hyphen. The SSH target is assembled from user and host; audit validation at the API boundary before accepting untrusted host/user strings. Remote stdout/stderr is printed verbatim, so test that errors and health checks never echo secrets.
+- **Port and runtime isolation:** installer includes foreign-listener fail-closed checks and namespaced cleanup. Static checks are present, but a live disposable test should assert no unrelated service is stopped on conflicting ports.
+- **v2.5.0 secret-path feature:** not present in this audited v2.1.9-derived deployment. It must not be represented as active security protection. Before porting, align server route nesting, installer environment, panel URL, reverse proxy, health probe, certificate renewal and uninstall. A secret URL is not a substitute for authentication.
+- **Recovery:** separately verify interrupted SCP, interrupted install, failed health check and restart idempotency. Do not change global routing or unrelated services to recover CSQTT.
+
+This is a code-level audit and test plan, **not** a penetration test or proof that every failure path is safe.
