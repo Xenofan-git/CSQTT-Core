@@ -263,7 +263,15 @@ echo CSQTT_LALUNE_DEPLOY_OK
 echo "PANEL_PORT={web_port}"
 "#, peer_port=peer_port, web_port=web_port, ssh_port=ssh_port)
         };
-        let output = run_ssh(args, &remote, &script).context("run namespaced original CSQTT deploy.sh over SSH")?;
+        // The remote EXIT trap runs only if the install shell starts. An SSH
+        // transport failure can leave the uploaded staging directory behind.
+        let output = match run_ssh(args, &remote, &script) {
+            Ok(output) => output,
+            Err(error) => {
+                let _ = run_ssh(args, &remote, &format!("rm -rf -- '{remote_stage}'"));
+                return Err(error).context("run namespaced original CSQTT deploy.sh over SSH");
+            }
+        };
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         for line in stdout.lines() { println!("[remote] {line}"); }
