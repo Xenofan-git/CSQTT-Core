@@ -22,7 +22,7 @@ PEER_PORT=47000
 WEB_PORT=47002
 die() { echo "GUARD_DENIED: $*" >&2; return 41; }
 peer_port_listeners() { printf '%s' "${FAKE_UDP_LISTENER:-}"; }
-peer_port_listener_pids() { printf '%s\\n' "${FAKE_UDP_PID:-}"; }
+peer_port_listener_pids() { printf '%s\n' "${FAKE_UDP_PID:-}"; }
 csqtt_process_owns_peer_port() { [ "$1" = "${OWNED_PID:-}" ]; }
 csqtt_process_is_owned() { [ "$1" = "${OWNED_PID:-}" ]; }
 ss() {
