@@ -3,6 +3,7 @@
 
 No backend or credentials are used; privileged actions must remain disabled.
 """
+import os
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
@@ -10,7 +11,10 @@ HTML = (Path(__file__).parent / "csqtt-server-panel-preview.html").resolve().as_
 TABS = ("monitor", "clients", "logs", "settings")
 
 with sync_playwright() as playwright:
-    browser = playwright.chromium.launch(headless=True)
+    browser = playwright.chromium.launch(
+        headless=True,
+        executable_path=os.environ.get("CSQTT_TEST_CHROMIUM") or None,
+    )
     for width, height in ((1440, 900), (390, 844)):
         page = browser.new_page(viewport={"width": width, "height": height})
         page.goto(HTML)
@@ -26,17 +30,36 @@ with sync_playwright() as playwright:
             "(element) => element.scrollWidth <= window.innerWidth + 1"
         ), f"horizontal overflow at {width}px"
         page.locator('button[data-tab="monitor"]').click()
+        # A flex item blockifies inline-flex to computed flex. Check the
+        # visible layout instead: compact and centered on desktop, full-width
+        # on mobile, with all four buttons on the same row.
+        layout = page.locator("nav.tabs").evaluate("""element => {
+            const rect = element.getBoundingClientRect();
+            const parent = element.parentElement.getBoundingClientRect();
+            return {
+                display: getComputedStyle(element).display,
+                width: rect.width, parentWidth: parent.width,
+                centerOffset: (rect.left + rect.right - parent.left - parent.right) / 2,
+                buttons: [...element.querySelectorAll('button')].map(button => {
+                    const box = button.getBoundingClientRect();
+                    return {top: box.top, bottom: box.bottom, left: box.left, right: box.right};
+                }),
+                left: rect.left, right: rect.right
+            };
+        }""")
+        assert layout["display"] == "flex", (width, layout)
+        assert abs(layout["centerOffset"]) <= 1, (width, layout)
+        buttons = layout["buttons"]
+        assert max(b["top"] for b in buttons) - min(b["top"] for b in buttons) <= 1, (width, layout)
+        assert all(b["left"] >= layout["left"] and b["right"] <= layout["right"] for b in buttons), (width, layout)
+        assert all(a["right"] <= b["left"] for a, b in zip(buttons, buttons[1:])), (width, layout)
         if width > 768:
-            assert page.locator(".tabs").evaluate(
-                "(element) => getComputedStyle(element).display === 'inline-flex'"
-            )
+            assert 0 < layout["width"] < layout["parentWidth"] * 0.8, (width, layout)
             assert page.locator(".grid").evaluate(
                 "(element) => getComputedStyle(element).gridTemplateColumns.split(' ').length >= 3"
             )
         else:
-            assert page.locator(".tabs").evaluate(
-                "(element) => getComputedStyle(element).display === 'flex'"
-            )
+            assert abs(layout["width"] - layout["parentWidth"]) <= 1, (width, layout)
         page.close()
     browser.close()
 print("server-panel responsive navigation smoke: OK")
