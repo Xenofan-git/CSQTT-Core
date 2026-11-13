@@ -105,15 +105,27 @@ run_scp = r'''fn run_scp(args: &DeployArgs, remote: &str, local: &str, remote_st
         }
     }
 
-    let result = command.output();
+    // CSQTT 2.5.0 retries interrupted uploads. Limit retries to one
+    // transport failure (OpenSSH exit 255); never retry authentication or
+    // remote file errors, and keep host-key verification unchanged.
+    let result = (|| -> Result<()> {
+        for attempt in 0..2 {
+            let output = command.output().context("scp failed to start")?;
+            if output.status.success() {
+                return Ok(());
+            }
+            if output.status.code() == Some(255) && attempt == 0 {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                continue;
+            }
+            anyhow::bail!("scp failed (exit {:?}): {}", output.status.code(), String::from_utf8_lossy(&output.stderr));
+        }
+        anyhow::bail!("scp transport retry exhausted")
+    })();
     if let Some((helper, _)) = askpass_env {
         let _ = std::fs::remove_file(helper);
     }
-    let output = result.context("scp failed to start")?;
-    if !output.status.success() {
-        anyhow::bail!("scp failed: {}", String::from_utf8_lossy(&output.stderr));
-    }
-    Ok(())
+    result
 }
 
 '''
