@@ -423,6 +423,7 @@ jobs:
           chmod 0755 server-assets/csqtt-linux-arm64 server-assets/csqtt-linux-amd64 server-assets/csqtt-linux-armv7 server-assets/deploy.sh server-assets/deploy-csqtt-lalune.sh
           bash -n server-assets/deploy-csqtt-lalune.sh
           python3 adapt/test-csqtt-lalune-deploy-script.py
+          python3 adapt/test-csqtt-deploy-port-guards.py
           # The standalone installer remains regression-tested but is not used by Deploy.
           chmod 0755 server-assets/install-csqtt-lalune.sh server-assets/uninstall-csqtt-lalune.sh
           bash -n server-assets/install-csqtt-lalune.sh
