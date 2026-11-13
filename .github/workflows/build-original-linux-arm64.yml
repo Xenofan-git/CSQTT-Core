@@ -248,6 +248,8 @@ jobs:
           grep -Fq 'CSQTT_LALUNE_DEPLOY_OK' upstream-lalune/Core/DeployManager/src/deploy.rs
           grep -Fq 'CSQTT_LALUNE_UNINSTALL_OK' upstream-lalune/Core/DeployManager/src/deploy.rs
           grep -Fq 'CSQTT_DEPLOY_STAGE' upstream-lalune/Core/DeployManager/src/deploy.rs
+          grep -Fq 'An SSH transport failure can leave the uploaded staging directory behind.' upstream-lalune/Core/DeployManager/src/deploy.rs
+          grep -Fq 'return Err(error).context("run namespaced original CSQTT deploy.sh over SSH")' upstream-lalune/Core/DeployManager/src/deploy.rs
           grep -Fq 'SSH_ASKPASS_REQUIRE' upstream-lalune/Core/DeployManager/src/deploy.rs
           grep -Fq 'deploy_official_csqtt(args, ports)' upstream-lalune/Core/DeployManager/src/deploy.rs
           grep -Fq 'bash "$BUNDLE/deploy-csqtt-lalune.sh" install' upstream-lalune/Core/DeployManager/src/deploy.rs
