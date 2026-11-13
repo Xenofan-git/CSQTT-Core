@@ -877,7 +877,7 @@ func TestSingBoxHTTPHostSniffRoutesIPDestinationToCSQTT(t *testing.T) {
  if _,err=c.Write([]byte{5,1,0,1,198,51,100,42,0,80});err!=nil{t.Fatal(err)}
  var reply [10]byte;if _,err=io.ReadFull(c,reply[:]);err!=nil{t.Fatalf("CONNECT: %v; logs: %s",err,logs.String())}
  if reply[1]!=0{t.Fatalf("CONNECT rejected: %v; logs: %s",reply,logs.String())}
- request:=[]byte("GET / HTTP/1.1\\r\\nHost: host-sniff.test\\r\\nConnection: close\\r\\n\\r\\n")
+ request:=[]byte("GET / HTTP/1.1\r\nHost: host-sniff.test\r\nConnection: close\r\n\r\n")
  if _,err=c.Write(request);err!=nil{t.Fatal(err)}
  echoed:=make([]byte,len(request));if _,err=io.ReadFull(c,echoed);err!=nil{t.Fatalf("HTTP Host sniff relay: %v; logs: %s",err,logs.String())}
  if !bytes.Equal(echoed,request){t.Fatalf("unexpected HTTP payload %q",echoed)}
