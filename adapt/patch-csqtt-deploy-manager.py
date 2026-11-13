@@ -114,7 +114,12 @@ run_scp = r'''fn run_scp(args: &DeployArgs, remote: &str, local: &str, remote_st
             if output.status.success() {
                 return Ok(());
             }
-            if output.status.code() == Some(255) && attempt == 0 {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let authentication_or_host_key_error = [
+                "Permission denied", "Host key verification failed",
+                "REMOTE HOST IDENTIFICATION HAS CHANGED", "Too many authentication failures",
+            ].iter().any(|message| stderr.contains(message));
+            if output.status.code() == Some(255) && attempt == 0 && !authentication_or_host_key_error {
                 std::thread::sleep(std::time::Duration::from_secs(2));
                 continue;
             }
