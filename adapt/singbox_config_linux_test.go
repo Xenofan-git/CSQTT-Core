@@ -852,3 +852,34 @@ func TestSingBoxRoutesDomainThroughAuthenticatedExternalSOCKS5WithoutCSQTT(t *te
 		t.Fatal("external SOCKS5 did not receive the routed destination")
 	}
 }
+
+
+func TestSingBoxHTTPHostSniffRoutesIPDestinationToCSQTT(t *testing.T) {
+ binary:=strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+ if binary=="" {t.Skip("requires pinned sing-box binary from CI")}
+ echo,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer echo.Close()
+ go func(){for{c,e:=echo.Accept();if e!=nil{return};go func(c net.Conn){defer c.Close();_,_=io.Copy(c,c)}(c)}}()
+ targets:=make(chan string,2)
+ csqtt:=NewSocks5Server("127.0.0.1:0")
+ csqtt.dialTCPOverride=func(target string)(net.Conn,error){select{case targets<-target:default:};return net.DialTimeout("tcp",echo.Addr().String(),2*time.Second)}
+ if err:=csqtt.Start();err!=nil{t.Fatal(err)};defer csqtt.Stop()
+ input:=singBoxConfigInput{ListenAddress:reserveSingBoxTestAddress(t),CSQTTAddress:csqtt.Status().Address,FinalOutbound:singBoxDirectTag,Rules:[]singBoxRouteRule{{ID:"http-host",Domains:[]string{"host-sniff.test"},Outbound:singBoxCSQTTTag,Enabled:true}}}
+ config,err:=buildSingBoxConfig(input);if err!=nil{t.Fatal(err)}
+ path:=filepath.Join(t.TempDir(),"http-host.json");if err:=os.WriteFile(path,config,0600);err!=nil{t.Fatal(err)}
+ cmd:=exec.Command(binary,"run","-c",path);logs:=&singBoxTestLogBuffer{};cmd.Stdout,cmd.Stderr=logs,logs
+ if err:=cmd.Start();err!=nil{t.Fatal(err)};defer func(){_=cmd.Process.Kill();_=cmd.Wait()}()
+ var c net.Conn;deadline:=time.Now().Add(8*time.Second)
+ for time.Now().Before(deadline){c,err=net.DialTimeout("tcp",input.ListenAddress,200*time.Millisecond);if err==nil{break};time.Sleep(50*time.Millisecond)}
+ if c==nil{t.Fatalf("sing-box inbound not ready: %v; logs: %s",err,logs.String())};defer c.Close();_=c.SetDeadline(time.Now().Add(8*time.Second))
+ if _,err=c.Write([]byte{5,1,0});err!=nil{t.Fatal(err)}
+ var greeting [2]byte;if _,err=io.ReadFull(c,greeting[:]);err!=nil{t.Fatal(err)}
+ if greeting!=[2]byte{5,0}{t.Fatalf("SOCKS greeting %v",greeting)}
+ if _,err=c.Write([]byte{5,1,0,1,198,51,100,42,0,80});err!=nil{t.Fatal(err)}
+ var reply [10]byte;if _,err=io.ReadFull(c,reply[:]);err!=nil{t.Fatalf("CONNECT: %v; logs: %s",err,logs.String())}
+ if reply[1]!=0{t.Fatalf("CONNECT rejected: %v; logs: %s",reply,logs.String())}
+ request:=[]byte("GET / HTTP/1.1\\r\\nHost: host-sniff.test\\r\\nConnection: close\\r\\n\\r\\n")
+ if _,err=c.Write(request);err!=nil{t.Fatal(err)}
+ echoed:=make([]byte,len(request));if _,err=io.ReadFull(c,echoed);err!=nil{t.Fatalf("HTTP Host sniff relay: %v; logs: %s",err,logs.String())}
+ if !bytes.Equal(echoed,request){t.Fatalf("unexpected HTTP payload %q",echoed)}
+ select{case target:=<-targets:if target!="198.51.100.42:80"{t.Fatalf("CSQTT target %q",target)};case <-time.After(3*time.Second):t.Fatalf("HTTP Host sniff did not select CSQTT; logs: %s",logs.String())}
+}
