@@ -20,4 +20,5 @@ with tempfile.TemporaryDirectory() as temp:
     assert 'async fn api_export_get' in patched and 'async fn api_import_post' in patched
     assert 'auth_middleware' in patched and 'fn render_root' in patched
     assert 'app.web_secret_path' in patched
+    assert (Path(temp)/'csqtt-core-panel.html').exists()
 print('Backend Rust source integration: auth/API/secret-path unchanged; only panel asset replaced')

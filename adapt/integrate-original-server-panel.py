@@ -33,3 +33,4 @@ out.mkdir(parents=True, exist_ok=True)
 assert patched.count('include_str!("csqtt-core-panel.html")') == 1
 assert patched.count('auth_middleware') == source.count('auth_middleware')
 print(f'Prepared isolated Rust backend integration in {out}; upstream unchanged')
+print('Build note: place both generated files in the same rust-server directory before cargo check/build.')
