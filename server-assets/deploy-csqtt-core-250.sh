@@ -717,7 +717,7 @@ EOF
 
 cleanup_csqtt_netfilter_rules() {
     local table chain marker
-    for marker in "$IPT_COMMENT" CSQTT_MIRRORED CSQTT_TPROXY CSQTT_LOCAL_SOCKS CSQTT_LOCAL_SOCKS_MARK CSQTT_SOCKS CSQTT_CASCADE_NO_QUIC; do
+    for marker in "$IPT_COMMENT"; do
         for table in filter nat mangle; do
             for chain in INPUT FORWARD PREROUTING POSTROUTING OUTPUT; do
                 delete_marked_rules "$table" "$chain" "$marker"
@@ -911,76 +911,11 @@ csqtt_cleanup() {
 }
 
 setup_sysctl() {
-    prog 0.25 "Sysctl..."
-    echo "⚙️  Настройка сетевых параметров..."
-
-    modprobe tcp_bbr 2>/dev/null || true
-    if [ -d /etc/modules-load.d ]; then
-        echo "tcp_bbr" > /etc/modules-load.d/bbr.conf 2>/dev/null || true
-    fi
-
-    echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
-    echo 2 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true
-    echo 2 > /proc/sys/net/ipv4/conf/default/rp_filter 2>/dev/null || true
-    echo 0 > /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || true
-    echo 0 > /proc/sys/net/ipv6/conf/default/disable_ipv6 2>/dev/null || true
-    echo 1 > /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null || true
-    echo 1 > /proc/sys/net/ipv6/conf/default/forwarding 2>/dev/null || true
-    echo 2 > /proc/sys/net/ipv6/conf/all/accept_ra 2>/dev/null || true
-    echo 2 > /proc/sys/net/ipv6/conf/default/accept_ra 2>/dev/null || true
-    for dev in /proc/sys/net/ipv6/conf/*; do
-        if [ -d "$dev" ]; then
-            echo 0 > "$dev/disable_ipv6" 2>/dev/null || true
-            echo 2 > "$dev/accept_ra" 2>/dev/null || true
-        fi
-    done
-    mkdir -p /etc/sysctl.d
-    cat > "$CSQTT_SYSCTL_FILE" << 'SYSEOF'
-net.ipv4.ip_forward = 1
-net.ipv4.conf.all.rp_filter = 2
-net.ipv4.conf.default.rp_filter = 2
-net.ipv6.conf.all.disable_ipv6 = 0
-net.ipv6.conf.default.disable_ipv6 = 0
-net.ipv6.conf.all.forwarding = 1
-net.ipv6.conf.default.forwarding = 1
-net.ipv6.conf.all.accept_ra = 2
-net.ipv6.conf.default.accept_ra = 2
-net.core.default_qdisc = fq
-net.ipv4.tcp_congestion_control = bbr
-net.core.netdev_max_backlog = 10000
-net.core.somaxconn = 65535
-net.ipv4.tcp_rmem = 4096 131072 67108864
-net.ipv4.tcp_wmem = 4096 131072 67108864
-net.ipv4.tcp_mtu_probing = 1
-net.ipv4.tcp_slow_start_after_idle = 0
-net.ipv4.tcp_window_scaling = 1
-net.ipv4.tcp_sack = 1
-net.ipv4.tcp_timestamps = 1
-net.ipv4.tcp_fastopen = 3
-SYSEOF
-
-    cat > "$CSQTT_UDP_SYSCTL_FILE" << 'SYSEOF'
-net.core.rmem_max = 67108864
-net.core.wmem_max = 67108864
-SYSEOF
-
-    sysctl -p "$CSQTT_SYSCTL_FILE" >>"$LOG_FILE" 2>&1 || log_warn "Не удалось применить обязательные параметры маршрутизации"
-    sysctl -p "$CSQTT_UDP_SYSCTL_FILE" >>"$LOG_FILE" 2>&1 || log_warn "Ядро ограничило лимиты сетевых буферов; сервер продолжит работу с доступными значениями"
-
-    [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" = "1" ] || \
-        die "IPv4 forwarding невозможно включить на этом VPS"
-
-    echo "✓ Sysctl настроен (IPv4/IPv6 forwarding + BBR + буферы)"
+    [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" = 1 ] || die "IPv4 forwarding must be configured by host administrator; Core will not change host sysctl"
 }
 
 tune_cpu_mitigations() {
-    if [ -f /etc/default/grub ]; then
-        if ! grep -q "mitigations=off" /etc/default/grub; then
-            sed -i 's/\(GRUB_CMDLINE_LINUX_DEFAULT="[^"]*\)/\1 mitigations=off nowatchdog/' /etc/default/grub 2>/dev/null || true
-            update-grub >>"$LOG_FILE" 2>&1 || grub2-mkconfig -o /boot/grub2/grub.cfg >>"$LOG_FILE" 2>&1 || true
-            log_info "Оптимизация CPU: mitigations=off добавлено в GRUB"
-        fi
-    fi
+    : # Never disable CPU security mitigations or edit GRUB
 }
 
 setup_nat_and_firewall() {
@@ -1041,7 +976,7 @@ NETWORK_READY_FILE="$CSQTT_DOCKER_NETWORK_READY"
 
 command -v ip >/dev/null 2>&1 || exit 20
 command -v iptables >/dev/null 2>&1 || exit 21
-[ -w /proc/sys/net/ipv4/ip_forward ] && echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
+: # host forwarding preconfigured
 [ -w /proc/sys/net/ipv6/conf/all/forwarding ] && echo 1 > /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null || true
 [ -w /proc/sys/net/ipv4/conf/all/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true
 [ -w /proc/sys/net/ipv4/conf/default/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/default/rp_filter 2>/dev/null || true
@@ -2430,7 +2365,6 @@ do_uninstall() {
     rm -rf /run/csqtt-core /usr/local/lib/csqtt-core /var/lib/csqtt-core /opt/csqtt-core-certbot
     secure_persistent_state
     rm -f "$CSQTT_SYSCTL_FILE" "$CSQTT_UDP_SYSCTL_FILE"
-    sysctl --system >/dev/null 2>&1 || true
 
     log_info "CSQTT удалён. SQLite state и конфигурация сохранены в ${CSQTT_CONFIG_DIR}"
 }

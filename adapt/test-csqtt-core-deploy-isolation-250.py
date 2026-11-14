@@ -18,5 +18,12 @@ for forbidden in ('/etc/csqtt/','/usr/local/bin/csqtt ', 'csqtt1', 'CSQTT_MANAGE
 assert 'cleanup_legacy_proxy_interfaces() {\n    : # Core owns no legacy csqtp* interfaces' in s
 assert 'readonly CSQTT_DATABASE_FILE="csqtt.db"' in s
 assert 'readonly CSQTT_ENV_FILE="${CSQTT_CONFIG_DIR}/csqtt-core.env"' in s
+assert 'for marker in "$IPT_COMMENT"; do' in s
+assert 'CSQTT_MIRRORED CSQTT_TPROXY' not in s
+assert 'sysctl --system' not in s
+assert 'mitigations=off' not in s
+assert 'update-grub' not in s
+assert 'echo 1 > /proc/sys/net/ipv4/ip_forward' not in s
+assert 'CSQTT_SYSCTL_FILE" <<' not in s
 assert s.count('CSQTT_DEPLOY_OK')>=2
 print('CSQTT 2.5 Core installer isolation/static syntax PASS')

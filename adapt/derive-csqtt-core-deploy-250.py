@@ -48,6 +48,19 @@ last=section.index('    mkdir -p "$CSQTT_CONFIG_DIR"',first)
 section=section[:first]+'    # Preserve unrelated legacy csqtt-cascade and hev-socks5 resources.\n\n' +section[last:]
 s=s[:setup_start]+section+s[setup_end:]
 s=s.replace('    rm -f /usr/local/bin/hev-socks5-tunnel /usr/local/bin/hev-socks5-server\n','')
+# Disable host-global sysctl/GRUB mutation: Core must not rewrite the host network policy.
+start=s.index('setup_sysctl() {')
+end=s.index('\n}\n',start)+2
+s=s[:start]+"setup_sysctl() {\n    [ \"$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)\" = 1 ] || die \"IPv4 forwarding must be configured by host administrator; Core will not change host sysctl\"\n}"+s[end:]
+start=s.index('tune_cpu_mitigations() {')
+end=s.index('\n}\n',start)+2
+s=s[:start]+"tune_cpu_mitigations() {\n    : # Never disable CPU security mitigations or edit GRUB\n}"+s[end:]
+# Only remove Core-tagged netfilter rules; upstream legacy tags may belong to another install.
+s=s.replace('for marker in \"$IPT_COMMENT\" CSQTT_MIRRORED CSQTT_TPROXY CSQTT_LOCAL_SOCKS CSQTT_LOCAL_SOCKS_MARK CSQTT_SOCKS CSQTT_CASCADE_NO_QUIC; do', 'for marker in \"$IPT_COMMENT\"; do')
+# Avoid a global sysctl reload when uninstalling Core.
+s=s.replace('    sysctl --system >/dev/null 2>&1 || true\n','')
+# Embedded network helper must not change global forwarding either.
+s=s.replace('[ -w /proc/sys/net/ipv4/ip_forward ] && echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true', ': # host forwarding preconfigured')
 # DB filenames must stay csqtt.db because original Rust binary uses that basename.
 s=s.replace('csqtt-core.db','csqtt.db').replace('csqtt-core.db-wal','csqtt.db-wal').replace('csqtt-core.db-shm','csqtt.db-shm')
 # Explicit human-review safety gate: do not silently claim deployment-ready.
