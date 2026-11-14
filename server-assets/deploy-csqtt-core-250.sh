@@ -943,17 +943,7 @@ setup_nat_and_firewall() {
     ip link show "$iface" >/dev/null 2>&1 || die "Определённый WAN-интерфейс $iface не существует"
 
     log_info "WAN-интерфейс: $iface"
-    sysctl -w "net.ipv4.conf.${iface}.rp_filter=2" >>"$LOG_FILE" 2>&1 || true
-    sysctl -w "net.ipv6.conf.${iface}.disable_ipv6=0" >>"$LOG_FILE" 2>&1 || true
-    sysctl -w "net.ipv6.conf.${iface}.accept_ra=2" >>"$LOG_FILE" 2>&1 || true
-    sysctl -w "net.ipv6.conf.${iface}.forwarding=1" >>"$LOG_FILE" 2>&1 || true
-    command -v netplan >/dev/null 2>&1 && netplan apply >>"$LOG_FILE" 2>&1 || true
-
-    local gw_ip
-    gw_ip="$(ip -4 route show default 2>/dev/null | awk '/default/ {for(i=1;i<=NF;i++) if($i=="via") {print $(i+1); break}}')"
-    if [ -n "$gw_ip" ]; then
-        ip route replace "$gw_ip" dev "$iface" scope link >>"$LOG_FILE" 2>&1 || true
-    fi
+    : # Preserve host WAN sysctl and netplan policy
 
     fw_add_input_udp "$PEER_PORT"
     fw_add_input_tcp "$WEB_PORT"
@@ -989,10 +979,10 @@ NETWORK_READY_FILE="$CSQTT_DOCKER_NETWORK_READY"
 command -v ip >/dev/null 2>&1 || exit 20
 command -v iptables >/dev/null 2>&1 || exit 21
 : # host forwarding preconfigured
-[ -w /proc/sys/net/ipv6/conf/all/forwarding ] && echo 1 > /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null || true
-[ -w /proc/sys/net/ipv4/conf/all/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true
-[ -w /proc/sys/net/ipv4/conf/default/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/default/rp_filter 2>/dev/null || true
-[ -w /proc/sys/net/ipv4/tcp_notsent_lowat ] && echo 131072 > /proc/sys/net/ipv4/tcp_notsent_lowat 2>/dev/null || true
+: # preserve host-global network tuning
+: # preserve host-global network tuning
+: # preserve host-global network tuning
+: # preserve host-global network tuning
 
 is_ignored_wan_interface() {
     ignored_iface="\${1%%@*}"
@@ -1050,14 +1040,10 @@ while [ "\$network_waited" -lt 90 ]; do
     sleep 1
 done
 [ -n "\$WAN_IFACE" ] || exit 22
-[ -w "/proc/sys/net/ipv4/conf/\$WAN_IFACE/rp_filter" ] && echo 2 > "/proc/sys/net/ipv4/conf/\$WAN_IFACE/rp_filter" 2>/dev/null || true
+: # WAN rp_filter belongs to host
 [ -w "/proc/sys/net/ipv4/conf/\$CSQTT_IFACE/rp_filter" ] && echo 2 > "/proc/sys/net/ipv4/conf/\$CSQTT_IFACE/rp_filter" 2>/dev/null || true
 
-# Для /32 сетей с onlink-шлюзом обеспечиваем явный host route к шлюзу
-gw=\$(ip -4 route show default 2>/dev/null | awk '/default/ {for(i=1;i<=NF;i++) if(\$i=="via") {print \$(i+1); break}}')
-if [ -n "\$gw" ]; then
-    ip route replace "\$gw" dev "\$WAN_IFACE" scope link 2>/dev/null || true
-fi
+: # Do not add or replace host routes
 
 if ip link show "\$CSQTT_IFACE" >/dev/null 2>&1; then
     ip link set dev "\$CSQTT_IFACE" txqueuelen 1000 2>/dev/null || true

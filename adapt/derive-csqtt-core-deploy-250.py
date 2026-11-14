@@ -61,6 +61,19 @@ s=s.replace('for marker in \"$IPT_COMMENT\" CSQTT_MIRRORED CSQTT_TPROXY CSQTT_LO
 s=s.replace('    sysctl --system >/dev/null 2>&1 || true\n','')
 # Embedded network helper must not change global forwarding either.
 s=s.replace('[ -w /proc/sys/net/ipv4/ip_forward ] && echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true', ': # host forwarding preconfigured')
+# Never mutate shared WAN sysctls, default routes, netplan or global sysctl from Core.
+s=s.replace('    sysctl -w "net.ipv4.conf.${iface}.rp_filter=2" >>"$LOG_FILE" 2>&1 || true\n    sysctl -w "net.ipv6.conf.${iface}.disable_ipv6=0" >>"$LOG_FILE" 2>&1 || true\n    sysctl -w "net.ipv6.conf.${iface}.accept_ra=2" >>"$LOG_FILE" 2>&1 || true\n    sysctl -w "net.ipv6.conf.${iface}.forwarding=1" >>"$LOG_FILE" 2>&1 || true\n    command -v netplan >/dev/null 2>&1 && netplan apply >>"$LOG_FILE" 2>&1 || true', '    : # Preserve host WAN sysctl and netplan policy')
+start=s.index('    local gw_ip\n    gw_ip=',s.index('setup_nat_and_firewall() {'))
+end=s.index('    fw_add_input_udp "$PEER_PORT"',start)
+s=s[:start]+s[end:]
+for line in ('[ -w /proc/sys/net/ipv6/conf/all/forwarding ] && echo 1 > /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null || true','[ -w /proc/sys/net/ipv4/conf/all/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/all/rp_filter 2>/dev/null || true','[ -w /proc/sys/net/ipv4/conf/default/rp_filter ] && echo 2 > /proc/sys/net/ipv4/conf/default/rp_filter 2>/dev/null || true','[ -w /proc/sys/net/ipv4/tcp_notsent_lowat ] && echo 131072 > /proc/sys/net/ipv4/tcp_notsent_lowat 2>/dev/null || true'):
+ assert line in s,line
+ s=s.replace(line,': # preserve host-global network tuning')
+# Preserve WAN routes and interface sysctl inside the generated network-up helper.
+s=s.replace('[ -w "/proc/sys/net/ipv4/conf/\\$WAN_IFACE/rp_filter" ] && echo 2 > "/proc/sys/net/ipv4/conf/\\$WAN_IFACE/rp_filter" 2>/dev/null || true', ': # WAN rp_filter belongs to host')
+start=s.index('# Для /32 сетей с onlink-шлюзом обеспечиваем явный host route к шлюзу')
+end=s.index('if ip link show "\\$CSQTT_IFACE"',start)
+s=s[:start]+': # Do not add or replace host routes\n\n'+s[end:]
 # Fail closed before any package install, network mutation or cutover.
 # Core is still in a controlled testing phase; explicit gate is required.
 s=s.replace('    check_root\n    mkdir -p "$(dirname "$LOG_FILE")"', '    check_root\n    if [ "$action" = install ] || [ "$action" = --install ] || [ "$action" = -i ] || [ "$action" = uninstall ] || [ "$action" = --uninstall ] || [ "$action" = -u ]; then\n        [ "${CSQTT_CORE_ALLOW_MUTATION:-}" = "isolated-lab-only" ] || {\n            printf "%s\\n" "REFUSED: CSQTT-Core install/uninstall requires CSQTT_CORE_ALLOW_MUTATION=isolated-lab-only" >&2\n            exit 42\n        }\n    fi\n    if [ "$action" = status ] || [ "$action" = --status ] || [ "$action" = -s ]; then\n        do_status\n        return\n    fi\n    mkdir -p "$(dirname "$LOG_FILE")"'  )
