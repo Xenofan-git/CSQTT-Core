@@ -2419,6 +2419,16 @@ main() {
 
     local action="${1:-install}"
     check_root
+    if [ "$action" = install ] || [ "$action" = --install ] || [ "$action" = -i ] || [ "$action" = uninstall ] || [ "$action" = --uninstall ] || [ "$action" = -u ]; then
+        [ "${CSQTT_CORE_ALLOW_MUTATION:-}" = "isolated-lab-only" ] || {
+            printf "%s\n" "REFUSED: CSQTT-Core install/uninstall requires CSQTT_CORE_ALLOW_MUTATION=isolated-lab-only" >&2
+            exit 42
+        }
+    fi
+    if [ "$action" = status ] || [ "$action" = --status ] || [ "$action" = -s ]; then
+        do_status
+        return
+    fi
     mkdir -p "$(dirname "$LOG_FILE")"
     echo "=== CSQTT Installer v${SCRIPT_VERSION} — $(date) ===" >> "$LOG_FILE"
 
