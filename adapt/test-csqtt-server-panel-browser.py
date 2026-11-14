@@ -82,5 +82,32 @@ with sync_playwright() as playwright:
         else:
             assert abs(layout["width"] - layout["parentWidth"]) <= 1, (width, layout)
         page.close()
+    # Ordinary preview never contacts a server, even when opened in Chromium.
+    page = browser.new_page()
+    default_requests = []
+    page.on('request', lambda request: default_requests.append(request.url) if '/api/' in request.url else None)
+    page.goto(HTML)
+    assert default_requests == []
+    page.close()
+    # Same-origin monitoring: no real backend or credentials are used.
+    page = browser.new_page()
+    calls = []
+    def mock_stats(route):
+        calls.append(route.request.url)
+        route.fulfill(status=200, content_type='application/json', body='{"status":"Active","active":7,"cpu_normalized":13,"ram":"80 MB","up":1048576,"down":2097152}')
+    page.route('**/api/stats', mock_stats)
+    page.goto(HTML + '?connect=1')
+    page.wait_for_function("document.querySelector('#serverState').textContent === 'Работает'")
+    assert page.locator('#sessionCount').inner_text() == '7'
+    assert page.locator('#cpuValue').inner_text() == '13%'
+    assert page.locator('#trafficValue').inner_text() == '↑ 1.0 МБ / ↓ 2.0 МБ'
+    assert len(calls) == 1 and calls[0].endswith('/api/stats')
+    page.close()
+    page = browser.new_page()
+    page.route('**/api/stats', lambda route: route.fulfill(status=401, body='Unauthorized'))
+    page.goto(HTML + '?connect=1')
+    page.wait_for_function("document.querySelector('#serverState').textContent === 'Требуется вход'")
+    assert page.locator('#sessionCount').inner_text() == '—'
+    page.close()
     browser.close()
 print("server-panel responsive navigation smoke: OK")

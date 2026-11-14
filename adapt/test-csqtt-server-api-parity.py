@@ -27,8 +27,11 @@ assert not missing, f'Original CSQTT 2.5.0 missing expected routes: {missing}'
 assert 'csrf' in upstream.lower() or 'SameSite=Lax' in upstream
 assert 'HttpOnly' in upstream and 'Secure' in upstream
 assert 'auth_middleware' in upstream
-assert 'fetch(' not in preview, 'Preview must not accidentally issue unauthenticated requests'
+assert "get('connect') === '1'" in preview
+assert "credentials: 'same-origin'" in preview
+assert "method: 'GET'" in preview
+assert "statsBase + 'api/stats'" in preview
 assert 'Предварительный интерфейс' in preview
 assert preview.count('disabled') >= 8
 print('Original server API contract: OK; sections:', ', '.join(required))
-print('Core preview integration: NOT IMPLEMENTED (no backend requests; privileged controls disabled)')
+print('Core preview integration: opt-in read-only monitoring; login and privileged actions NOT IMPLEMENTED')
