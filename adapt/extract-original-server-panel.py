@@ -18,8 +18,8 @@ assert panel.lstrip().startswith('<!DOCTYPE html>') and '</html>' in panel
 # All original dialogs, functions, scripts, and API behavior remain untouched.
 # The separate palette stylesheet changes colors only; it cannot alter handlers.
 palette = '''<style id="csqtt-core-midnight-violet">
-:root{--primary:#9869ff!important;--primary-hover:#7c4de6!important;--accent:#9869ff!important;--bg:#f6f3fb!important;--border:#d8cde9!important}
-[data-theme="dark"]{--primary:#9869ff!important;--primary-hover:#b18bff!important;--accent:#9869ff!important;--bg:#0a0a16!important;--border:#39304f!important}
+:root{--primary:#9869ff!important;--primary-hover:#7c4de6!important;--accent:#9869ff!important;--bg-color:#f6f3fb!important;--surface:#ffffff!important;--surface-hover:#eee7fa!important;--text-main:#211832!important;--text-muted:#665879!important;--border:#d8cde9!important}
+[data-theme="dark"]{--primary:#9869ff!important;--primary-hover:#b18bff!important;--accent:#9869ff!important;--bg-color:#0a0a16!important;--surface:#171426!important;--surface-hover:#201b33!important;--text-main:#f5f1ff!important;--text-muted:#a99fc2!important;--border:#39304f!important}
 </style>'''
 assert '</head>' in panel
 panel = panel.replace('</head>', palette + '\n</head>', 1)
