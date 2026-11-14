@@ -46,3 +46,9 @@ assert 'Предварительный интерфейс' in preview
 assert preview.count('disabled') >= 8
 print('Original server API contract: OK; sections:', ', '.join(required))
 print('Core preview integration: opt-in read-only monitoring; login and read-only stats integrated in opt-in preview; privileged actions NOT IMPLEMENTED')
+
+# Original header handlers and protected backup API are preserved in preview semantics.
+for upstream_name in ('openApiDocsDlg()', 'openImportExportDlg()', 'toggleTheme()', '/api/export', '/api/import'):
+    assert upstream_name in upstream, upstream_name
+for preview_id in ('apiDocsOpen', 'importExportOpen', 'themeToggle', 'apiDocsDlg', 'importExportDlg'):
+    assert preview_id in preview, preview_id

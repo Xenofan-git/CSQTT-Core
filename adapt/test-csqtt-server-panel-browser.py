@@ -19,6 +19,21 @@ with sync_playwright() as playwright:
         page = browser.new_page(viewport={"width": width, "height": height})
         page.goto(HTML)
         assert page.locator("nav.tabs button").count() == 4
+        page.locator('#apiDocsOpen').click()
+        assert page.locator('#apiDocsDlg').is_visible()
+        assert '/api/clients' in page.locator('#apiDocsDlg').inner_text()
+        page.locator('#apiDocsClose').click()
+        assert page.locator('#apiDocsDlg').is_hidden()
+        page.locator('#importExportOpen').click()
+        assert page.locator('#importExportDlg').is_visible()
+        assert page.locator('#importExportDlg button:disabled').count() == 2
+        page.locator('#importExportClose').click()
+        page.locator('#themeToggle').click()
+        assert page.locator('html').get_attribute('data-theme') == 'light'
+        page.reload()
+        assert page.locator('html').get_attribute('data-theme') == 'light'
+        page.locator('#themeToggle').click()
+        assert page.locator('html').get_attribute('data-theme') == 'dark'
         for tab in TABS:
             page.locator(f'button[data-tab="{tab}"]').click()
             assert page.locator(f'#{tab}').evaluate(

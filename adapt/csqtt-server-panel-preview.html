@@ -6,6 +6,9 @@
 
 /* Layout adapted from CSQTT v2.5.0 web_panel.rs; Core palette retained. */
 .header-inner{max-width:1300px;width:100%;margin:auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+html[data-theme="light"]{color-scheme:light;--bg:#f5f2fb;--card:#ffffff;--card2:#eee7fa;--line:#d7cce9;--fg:#211832;--muted:#665879;--accent:#7440ce;--accent2:#5d30ae;--danger:#b52650}
+.header-actions{display:flex;align-items:center;gap:8px}.header-actions button{background:transparent;border:1px solid var(--line);color:var(--accent);padding:7px 11px;border-radius:9px;white-space:nowrap}.header-actions button:hover{background:var(--card2)}
+.core-dialog{border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--fg);padding:24px;width:min(600px,calc(100% - 24px));max-height:85vh;overflow:auto}.core-dialog::backdrop{background:#0009}.core-dialog h2{margin:0 0 14px}.core-dialog p{color:var(--muted)}.core-dialog .dialog-actions{display:flex;justify-content:flex-end;margin-top:20px}.core-dialog code{overflow-wrap:anywhere}
 header{padding:20px 0}header strong{font-size:34px}.header-tools{display:flex;align-items:center;gap:16px;font-size:13px;color:var(--muted)}
 .clients-toolbar{gap:12px}.clients-toolbar button{white-space:nowrap;font-size:13px;padding:9px 14px;border-radius:9px}
 .clients-tb-links{order:1;flex-shrink:0}.panel-search-wrapper{position:relative;order:2;flex:1 1 180px;max-width:440px;min-width:160px}
@@ -33,7 +36,9 @@ header{padding:20px 0}header strong{font-size:34px}.header-tools{display:flex;al
 @media(max-width:768px){.monitor-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.stat-card{padding:16px}.stat-card .metric{font-size:20px}.stat-icon{width:28px;height:28px}.stat-label{font-size:10px}.log-shell pre{height:55vh}.settings-actions{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.settings-grid{grid-template-columns:1fr}.setting-card{padding:18px}}
 </style></head><body>
-<header><div class="header-inner"><strong>CSQTT<span style="color:var(--fg)">-Core</span></strong><div class="header-tools"><span>Сервер</span><span>CSQTT-Core</span></div></div></header>
+<header><div class="header-inner"><strong>CSQTT<span style="color:var(--fg)">-Core</span></strong><div class="header-actions" aria-label="Инструменты сервера"><button id="apiDocsOpen" title="API Документация">&lt;&gt; API</button><button id="importExportOpen" title="Импорт / Экспорт конфигурации">↑↓</button><button id="themeToggle" title="Сменить тему" aria-label="Сменить тему">☾</button></div></div></header>
+<dialog id="apiDocsDlg" class="core-dialog"><h2>Документация REST API</h2><p>Оригинальный CSQTT 2.5.0. Защищённые методы требуют серверной авторизации.</p><h3>Клиенты</h3><code>GET /api/clients · POST /api/clients</code><h3>Группы</h3><code>GET /api/groups · POST /api/groups</code><h3>Мониторинг</h3><code>GET /api/stats</code><h3>Журналы</h3><code>GET /api/logs</code><h3>Настройки</h3><code>GET /api/settings · POST /api/settings</code><h3>Резервное копирование</h3><code>GET /api/export · POST /api/import</code><p>Это краткий справочник. Полная документация оригинала будет перенесена отдельно.</p><div class="dialog-actions"><button id="apiDocsClose">Закрыть</button></div></dialog>
+<dialog id="importExportDlg" class="core-dialog"><h2>Импорт и экспорт</h2><p>Оригинальный CSQTT 2.5.0 использует GET /api/export и POST /api/import. Импорт выполняет слияние данных.</p><p>В предварительном интерфейсе операции отключены до проверки реального backend. Резервные копии могут содержать секреты.</p><div class="row"><button disabled title="Требуется проверка серверной интеграции">Экспорт</button><button disabled title="Требуется проверка серверной интеграции">Импорт</button></div><div class="dialog-actions"><button id="importExportClose">Закрыть</button></div></dialog>
 <main>
 <section id="login" class="login hidden"><div class="card"><h1>Вход</h1><label for="user">Пользователь</label><input id="user" autocomplete="username"><label for="pass">Пароль</label><input id="pass" type="password" autocomplete="current-password"><button id="signIn">Войти</button><p id="loginError" role="alert" class="danger"></p></div></section>
 <section id="dashboard">
@@ -64,7 +69,28 @@ header{padding:20px 0}header strong{font-size:34px}.header-tools{display:flex;al
 </section>
 <p class="preview-note">Предварительный интерфейс · Авторизация и серверные действия ещё не подключены.</p></section></main>
 <script>
-'use strict';
+ 'use strict';
+// Header controls from original CSQTT 2.5.0: openApiDocsDlg,
+// openImportExportDlg and toggleTheme. Keep Core's violet palette.
+for (const [open, dialog, close] of [
+    ['apiDocsOpen', 'apiDocsDlg', 'apiDocsClose'],
+    ['importExportOpen', 'importExportDlg', 'importExportClose']
+]) {
+    document.getElementById(open).addEventListener('click', () => document.getElementById(dialog).showModal());
+    document.getElementById(close).addEventListener('click', () => document.getElementById(dialog).close());
+}
+const themeButton = document.getElementById('themeToggle');
+function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    themeButton.textContent = theme === 'dark' ? '☾' : '☀';
+}
+try { applyTheme(localStorage.getItem('csqtt-core-theme') === 'light' ? 'light' : 'dark'); }
+catch (_) { applyTheme('dark'); }
+themeButton.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try { localStorage.setItem('csqtt-core-theme', next); } catch (_) {}
+});
 const tabs=document.querySelectorAll('[data-tab]');
 tabs.forEach(button=>button.addEventListener('click',()=>{tabs.forEach(b=>b.classList.toggle('active',b===button));document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id===button.dataset.tab));}));
 // Preview has no monitoring API: changing the interval must not fabricate a server update.
