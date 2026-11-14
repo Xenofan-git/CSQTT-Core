@@ -25,7 +25,7 @@ server = ThreadingHTTPServer(
 threading.Thread(target=server.serve_forever, daemon=True).start()
 atexit.register(server.server_close)
 atexit.register(server.shutdown)
-HTML = f'http://127.0.0.1:{server.server_port}/csqtt-server-panel-preview.html' 
+HTML = f'http://127.0.0.1:{server.server_port}/csqtt-server-panel-preview.html'
 TABS = ("monitor", "clients", "logs", "settings")
 
 with sync_playwright() as playwright:
