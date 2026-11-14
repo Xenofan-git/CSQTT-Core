@@ -184,11 +184,41 @@ if (liveStats) {
     document.querySelector('[data-tab="logs"]').addEventListener('click', refreshLogs);
 }
 
-const previewClients = [
+let previewClients = [
     {name: 'Пример клиента 1', role: 'Участник'},
     {name: 'Пример клиента 2', role: 'Участник'},
     {name: 'Главный пароль', role: 'Участник'}
 ];
+// Original CSQTT 2.5: GET /api/clients and GET /api/groups return arrays.
+// Do not display or log passwords, subscription links, tokens, or admin UUIDs.
+async function refreshClients() {
+    if (!liveStats || document.querySelector('#dashboard').classList.contains('hidden')) return;
+    try {
+        const fetchList = async endpoint => {
+            const response = await fetch(statsBase + endpoint, {
+                method: 'GET', credentials: 'same-origin', cache: 'no-store',
+                headers: {Accept: 'application/json'}
+            });
+            if (!response.ok || response.headers.get('x-csqtt-stealth-rst') === '1') throw new Error('Доступ запрещён');
+            const data = await response.json();
+            if (!Array.isArray(data)) throw new Error('Некорректный ответ');
+            return data;
+        };
+        const [clients, groups] = await Promise.all([fetchList('api/clients'), fetchList('api/groups')]);
+        const groupNames = new Map(groups.filter(g => g && typeof g.id === 'string' && typeof g.name === 'string').map(g => [g.id, g.name]));
+        previewClients = clients.filter(c => c && typeof c.name === 'string').map(c => ({
+            name: c.name, role: c.group_id ? (groupNames.get(c.group_id) || 'Группа') : 'Без группы',
+            active: c.active === true, sessions: Number.isFinite(c.active_sessions) ? c.active_sessions : 0
+        }));
+        renderClients();
+    } catch (_) {
+        previewClients = [];
+        renderClients();
+        document.querySelector('#clientList .empty-clients').textContent = 'Не удалось загрузить клиентов';
+    }
+}
+if (liveStats) document.querySelector('[data-tab="clients"]').addEventListener('click', refreshClients);
+
 function renderClients() {
     const query = document.querySelector('#search').value.trim().toLocaleLowerCase('ru');
     const list = document.querySelector('#clientList');
@@ -199,7 +229,7 @@ function renderClients() {
         card.className = 'card client-card';
         card.innerHTML = '<div class="row"><div class="client-name"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/></svg><h3></h3></div><span class="status-pill"></span></div><dl class="client-fields"><div><dt>Ключ (пароль):</dt><dd class="client-key">••••••••</dd></div><div><dt>Срок действия:</dt><dd>—</dd></div><div><dt>Трафик:</dt><dd>↑ — / ↓ —</dd></div><div><dt>Потоки:</dt><dd>—</dd></div></dl><button class="client-copy" disabled>Копировать ссылку подписки</button>';
         card.querySelector('h3').textContent = client.name;
-        card.querySelector('.status-pill').textContent = client.role;
+        card.querySelector('.status-pill').textContent = liveStats ? `${client.active ? 'Активен' : 'Отключён'} · ${client.role} · сессий: ${client.sessions}` : client.role;
         list.append(card);
     }
     if (!list.children.length) {

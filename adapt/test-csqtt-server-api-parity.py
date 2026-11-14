@@ -33,6 +33,10 @@ assert "credentials: 'same-origin'" in preview
 assert "method: 'GET'" in preview
 assert "statsBase + 'api/stats'" in preview
 assert "statsBase + 'api/logs'" in preview
+assert "fetchList('api/clients')" in preview
+assert "fetchList('api/groups')" in preview
+assert 'async fn clients_get' in upstream
+assert 'async fn groups_get' in upstream
 assert 'async fn logs_get' in upstream
 assert "statsBase + 'api/login'" in preview
 assert 'caesarEncode' in preview

@@ -114,6 +114,14 @@ with sync_playwright() as playwright:
     assert page.locator('#logs pre').inner_text().startswith('<script>')
     assert page.evaluate('window.__logInjected') is None
     assert page.locator('#logs .log-source code').inner_text() == '/var/log/csqtt.log'
+    page.route('**/api/clients', lambda route: route.fulfill(status=200, content_type='application/json', body='[{"name":"Реальный тестовый клиент","password":"PRIVATE-KEY","link":"SECRET-LINK","active":true,"active_sessions":2,"group_id":"g1"}]'))
+    page.route('**/api/groups', lambda route: route.fulfill(status=200, content_type='application/json', body='[{"id":"g1","name":"Тестовая группа","admin_uuid":"PRIVATE-UUID"}]'))
+    page.locator('[data-tab="clients"]').click()
+    page.wait_for_function("document.querySelector('#clientList').textContent.includes('Реальный тестовый клиент')")
+    assert 'Тестовая группа' in page.locator('#clientList').inner_text()
+    assert 'PRIVATE-KEY' not in page.locator('body').inner_text()
+    assert 'SECRET-LINK' not in page.locator('body').inner_text()
+    assert 'PRIVATE-UUID' not in page.locator('body').inner_text()
     page.close()
     page = browser.new_page()
     page.route('**/api/stats', lambda route: route.fulfill(status=401, body='Unauthorized'))
