@@ -94,8 +94,15 @@ restore_previous_systemd() {
     systemctl daemon-reload || return 1
     if [ "$ROLLBACK_WAS_ACTIVE" -eq 1 ]; then
         systemctl restart csqtt-core || return 1
-        systemctl is-active --quiet csqtt-core || return 1
-        ip link show "$CSQTT_IFACE" >/dev/null 2>&1 || return 1
+        local attempt ready=0
+        for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if systemctl is-active --quiet csqtt-core && ip link show "$CSQTT_IFACE" >/dev/null 2>&1; then
+                ready=1
+                break
+            fi
+            sleep 1
+        done
+        [ "$ready" -eq 1 ] || return 1
     fi
     log_info "Предыдущий systemd runtime восстановлен"
 }
