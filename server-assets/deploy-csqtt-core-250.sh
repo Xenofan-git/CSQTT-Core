@@ -52,6 +52,59 @@ SYSTEMD_NEEDS_RELOAD=0
 DEPLOY_PHASE="initial"
 DOCKER_CONTEXT_DIR=""
 CSQTT_DOCKER_CANDIDATE_IMAGE=""
+ROLLBACK_DIR=""
+ROLLBACK_ARMED=0
+ROLLBACK_WAS_ACTIVE=0
+
+snapshot_existing_systemd() {
+    [ "$DEPLOY_MODE" = systemd ] || return 0
+    [ -f /usr/local/bin/csqtt-core ] || return 0
+    [ -f /etc/systemd/system/csqtt-core.service ] || return 0
+    ROLLBACK_DIR="$(mktemp -d /tmp/csqtt-core-rollback.XXXXXXXX)"
+    chmod 700 "$ROLLBACK_DIR"
+    systemctl is-active --quiet csqtt-core && ROLLBACK_WAS_ACTIVE=1 || true
+    cp -a /usr/local/bin/csqtt-core "$ROLLBACK_DIR/binary"
+    cp -a /etc/systemd/system/csqtt-core.service "$ROLLBACK_DIR/unit"
+    if [ -d "$CSQTT_CONFIG_DIR" ]; then
+        cp -a "$CSQTT_CONFIG_DIR" "$ROLLBACK_DIR/config"
+        # Persistent SQLite/credentials are preserved in place by csqtt_cleanup.
+        # Never overwrite a live WAL database from a non-transactional copy.
+        rm -f "$ROLLBACK_DIR/config/csqtt.db" "$ROLLBACK_DIR/config/csqtt.db-wal" "$ROLLBACK_DIR/config/csqtt.db-shm"
+    fi
+    [ ! -d /usr/local/lib/csqtt-core ] || cp -a /usr/local/lib/csqtt-core "$ROLLBACK_DIR/helpers"
+    ROLLBACK_ARMED=1
+    log_info "Резервная копия предыдущего systemd runtime подготовлена"
+}
+
+restore_previous_systemd() {
+    [ "$ROLLBACK_ARMED" -eq 1 ] || return 0
+    ROLLBACK_ARMED=0
+    log_warn "Ошибка обновления: восстанавливаем предыдущий systemd runtime"
+    systemctl stop csqtt-core >/dev/null 2>&1 || true
+    install -m 755 "$ROLLBACK_DIR/binary" /usr/local/bin/csqtt-core || return 1
+    cp -a "$ROLLBACK_DIR/unit" /etc/systemd/system/csqtt-core.service || return 1
+    if [ -d "$ROLLBACK_DIR/config" ]; then
+        mkdir -p "$CSQTT_CONFIG_DIR"
+        cp -a "$ROLLBACK_DIR/config/." "$CSQTT_CONFIG_DIR/" || return 1
+    fi
+    if [ -d "$ROLLBACK_DIR/helpers" ]; then
+        mkdir -p /usr/local/lib/csqtt-core
+        cp -a "$ROLLBACK_DIR/helpers/." /usr/local/lib/csqtt-core/ || return 1
+    fi
+    systemctl daemon-reload || return 1
+    if [ "$ROLLBACK_WAS_ACTIVE" -eq 1 ]; then
+        systemctl restart csqtt-core || return 1
+        systemctl is-active --quiet csqtt-core || return 1
+    fi
+    log_info "Предыдущий systemd runtime восстановлен"
+}
+
+cleanup_rollback_snapshot() {
+    if [ -n "$ROLLBACK_DIR" ] && [ -d "$ROLLBACK_DIR" ]; then
+        rm -rf -- "$ROLLBACK_DIR"
+    fi
+    ROLLBACK_DIR=""
+}
 
 validate_port() {
     local name="$1" value="$2"
@@ -102,6 +155,10 @@ die() {
     log_error "$message"
     printf 'CSQTT_DEPLOY_ERROR|%s|%s\n' "$DEPLOY_PHASE" "$message"
     cleanup_deploy_uploads
+    if ! restore_previous_systemd; then
+        log_error "CRITICAL: automatic rollback failed; inspect service manually"
+    fi
+    cleanup_rollback_snapshot
     exit "$code"
 }
 
@@ -2400,6 +2457,10 @@ handle_unexpected_error() {
     log_error "Неперехваченная ошибка deploy.sh (строка $line, exit=$status)"
     printf 'CSQTT_DEPLOY_ERROR|%s|Неперехваченная ошибка deploy.sh (строка %s, exit=%s)\n' "$DEPLOY_PHASE" "$line" "$status"
     cleanup_deploy_uploads
+    if ! restore_previous_systemd; then
+        log_error "CRITICAL: automatic rollback failed; inspect service manually"
+    fi
+    cleanup_rollback_snapshot
     case "$DEPLOY_PHASE" in
         validation) exit "$EXIT_INVALID_ARGUMENT" ;;
         preflight) exit "$EXIT_PREFLIGHT_FAILED" ;;
@@ -2465,6 +2526,7 @@ main() {
                 run_timed "Docker preflight" prepare_docker_candidate "$UPLOAD_BINARY"
             fi
             run_timed "preflight" run_platform_preflight
+            snapshot_existing_systemd
             DEPLOY_PHASE="cutover"
             run_timed "переключение runtime" csqtt_cleanup
             detect_firewall
@@ -2481,6 +2543,8 @@ main() {
                 run_timed "systemd unit" setup_csqtt_service
             fi
             run_timed "запуск" start_csqtt
+            ROLLBACK_ARMED=0
+            cleanup_rollback_snapshot
             log_info "Общее время deploy.sh: $((SECONDS - total_started))с"
             ;;
         *) die "Неизвестная команда установщика: $action" ;;
