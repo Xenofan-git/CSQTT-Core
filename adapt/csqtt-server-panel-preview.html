@@ -67,7 +67,8 @@ header{padding:20px 0}header strong{font-size:34px}.header-tools{display:flex;al
 'use strict';
 const tabs=document.querySelectorAll('[data-tab]');
 tabs.forEach(button=>button.addEventListener('click',()=>{tabs.forEach(b=>b.classList.toggle('active',b===button));document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id===button.dataset.tab));}));
-document.querySelector('#refresh').addEventListener('change',()=>{document.querySelector('#serverState').textContent='Нет данных';});
+// Preview has no monitoring API: changing the interval must not fabricate a server update.
+document.querySelector('#refresh').addEventListener('change',()=>{document.querySelector('#refresh').setAttribute('aria-label','Интервал обновления (предпросмотр, без подключения к серверу)');});
 
 const previewClients = [
     {name: 'Пример клиента 1', role: 'Участник'},

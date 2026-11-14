@@ -26,6 +26,27 @@ with sync_playwright() as playwright:
             ), (width, tab)
             assert page.locator("nav.tabs button.active").count() == 1
         assert page.locator("button:disabled").count() >= 8
+        # Preview must not expose a working login or privileged server actions.
+        assert page.locator("#login").is_hidden()
+        assert page.locator("#dashboard").is_visible()
+        page.locator('button[data-tab="monitor"]').click()
+        page.locator("#refresh").select_option("10")
+        assert page.locator("#serverState").inner_text() == "Нет данных"
+        assert "без подключения" in page.locator("#refresh").get_attribute("aria-label")
+        assert page.locator("#clients button:disabled").count() >= 4
+        page.locator('button[data-tab="clients"]').click()
+        assert page.locator("#clientList .client-card").count() == 3
+        search = page.locator("#search")
+        search.fill("Пример клиента 2")
+        assert page.locator("#clientList .client-card").count() == 1
+        assert page.locator("#clientList .client-card h3").inner_text() == "Пример клиента 2"
+        page.locator("#clearSearch").click()
+        assert search.input_value() == ""
+        assert page.locator("#clientList .client-card").count() == 3
+        search.fill("несуществующий клиент")
+        assert page.locator("#clientList .client-card").count() == 0
+        assert page.locator("#clientList .empty-clients").inner_text() == "Ничего не найдено"
+        search.fill("")
         assert page.locator("body").evaluate(
             "(element) => element.scrollWidth <= window.innerWidth + 1"
         ), f"horizontal overflow at {width}px"
