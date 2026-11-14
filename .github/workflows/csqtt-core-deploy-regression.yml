@@ -27,4 +27,4 @@ jobs:
       - name: Installer isolation contract
         run: python3 adapt/test-csqtt-core-deploy-isolation-250.py
       - name: Mutation refusal and read-only status
-        run: python3 adapt/test-csqtt-core-deploy-guard-live.py
+        run: sudo python3 adapt/test-csqtt-core-deploy-guard-live.py
