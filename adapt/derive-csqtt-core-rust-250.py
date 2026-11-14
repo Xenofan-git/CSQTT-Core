@@ -8,6 +8,11 @@ assert (src/'Cargo.lock').is_file() and (src/'tun_device.rs').is_file()
 if dest.exists(): shutil.rmtree(dest)
 shutil.copytree(src,dest,ignore=shutil.ignore_patterns('target','.git'))
 shutil.copytree(a.upstream_root/'shared',a.output/'shared',dirs_exist_ok=True)
+assets=a.upstream_root/'app/src/main/assets'
+asset_dest=a.output/'app/src/main/assets'
+asset_dest.mkdir(parents=True,exist_ok=True)
+for asset in assets.iterdir():
+ if asset.is_file(): shutil.copy2(asset,asset_dest/asset.name)
 changed=[]
 for file in sorted(dest.rglob('*.rs')):
  s=file.read_text(); old=s
