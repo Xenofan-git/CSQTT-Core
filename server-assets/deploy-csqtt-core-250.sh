@@ -2466,9 +2466,9 @@ main() {
             if [ "$DEPLOY_MODE" = "docker" ]; then
                 run_timed "Docker preflight" prepare_docker_candidate "$UPLOAD_BINARY"
             fi
+            run_timed "preflight" run_platform_preflight
             DEPLOY_PHASE="cutover"
             run_timed "переключение runtime" csqtt_cleanup
-            run_timed "preflight" run_platform_preflight
             detect_firewall
             run_timed "NAT/firewall" setup_nat_and_firewall
             install_network_helper

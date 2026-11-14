@@ -64,6 +64,8 @@ s=s.replace('[ -w /proc/sys/net/ipv4/ip_forward ] && echo 1 > /proc/sys/net/ipv4
 # Fail closed before any package install, network mutation or cutover.
 # Core is still in a controlled testing phase; explicit gate is required.
 s=s.replace('    check_root\n    mkdir -p "$(dirname "$LOG_FILE")"', '    check_root\n    if [ "$action" = install ] || [ "$action" = --install ] || [ "$action" = -i ] || [ "$action" = uninstall ] || [ "$action" = --uninstall ] || [ "$action" = -u ]; then\n        [ "${CSQTT_CORE_ALLOW_MUTATION:-}" = "isolated-lab-only" ] || {\n            printf "%s\\n" "REFUSED: CSQTT-Core install/uninstall requires CSQTT_CORE_ALLOW_MUTATION=isolated-lab-only" >&2\n            exit 42\n        }\n    fi\n    if [ "$action" = status ] || [ "$action" = --status ] || [ "$action" = -s ]; then\n        do_status\n        return\n    fi\n    mkdir -p "$(dirname "$LOG_FILE")"'  )
+# Verify TUN/kernel compatibility BEFORE removing an existing Core runtime.
+s=s.replace('            DEPLOY_PHASE="cutover"\n            run_timed "переключение runtime" csqtt_cleanup\n            run_timed "preflight" run_platform_preflight','            run_timed "preflight" run_platform_preflight\n            DEPLOY_PHASE="cutover"\n            run_timed "переключение runtime" csqtt_cleanup')
 # DB filenames must stay csqtt.db because original Rust binary uses that basename.
 s=s.replace('csqtt-core.db','csqtt.db').replace('csqtt-core.db-wal','csqtt.db-wal').replace('csqtt-core.db-shm','csqtt.db-shm')
 # Explicit human-review safety gate: do not silently claim deployment-ready.
