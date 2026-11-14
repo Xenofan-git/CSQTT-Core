@@ -96,7 +96,13 @@ with sync_playwright() as playwright:
         calls.append(route.request.url)
         route.fulfill(status=200, content_type='application/json', body='{"status":"Active","active":7,"cpu_normalized":13,"ram":"80 MB","up":1048576,"down":2097152}')
     page.route('**/api/stats', mock_stats)
+    page.route('**/api/login', lambda route: route.fulfill(status=200, body='ok'))
     page.goto(HTML + '?connect=1')
+    assert page.locator('#login').is_visible()
+    assert page.locator('#dashboard').is_hidden()
+    page.locator('#user').fill('admin')
+    page.locator('#pass').fill('example-secret')
+    page.locator('#signIn').click()
     page.wait_for_function("document.querySelector('#serverState').textContent === 'Работает'")
     assert page.locator('#sessionCount').inner_text() == '7'
     assert page.locator('#cpuValue').inner_text() == '13%'
@@ -105,7 +111,11 @@ with sync_playwright() as playwright:
     page.close()
     page = browser.new_page()
     page.route('**/api/stats', lambda route: route.fulfill(status=401, body='Unauthorized'))
+    page.route('**/api/login', lambda route: route.fulfill(status=200, body='ok'))
     page.goto(HTML + '?connect=1')
+    page.locator('#user').fill('admin')
+    page.locator('#pass').fill('example-secret')
+    page.locator('#signIn').click()
     page.wait_for_function("document.querySelector('#serverState').textContent === 'Требуется вход'")
     assert page.locator('#sessionCount').inner_text() == '—'
     page.close()

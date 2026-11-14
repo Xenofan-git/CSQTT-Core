@@ -74,6 +74,43 @@ document.querySelector('#refresh').addEventListener('change',()=>{document.query
 // Never send credentials, keys, or privileged requests from this preview.
 const liveStats = new URLSearchParams(location.search).get('connect') === '1';
 const statsBase = location.pathname.replace(/[^/]*$/, '');
+// The original CSQTT 2.5 server uses a c1: byte-shifted payload and
+// sets its own HttpOnly, Secure, SameSite=Lax session cookie.
+const caesarEncode = value => {
+    const bytes = new TextEncoder().encode(value);
+    let encoded = '';
+    for (const byte of bytes) encoded += String.fromCharCode((byte + 47) & 255);
+    return 'c1:' + btoa(encoded);
+};
+if (liveStats) {
+    document.querySelector('#dashboard').classList.add('hidden');
+    document.querySelector('#login').classList.remove('hidden');
+    document.querySelector('#signIn').addEventListener('click', async () => {
+        const button = document.querySelector('#signIn');
+        const error = document.querySelector('#loginError');
+        const user = document.querySelector('#user');
+        const pass = document.querySelector('#pass');
+        if (!user.value || !pass.value) { error.textContent = 'Введите логин и пароль'; return; }
+        button.disabled = true;
+        error.textContent = '';
+        try {
+            const response = await fetch(statsBase + 'api/login', {
+                method: 'POST', credentials: 'same-origin', cache: 'no-store',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user: caesarEncode(user.value), pass: caesarEncode(pass.value)})
+            });
+            if (!response.ok) throw new Error(response.status === 429 ? 'Подождите 3 минуты.' : 'Неверный логин или пароль');
+            pass.value = '';
+            document.querySelector('#login').classList.add('hidden');
+            document.querySelector('#dashboard').classList.remove('hidden');
+            refreshStats();
+            scheduleStats();
+        } catch (reason) {
+            error.textContent = reason instanceof TypeError ? 'Ошибка сети' : reason.message;
+        } finally { button.disabled = false; pass.value = ''; }
+    });
+}
+
 let statsTimer = null;
 let statsPending = false;
 const metricText = (id, value) => { document.getElementById(id).textContent = value; };
@@ -116,8 +153,7 @@ function scheduleStats() {
 }
 if (liveStats) {
     document.querySelector('#refresh').addEventListener('change', scheduleStats);
-    refreshStats();
-    scheduleStats();
+    // Login is required before monitoring; do not probe protected endpoints here.
 }
 
 const previewClients = [
