@@ -7,13 +7,14 @@ src=a.upstream_root/'rust-server'; dest=a.output/'rust-server'
 assert (src/'Cargo.lock').is_file() and (src/'tun_device.rs').is_file()
 if dest.exists(): shutil.rmtree(dest)
 shutil.copytree(src,dest,ignore=shutil.ignore_patterns('target','.git'))
+shutil.copytree(a.upstream_root/'shared',a.output/'shared',dirs_exist_ok=True)
 changed=[]
 for file in sorted(dest.rglob('*.rs')):
  s=file.read_text(); old=s
  # Apply only to CSQTT's own IPv4 tunnel address literals, never external networks.
  s=s.replace('10.66.67.', '10.67.69.').replace('csqtt1','csqtt-core0')
  # Distinct TUN firewall comment for independent cleanup; avoid matching legacy rules.
- s=s.replace('CSQTT_TPROXY:', 'CSQTT_CORE_TPROXY:')
+ s=s.replace('CSQTT_TPROXY', 'CSQTT_CORE_TPROXY')
  if s!=old:
   file.write_text(s);changed.append((str(file.relative_to(dest)),hashlib.sha256(s.encode()).hexdigest()[:12]))
 assert any(f=='tun_device.rs' for f,_ in changed)
