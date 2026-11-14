@@ -1,0 +1,30 @@
+name: CSQTT Core deploy regression
+on:
+  push:
+    branches:
+      - fix/direct-dnsmasq-dualstack-production
+    paths:
+      - server-assets/deploy-csqtt-core-250.sh
+      - adapt/test-csqtt-core-deploy-isolation-250.py
+      - adapt/test-csqtt-core-deploy-guard-live.py
+      - .github/workflows/csqtt-core-deploy-regression.yml
+  pull_request:
+    paths:
+      - server-assets/deploy-csqtt-core-250.sh
+      - adapt/test-csqtt-core-deploy-isolation-250.py
+      - adapt/test-csqtt-core-deploy-guard-live.py
+      - .github/workflows/csqtt-core-deploy-regression.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy-static-guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer syntax
+        run: bash -n server-assets/deploy-csqtt-core-250.sh
+      - name: Installer isolation contract
+        run: python3 adapt/test-csqtt-core-deploy-isolation-250.py
+      - name: Mutation refusal and read-only status
+        run: python3 adapt/test-csqtt-core-deploy-guard-live.py
