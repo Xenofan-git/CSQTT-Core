@@ -26,5 +26,8 @@ assert 'update-grub' not in s
 assert 'echo 1 > /proc/sys/net/ipv4/ip_forward' not in s
 assert 'CSQTT_SYSCTL_FILE" <<' not in s
 assert s.index('run_timed "preflight" run_platform_preflight',s.index('main() {')) < s.index('run_timed "переключение runtime" csqtt_cleanup',s.index('main() {'))
+assert 'ELF architecture mismatch' in s
+assert 'elf_machine="$(od -An -tu2 -j18 -N2' in s
+assert s.index('ELF architecture mismatch') < s.index('chmod 0755 "$UPLOAD_BINARY"')
 assert s.count('CSQTT_DEPLOY_OK')>=2
 print('CSQTT 2.5 Core installer isolation/static syntax PASS')

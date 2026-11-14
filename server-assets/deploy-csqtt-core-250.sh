@@ -816,6 +816,18 @@ prepare_uploaded_release() {
     [ -f "$UPLOAD_OVERRIDES_FILE" ] && [ -s "$UPLOAD_OVERRIDES_FILE" ] || \
         die "Одноразовая deploy-конфигурация не загружена" "$EXIT_PREFLIGHT_FAILED"
 
+    local elf_magic elf_machine expected_machine
+    elf_magic="$(od -An -tx1 -N4 "$UPLOAD_BINARY" | tr -d ' \n')"
+    [ "$elf_magic" = 7f454c46 ] || die "Payload is not an ELF binary" "$EXIT_PREFLIGHT_FAILED"
+    elf_machine="$(od -An -tu2 -j18 -N2 "$UPLOAD_BINARY" | tr -d ' \n')"
+    case "$(uname -m)" in
+        aarch64|arm64) expected_machine=183 ;;
+        x86_64|amd64) expected_machine=62 ;;
+        armv7l|armv7|armhf) expected_machine=40 ;;
+        *) die "Unsupported host architecture" "$EXIT_PREFLIGHT_FAILED" ;;
+    esac
+    [ "$elf_machine" = "$expected_machine" ] || die "ELF architecture mismatch: host expects $expected_machine, got $elf_machine" "$EXIT_PREFLIGHT_FAILED"
+
     chmod 0755 "$UPLOAD_BINARY" || die "Не удалось подготовить загруженный бинарник csqtt-core" "$EXIT_PREFLIGHT_FAILED"
     chmod 0600 "$UPLOAD_ENV_FILE" "$UPLOAD_OVERRIDES_FILE" || \
         die "Не удалось защитить загруженную конфигурацию" "$EXIT_PREFLIGHT_FAILED"
