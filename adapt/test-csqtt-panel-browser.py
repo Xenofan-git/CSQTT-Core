@@ -8,6 +8,7 @@ a real account, VK token, server, or network.
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 import threading
 
@@ -142,7 +143,10 @@ def main():
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                **({"executable_path": os.environ["CSQTT_TEST_CHROMIUM"]} if os.environ.get("CSQTT_TEST_CHROMIUM") else {}),
+            )
             page = browser.new_page()
             page_errors = []
             page.on("pageerror", lambda error: page_errors.append(str(error)))
