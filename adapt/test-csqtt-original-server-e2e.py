@@ -16,7 +16,7 @@ def request(path, method='GET', obj=None, auth=True):
   status=r.status; body=r.read(); h=r.headers
  except urllib.error.HTTPError as e:
   status=e.code;body=e.read();h=e.headers
- except (http.client.RemoteDisconnected, ConnectionResetError):
+ except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError):
   return 0,"stealth connection closed",{}
  if h.get('Set-Cookie') and 'csqtt_session=' in h.get('Set-Cookie'):
   cookie=h.get('Set-Cookie').split(';')[0]
