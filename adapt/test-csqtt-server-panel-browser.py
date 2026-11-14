@@ -4,10 +4,28 @@
 No backend or credentials are used; privileged actions must remain disabled.
 """
 import os
+import atexit
+import functools
+import threading
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-HTML = (Path(__file__).parent / "csqtt-server-panel-preview.html").resolve().as_uri()
+# file:// pages have opaque origins; mocked fetch() is browser-dependent.
+# Serve only the local preview on an ephemeral loopback HTTP port so Chromium
+# exercises a genuine same-origin request, on both CI and development hosts.
+class QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+server = ThreadingHTTPServer(
+    ('127.0.0.1', 0),
+    functools.partial(QuietHandler, directory=str(Path(__file__).parent)),
+)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+atexit.register(server.server_close)
+atexit.register(server.shutdown)
+HTML = f'http://127.0.0.1:{server.server_port}/csqtt-server-panel-preview.html' 
 TABS = ("monitor", "clients", "logs", "settings")
 
 with sync_playwright() as playwright:
