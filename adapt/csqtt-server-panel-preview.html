@@ -101,9 +101,11 @@ if (liveStats) {
             });
             if (!response.ok) throw new Error(response.status === 429 ? 'Подождите 3 минуты.' : 'Неверный логин или пароль');
             pass.value = '';
+            // The original returns a server-owned cookie; verify it against the protected endpoint.
+            const authorized = await refreshStats();
+            if (!authorized) throw new Error('Не удалось подтвердить сессию');
             document.querySelector('#login').classList.add('hidden');
             document.querySelector('#dashboard').classList.remove('hidden');
-            refreshStats();
             scheduleStats();
         } catch (reason) {
             error.textContent = reason instanceof TypeError ? 'Ошибка сети' : reason.message;
@@ -121,14 +123,14 @@ const formatBytes = value => {
     return `${(n / 1048576).toFixed(1)} МБ`;
 };
 async function refreshStats() {
-    if (!liveStats || statsPending) return;
+    if (!liveStats || statsPending) return false;
     statsPending = true;
     try {
         const response = await fetch(statsBase + 'api/stats', {
             method: 'GET', credentials: 'same-origin', cache: 'no-store',
             headers: {Accept: 'application/json'}
         });
-        if (!response.ok) throw new Error(response.status === 401 ? 'Требуется вход' : 'Сервер недоступен');
+        if (!response.ok || response.headers.get('x-csqtt-stealth-rst') === '1') throw new Error(response.status === 401 ? 'Требуется вход' : 'Сервер недоступен');
         const stats = await response.json();
         if (!stats || typeof stats !== 'object' || Array.isArray(stats)) throw new Error('Некорректные данные');
         metricText('serverState', stats.status === 'Active' ? 'Работает' : 'Неизвестно');
@@ -136,10 +138,12 @@ async function refreshStats() {
         metricText('cpuValue', Number.isFinite(stats.cpu_normalized) ? `${stats.cpu_normalized}%` : '—');
         metricText('ramValue', typeof stats.ram === 'string' ? stats.ram : '—');
         metricText('trafficValue', `↑ ${formatBytes(stats.up)} / ↓ ${formatBytes(stats.down)}`);
+        return true;
     } catch (error) {
         metricText('serverState', error.message === 'Требуется вход' ? 'Требуется вход' : 'Нет соединения');
         for (const id of ['sessionCount', 'cpuValue', 'ramValue']) metricText(id, '—');
         metricText('trafficValue', '↑ — / ↓ —');
+        return false;
     } finally { statsPending = false; }
 }
 function scheduleStats() {

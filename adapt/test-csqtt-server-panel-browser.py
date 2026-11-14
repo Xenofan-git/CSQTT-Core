@@ -118,6 +118,20 @@ with sync_playwright() as playwright:
     page.locator('#signIn').click()
     page.wait_for_function("document.querySelector('#serverState').textContent === 'Требуется вход'")
     assert page.locator('#sessionCount').inner_text() == '—'
+    assert page.locator('#dashboard').is_hidden()
+    assert page.locator('#login').is_visible()
+    assert page.locator('#loginError').inner_text() == 'Не удалось подтвердить сессию'
+    page.close()
+    # Original CSQTT returns HTTP 200 with a stealth-reset marker when unauthenticated.
+    page = browser.new_page()
+    page.route('**/api/login', lambda route: route.fulfill(status=200, body='ok'))
+    page.route('**/api/stats', lambda route: route.fulfill(status=200, headers={'x-csqtt-stealth-rst':'1'}, body=''))
+    page.goto(HTML + '?connect=1')
+    page.locator('#user').fill('admin')
+    page.locator('#pass').fill('example-secret')
+    page.locator('#signIn').click()
+    page.wait_for_function("document.querySelector('#loginError').textContent.includes('сессию')")
+    assert page.locator('#dashboard').is_hidden()
     page.close()
     browser.close()
 print("server-panel responsive navigation smoke: OK")
