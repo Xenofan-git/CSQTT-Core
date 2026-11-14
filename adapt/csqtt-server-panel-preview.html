@@ -160,6 +160,30 @@ if (liveStats) {
     // Login is required before monitoring; do not probe protected endpoints here.
 }
 
+// Original CSQTT 2.5: GET /api/logs returns {path, active, lines}.
+// Read-only; never enable clear/download/toggle actions in preview.
+async function refreshLogs() {
+    if (!liveStats || document.querySelector('#dashboard').classList.contains('hidden')) return;
+    const shell = document.querySelector('#logs pre');
+    if (!shell) return;
+    try {
+        const response = await fetch(statsBase + 'api/logs', {
+            method: 'GET', credentials: 'same-origin', cache: 'no-store',
+            headers: {Accept: 'application/json'}
+        });
+        if (!response.ok || response.headers.get('x-csqtt-stealth-rst') === '1') throw new Error('Доступ к журналу отсутствует');
+        const data = await response.json();
+        if (!data || !Array.isArray(data.lines) || !data.lines.every(line => typeof line === 'string')) throw new Error('Некорректный формат журнала');
+        // textContent prevents log data from becoming executable HTML.
+        shell.textContent = data.lines.slice(-300).join('\n') || 'Журнал пуст';
+        const path = document.querySelector('#logs .log-source code');
+        if (path) path.textContent = typeof data.path === 'string' ? data.path : '—';
+    } catch (error) { shell.textContent = 'Журнал недоступен'; }
+}
+if (liveStats) {
+    document.querySelector('[data-tab="logs"]').addEventListener('click', refreshLogs);
+}
+
 const previewClients = [
     {name: 'Пример клиента 1', role: 'Участник'},
     {name: 'Пример клиента 2', role: 'Участник'},

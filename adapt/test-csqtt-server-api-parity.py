@@ -32,6 +32,8 @@ assert "get('connect') === '1'" in preview
 assert "credentials: 'same-origin'" in preview
 assert "method: 'GET'" in preview
 assert "statsBase + 'api/stats'" in preview
+assert "statsBase + 'api/logs'" in preview
+assert 'async fn logs_get' in upstream
 assert "statsBase + 'api/login'" in preview
 assert 'caesarEncode' in preview
 assert 'x-csqtt-stealth-rst' in preview

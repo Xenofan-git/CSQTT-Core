@@ -108,6 +108,12 @@ with sync_playwright() as playwright:
     assert page.locator('#cpuValue').inner_text() == '13%'
     assert page.locator('#trafficValue').inner_text() == '↑ 1.0 МБ / ↓ 2.0 МБ'
     assert len(calls) == 1 and calls[0].endswith('/api/stats')
+    page.route('**/api/logs', lambda route: route.fulfill(status=200, content_type='application/json', body='{"path":"/var/log/csqtt.log","active":true,"lines":["<script>window.__logInjected=true</script>","test line"]}'))
+    page.locator('[data-tab="logs"]').click()
+    page.wait_for_function("document.querySelector('#logs pre').textContent.includes('test line')")
+    assert page.locator('#logs pre').inner_text().startswith('<script>')
+    assert page.evaluate('window.__logInjected') is None
+    assert page.locator('#logs .log-source code').inner_text() == '/var/log/csqtt.log'
     page.close()
     page = browser.new_page()
     page.route('**/api/stats', lambda route: route.fulfill(status=401, body='Unauthorized'))
