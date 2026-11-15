@@ -1,6 +1,6 @@
     #[cfg(target_os = "linux")]
     #[tokio::test]
-    #[ignore = "isolated ARM64 VM only: requires privileged TCP+UDP TPROXY and local SOCKS5 relay; 75-second soak"]
+    #[ignore = "isolated ARM64 VM only: requires privileged TCP+UDP TPROXY and local SOCKS5 relay; 180-second soak"]
     async fn privileged_arm64_mixed_tcp_udp_soak() {
         use std::sync::Arc;
         use std::time::Duration;
@@ -16,12 +16,12 @@
         let stats = Arc::new(TproxyStats::default());
         let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
         let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
-        tokio::time::sleep(Duration::from_secs(75)).await;
+        tokio::time::sleep(Duration::from_secs(180)).await;
         let snapshot = stats.snapshot();
         println!("SOAK_NETWORK_TCP={} UDP={}", snapshot.tcp_total, snapshot.udp_total);
         cancel.cancel();
         let counts = tokio::time::timeout(Duration::from_secs(10), task).await.expect("TPROXY task stopped").unwrap();
-        assert!(counts.0 >= 100 && counts.2 >= 100, "expected sustained real TCP and UDP flows");
+        assert!(counts.0 >= 500 && counts.2 >= 500, "expected sustained real TCP and UDP flows");
         let verdict = std::fs::read_to_string("/tmp/csqtt-soak-client.verdict")
             .expect("client must write independent success/failure verdict");
         assert_eq!(verdict.trim(), "PASS", "real network client reported failed requests");
