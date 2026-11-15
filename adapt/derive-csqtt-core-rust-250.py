@@ -22,6 +22,13 @@ for file in sorted(dest.rglob('*.rs')):
  s=s.replace('CSQTT_TPROXY', 'CSQTT_CORE_TPROXY')
  if s!=old:
   file.write_text(s);changed.append((str(file.relative_to(dest)),hashlib.sha256(s.encode()).hexdigest()[:12]))
+# Exercise SOCKS5 UDP ASSOCIATE against a loopback relay in the generated Core test suite.
+fixture=Path(__file__).with_name('socks5-udp-loopback-test.rs.txt').read_text()
+proxy=dest/'proxy_route.rs'
+source=proxy.read_text()
+marker='    #[test]\n    fn parses_socks5_udp_ipv4_response()'
+assert source.count(marker)==1
+proxy.write_text(source.replace(marker,fixture+'\n'+marker))
 assert any(f=='tun_device.rs' for f,_ in changed)
 assert any(f=='net_setup.rs' for f,_ in changed)
 assert any(f=='model.rs' for f,_ in changed)

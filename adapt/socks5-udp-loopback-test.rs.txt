@@ -1,0 +1,39 @@
+    #[tokio::test]
+    async fn socks5_udp_associate_loopback_roundtrip() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::{TcpListener, UdpSocket};
+        use std::net::{Ipv4Addr, SocketAddr};
+        let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = tcp.local_addr().unwrap();
+        let relay_addr = udp.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut control, _) = tcp.accept().await.unwrap();
+            let mut hello = [0;3]; control.read_exact(&mut hello).await.unwrap();
+            assert_eq!(hello, [5,1,0]);
+            control.write_all(&[5,0]).await.unwrap();
+            let mut request = [0;10]; control.read_exact(&mut request).await.unwrap();
+            assert_eq!(&request[..4], &[5,3,0,1]);
+            let mut reply = vec![5,0,0];
+            super::append_socks_address(&mut reply, relay_addr);
+            control.write_all(&reply).await.unwrap();
+            let mut buffer = [0u8;256];
+            let (len, client) = udp.recv_from(&mut buffer).await.unwrap();
+            assert_eq!(&buffer[..4], &[0,0,0,1]);
+            assert_eq!(&buffer[10..len], b"loopback-datagram");
+            udp.send_to(&buffer[..len], client).await.unwrap();
+        });
+        let mut config = config(); config.port = proxy_addr.port();
+        let (_control, relay) = super::socks_command(&config, 3, SocketAddr::from((Ipv4Addr::UNSPECIFIED,0))).await.unwrap();
+        assert_eq!(relay, relay_addr);
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut packet = vec![0,0,0,1,127,0,0,1,0,53];
+        packet.extend_from_slice(b"loopback-datagram");
+        client.send_to(&packet,relay).await.unwrap();
+        let mut response=[0u8;256];
+        let (len,_) = tokio::time::timeout(std::time::Duration::from_secs(3),client.recv_from(&mut response)).await.unwrap().unwrap();
+        let (source,payload)=super::socks_udp_response(&response[..len]).unwrap();
+        assert_eq!(source, "127.0.0.1:53".parse().unwrap());
+        assert_eq!(payload,b"loopback-datagram");
+        server.await.unwrap();
+    }
