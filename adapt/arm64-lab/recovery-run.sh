@@ -4,7 +4,7 @@ set -u
 lab=${CSQTT_LAB_DIR:-/tmp/csqtt-recovery}
 cycles=${CSQTT_OUTAGE_CYCLES:-2}
 outage_seconds=${CSQTT_OUTAGE_SECONDS:-25}
-client_seconds=${CSQTT_RECOVERY_DURATION:-160}
+client_seconds=${CSQTT_RECOVERY_DURATION:-130}
 mkdir -p "$lab"
 rm -f "$lab/result.json" "$lab/exit" "$lab/resources.log"
 sudo -n rm -f /tmp/csqtt-soak-client.verdict
@@ -49,7 +49,10 @@ for ((i=1; i<=cycles; i++)); do
   if ((i<cycles)); then sleep 25; fi
 done
 wait "$client"; client_rc=$?
+echo quiet >"$lab/phase"
+printf "%s\n" "$(date -u +%FT%TZ)" >"$lab/quiet-start"
 if [[ "$client_rc" -eq 0 ]]; then echo PASS | sudo -n tee /tmp/csqtt-soak-client.verdict >/dev/null; else echo FAIL | sudo -n tee /tmp/csqtt-soak-client.verdict >/dev/null; fi
 wait "$core"; core_rc=$?
+printf "%s\n" "$(date -u +%FT%TZ)" >"$lab/quiet-end"
 printf 'CLIENT_EXIT=%s CORE_EXIT=%s\n' "$client_rc" "$core_rc" >"$lab/exit"
 [[ "$client_rc" -eq 0 && "$core_rc" -eq 0 ]]
