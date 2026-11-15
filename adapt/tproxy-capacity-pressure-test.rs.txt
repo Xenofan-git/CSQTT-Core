@@ -1,0 +1,48 @@
+    #[test]
+    fn capacity_pressure_expansion_is_bounded_and_resettable() {
+        let registry = DeviceQuotaRegistry::new();
+        assert_eq!(registry.limits(), (384, 784));
+        assert!(registry.try_expand_capacity());
+        assert_eq!(registry.limits(), (1512, 2048));
+        assert!(!registry.try_expand_capacity(), "no expansion without sufficient memory");
+        assert_eq!(registry.limits(), (1512, 2048));
+        assert_eq!(super::ProxyCapacity::next_limits(registry.limits(), Some(511 * 1024 * 1024)), (1512, 2048));
+        assert_eq!(super::ProxyCapacity::next_limits(registry.limits(), Some(512 * 1024 * 1024)), (1784, 2384));
+        assert_eq!(super::ProxyCapacity::next_limits(registry.limits(), Some(1200 * 1024 * 1024)), (2384, 4096));
+        assert_eq!(super::ProxyCapacity::next_limits((2384, 4096), Some(2048 * 1024 * 1024)), (2384, 4096));
+        registry.reset_capacity();
+        assert_eq!(registry.limits(), (384, 784));
+    }
+
+    #[test]
+    fn sustained_mixed_quota_churn_releases_all_resources() {
+        use std::net::Ipv4Addr;
+        use std::sync::{Arc, Barrier};
+        let registry = DeviceQuotaRegistry::new();
+        let ips = [Ipv4Addr::new(10,67,69,51), Ipv4Addr::new(10,67,69,52), Ipv4Addr::new(10,67,69,53), Ipv4Addr::new(10,67,69,54)];
+        for ip in ips { registry.activate_tunnel_ip(ip); }
+        let start = Arc::new(Barrier::new(9));
+        let mut workers = Vec::new();
+        for worker in 0..8 {
+            let reg = registry.clone();
+            let barrier = start.clone();
+            workers.push(std::thread::spawn(move || {
+                let ip = ips[worker % ips.len()];
+                barrier.wait();
+                for round in 0..3000 {
+                    let tcp = reg.try_acquire_tcp(ip);
+                    let udp = reg.try_acquire_udp(ip);
+                    assert!(tcp.is_ok() && udp.is_ok(), "short lived capacity must be reusable");
+                    if round % 17 == 0 { std::thread::yield_now(); }
+                    drop((tcp,udp));
+                }
+            }));
+        }
+        start.wait();
+        for worker in workers { worker.join().unwrap(); }
+        let state = registry.admission.lock().unwrap();
+        assert_eq!(state.tcp_active, 0);
+        assert_eq!(state.udp_active, 0);
+        drop(state);
+        assert!(registry.tcp_evictions.lock().unwrap().is_empty());
+    }
