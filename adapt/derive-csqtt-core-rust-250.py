@@ -57,6 +57,20 @@ marker='    #[test]\n    fn ports_are_unique_per_runtime_and_in_range()'
 assert source.count(marker)==1
 fixture=Path(__file__).with_name('tproxy-arm64-tcp-test.rs.txt').read_text()
 tproxy.write_text(source.replace(marker,fixture+'\n'+marker))
+# Mixed concurrent TCP/UDP admission regression.
+tproxy=dest/'tproxy.rs'
+source=tproxy.read_text()
+marker='    #[test]\n    fn ports_are_unique_per_runtime_and_in_range()'
+assert source.count(marker)==1
+fixture=Path(__file__).with_name('tproxy-mixed-quota-test.rs.txt').read_text()
+tproxy.write_text(source.replace(marker,fixture+'\n'+marker))
+# Opt-in ARM64 mixed TCP+UDP TPROXY network test.
+tproxy=dest/'tproxy.rs'
+source=tproxy.read_text()
+marker='    #[test]\n    fn ports_are_unique_per_runtime_and_in_range()'
+assert source.count(marker)==1
+fixture=Path(__file__).with_name('tproxy-arm64-mixed-network-test.rs.txt').read_text()
+tproxy.write_text(source.replace(marker,fixture+'\n'+marker))
 assert any(f=='tun_device.rs' for f,_ in changed)
 assert any(f=='net_setup.rs' for f,_ in changed)
 assert any(f=='model.rs' for f,_ in changed)

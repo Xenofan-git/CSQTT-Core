@@ -1,0 +1,53 @@
+    #[test]
+    fn concurrent_tcp_udp_admission_limits_and_release() {
+        use std::net::Ipv4Addr;
+        use std::sync::{Arc, Barrier};
+        let registry = DeviceQuotaRegistry::new();
+        let ip = Ipv4Addr::new(10, 67, 69, 55);
+        registry.activate_tunnel_ip(ip);
+        let barrier = Arc::new(Barrier::new(3));
+        let tcp_registry = registry.clone();
+        let tcp_barrier = barrier.clone();
+        let tcp = std::thread::spawn(move || {
+            let mut leases = Vec::new();
+            for _ in 0..600 {
+                if let Ok(lease) = tcp_registry.try_acquire_tcp(ip) { leases.push(lease); }
+            }
+            let count = leases.len();
+            tcp_barrier.wait();
+            tcp_barrier.wait();
+            drop(leases);
+            count
+        });
+        let udp_registry = registry.clone();
+        let udp_barrier = barrier.clone();
+        let udp = std::thread::spawn(move || {
+            let mut leases = Vec::new();
+            for _ in 0..1100 {
+                if let Ok(lease) = udp_registry.try_acquire_udp(ip) { leases.push(lease); }
+            }
+            let count = leases.len();
+            udp_barrier.wait();
+            udp_barrier.wait();
+            drop(leases);
+            count
+        });
+        barrier.wait();
+        {
+            let state = registry.admission.lock().unwrap();
+            assert_eq!(state.tcp_active, super::GLOBAL_TCP_SESSION_LIMIT);
+            assert_eq!(state.udp_active, super::GLOBAL_UDP_FLOW_LIMIT);
+        }
+        assert!(registry.try_acquire_tcp(ip).is_err(), "TCP limit must reject");
+        assert!(registry.try_acquire_udp(ip).is_err(), "UDP limit must reject");
+        barrier.wait();
+        assert_eq!(tcp.join().unwrap(), super::GLOBAL_TCP_SESSION_LIMIT);
+        assert_eq!(udp.join().unwrap(), super::GLOBAL_UDP_FLOW_LIMIT);
+        {
+            let state = registry.admission.lock().unwrap();
+            assert_eq!((state.tcp_active, state.udp_active), (0, 0));
+        }
+        let tcp_again = registry.try_acquire_tcp(ip).expect("TCP capacity released");
+        let udp_again = registry.try_acquire_udp(ip).expect("UDP capacity released");
+        drop((tcp_again, udp_again));
+    }

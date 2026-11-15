@@ -1,0 +1,24 @@
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "requires isolated ARM64 VM, TCP+UDP TPROXY netns and combined SOCKS5 relay"]
+    async fn privileged_arm64_mixed_tcp_udp_network() {
+        use std::sync::Arc;
+        use std::time::Duration;
+        use crate::model::LocalProxyProfile;
+        use tokio_util::sync::CancellationToken;
+        let config = Arc::new(LocalProxyProfile {
+            id: "mixed-network-lab".into(), name: "isolated-mixed".into(), port: 47996,
+            username: String::new(), password: String::new(),
+        });
+        let sockets = super::bind_sockets(47997).expect("bind real TPROXY listeners");
+        let cancel = CancellationToken::new();
+        let stats = Arc::new(TproxyStats::default());
+        let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
+        let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
+        tokio::time::sleep(Duration::from_secs(9)).await;
+        let snapshot = stats.snapshot();
+        println!("MIXED_NETWORK_TCP={} UDP={}", snapshot.tcp_total, snapshot.udp_total);
+        cancel.cancel();
+        let counts = tokio::time::timeout(Duration::from_secs(8), task).await.expect("TPROXY task stopped").unwrap();
+        assert!(counts.0 >= 8 && counts.2 >= 8, "expected simultaneous real TCP and UDP flows");
+    }
