@@ -6,7 +6,7 @@ cycles=${CSQTT_OUTAGE_CYCLES:-2}
 outage_seconds=${CSQTT_OUTAGE_SECONDS:-25}
 client_seconds=${CSQTT_RECOVERY_DURATION:-365}
 mkdir -p "$lab"
-rm -f "$lab/result.json" "$lab/exit" "$lab/resources.log"
+rm -f "$lab/result.json" "$lab/exit" "$lab/resources.log" "$lab/relay-readiness.log" "$lab/quiet-start" "$lab/quiet-end" "$lab/resource-verdict.json"
 sudo -n rm -f /tmp/csqtt-soak-client.verdict
 relay=; core=; client=; monitor=
 cleanup() {
