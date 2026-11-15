@@ -1,0 +1,23 @@
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "requires isolated ARM64 VM, root, netns, iptables TPROXY and a SOCKS5 UDP relay on 127.0.0.1:47996"]
+    async fn privileged_arm64_tproxy_socks_udp() {
+        use std::sync::Arc;
+        use std::time::Duration;
+        use crate::model::LocalProxyProfile;
+        use tokio_util::sync::CancellationToken;
+        let config = Arc::new(LocalProxyProfile {
+            id: "privileged-lab".into(), name: "isolated-lab".into(), port: 47996,
+            username: String::new(), password: String::new(),
+        });
+        let sockets = super::bind_sockets(47997).expect("bind real TPROXY listeners");
+        let cancel = CancellationToken::new();
+        let stats = Arc::new(TproxyStats::default());
+        let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
+        let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        assert!(stats.snapshot().udp_total > 0, "real TPROXY UDP datagram was not forwarded");
+        cancel.cancel();
+        let counts = tokio::time::timeout(Duration::from_secs(8), task).await.expect("TPROXY task stopped").unwrap();
+        assert!(counts.2 > 0, "real UDP datagram count is zero");
+    }
