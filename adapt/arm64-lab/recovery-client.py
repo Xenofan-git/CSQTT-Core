@@ -15,6 +15,8 @@ duration = int(os.environ.get('CSQTT_RECOVERY_DURATION', '160'))
 
 
 def request(protocol, index):
+    start_phase = (root / 'phase').read_text().strip()
+    started = time.monotonic()
     try:
         if protocol == 'tcp':
             with socket.create_connection(('198.18.0.1', 5555), timeout=1.4) as sock:
@@ -30,7 +32,7 @@ def request(protocol, index):
     except OSError as error:
         with fail_log_lock:
             with (root / 'request-failures.log').open('a') as output:
-                output.write(f'{time.monotonic():.6f} {protocol} index={index} phase={((root / "phase").read_text().strip())} exception={type(error).__name__} errno={getattr(error, "errno", None)} detail={error}\n')
+                output.write(f'{time.monotonic():.6f} {protocol} index={index} start={started:.6f} start_phase={start_phase} end_phase={(root / "phase").read_text().strip()} exception={type(error).__name__} errno={getattr(error, "errno", None)} detail={error}\n')
         return False
 
 

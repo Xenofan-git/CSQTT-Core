@@ -47,7 +47,8 @@ for ((i=1; i<=cycles; i++)); do
   start_relay "after_$i" || exit 1
   # Check mock relay availability before attributing subsequent requests to recovery.
   python3 -c 'import socket; s=socket.create_connection(("127.0.0.1",47996),2); s.close()' || exit 1
-  printf '%s relay_ready_after_%s\n' "$(date -u +%FT%TZ)" "$i" >>"$lab/relay-readiness.log"
+  python3 /tmp/relay-udp-ready.py >>"$lab/relay-readiness.log" 2>&1 || exit 1
+  printf '%s tcp_udp_relay_ready_after_%s\n' "$(date -u +%FT%TZ)" "$i" >>"$lab/relay-readiness.log"
   echo "after_$i" >"$lab/phase"
   if ((i<cycles)); then sleep 25; fi
 done
