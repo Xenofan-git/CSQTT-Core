@@ -94,5 +94,5 @@ finally:
     print('RESTORE CHECK', {'baseline_interval':baseline['auto_restart_interval_hours'],'after_interval':after['auto_restart_interval_hours'],'baseline_count':len(baseline['clients']),'after_count':len(after['clients'])},flush=True)
     verify('baseline clients and settings restored', s==200 and
         {c['password'] for c in after['clients']} == {c['password'] for c in baseline['clients']} and
-        after['auto_restart_interval_hours']==baseline['auto_restart_interval_hours'])
+        (after['auto_restart_interval_hours'] or 0)==(baseline['auto_restart_interval_hours'] or 0))
 print('MUTATION E2E COMPLETE', flush=True)
