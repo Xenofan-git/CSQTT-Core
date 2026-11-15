@@ -1382,7 +1382,7 @@
                 </div>
                 <div class="settings-grid">
                     <div class="glass-panel setting-card" style="display: flex; flex-direction: column; justify-content: space-between;">
-                        <div class="input-group" style="margin-bottom: 0;"><label for="mainpass">Главный пароль</label><input id="mainpass"></div>
+                        <div class="input-group" style="margin-bottom: 0;"><label for="mainpass">Главный пароль</label><div style="display:flex;align-items:center;gap:8px;"><input id="mainpass" type="password" autocomplete="new-password" style="min-width:0;flex:1;"><button type="button" class="btn btn-ghost" style="flex:0 0 auto;white-space:nowrap;" onclick="const field=document.getElementById('mainpass');field.type=field.type==='password'?'text':'password';this.textContent=field.type==='password'?'Показать':'Скрыть';">Показать</button></div></div>
                         <button id="saveMainPasswordBtn" class="btn btn-primary" style="width: 100%; margin-top: 22px;" onclick="saveMainPassword()" disabled>Сохранить главный пароль</button>
                     </div>
                     <div class="glass-panel setting-card" style="display: flex; flex-direction: column; justify-content: space-between;">
