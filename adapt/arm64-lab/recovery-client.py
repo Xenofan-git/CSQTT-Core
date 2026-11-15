@@ -6,6 +6,9 @@ import os
 from pathlib import Path
 import socket
 import time
+import threading
+
+fail_log_lock = threading.Lock()
 
 root = Path(os.environ.get('CSQTT_LAB_DIR', '/tmp/csqtt-recovery'))
 duration = int(os.environ.get('CSQTT_RECOVERY_DURATION', '160'))
@@ -24,10 +27,14 @@ def request(protocol, index):
             data = f'REC_UDP_{index}'.encode()
             sock.sendto(data, ('198.18.0.1', 5555))
             return sock.recvfrom(4096)[0] == data
-    except OSError:
+    except OSError as error:
+        with fail_log_lock:
+            with (root / 'request-failures.log').open('a') as output:
+                output.write(f'{time.monotonic():.6f} {protocol} index={index} phase={((root / "phase").read_text().strip())} exception={type(error).__name__} errno={getattr(error, "errno", None)} detail={error}\n')
         return False
 
 
+(root / 'request-failures.log').write_text('')
 start = time.monotonic()
 counts = {}
 iteration = 0
