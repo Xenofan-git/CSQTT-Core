@@ -85,6 +85,12 @@ marker='    #[test]\n    fn ports_are_unique_per_runtime_and_in_range()'
 assert source.count(marker)==1
 fixture=Path(__file__).with_name('tproxy-arm64-soak-test.rs.txt').read_text()
 tproxy.write_text(source.replace(marker,fixture+'\n'+marker))
+# Bound live UDP associations by the process file-descriptor budget.
+import importlib.util
+spec=importlib.util.spec_from_file_location('tproxy_udp_fd_budget', Path(__file__).with_name('tproxy-udp-fd-budget.py'))
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.apply(dest/'tproxy.rs')
 assert any(f=='tun_device.rs' for f,_ in changed)
 assert any(f=='net_setup.rs' for f,_ in changed)
 assert any(f=='model.rs' for f,_ in changed)
