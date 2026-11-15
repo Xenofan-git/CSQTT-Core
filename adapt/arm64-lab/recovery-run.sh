@@ -37,7 +37,7 @@ sudo -n /tmp/csqtt-tproxy-test --ignored --exact tproxy::tests::privileged_arm64
   done
 ) & monitor=$!
 sleep 2
-CSQTT_LAB_DIR="$lab" CSQTT_RECOVERY_DURATION="$client_seconds" sudo -n --preserve-env=CSQTT_LAB_DIR,CSQTT_RECOVERY_DURATION ip netns exec csqtt-lab python3 -u /tmp/recovery-client.py >"$lab/client.log" 2>&1 & client=$!
+CSQTT_LAB_DIR="$lab" CSQTT_RECOVERY_DURATION="$client_seconds" CSQTT_OUTAGE_CYCLES="$cycles" sudo -n --preserve-env=CSQTT_LAB_DIR,CSQTT_RECOVERY_DURATION,CSQTT_OUTAGE_CYCLES ip netns exec csqtt-lab python3 -u /tmp/recovery-client.py >"$lab/client.log" 2>&1 & client=$!
 sleep 20
 for ((i=1; i<=cycles; i++)); do
   echo "outage_$i" >"$lab/phase"

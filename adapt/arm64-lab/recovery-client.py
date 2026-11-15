@@ -50,11 +50,10 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=16) as executor:
 print('RECOVERY_RESULT', counts, flush=True)
 (root / 'result.json').write_text(json.dumps(counts, indent=2, sort_keys=True))
 before = counts.get('before', {})
-after = counts.get('after_1', {})
-final_after = counts.get('after_2', after)
+recovered = [counts[key] for key in sorted(counts) if key.startswith('after_')]
 assert before.get('tcp_ok', 0) >= 40 and before.get('udp_ok', 0) >= 40, 'baseline missing'
 assert before.get('tcp_fail', 0) == 0 and before.get('udp_fail', 0) == 0, 'baseline loss'
-assert after.get('tcp_ok', 0) >= 40 and after.get('udp_ok', 0) >= 40, 'recovery missing'
-assert after.get('tcp_fail', 0) == 0 and after.get('udp_fail', 0) == 0, 'first recovery loss'
-assert final_after.get('tcp_ok', 0) >= 40 and final_after.get('udp_ok', 0) >= 40, 'final recovery missing'
-assert final_after.get('tcp_fail', 0) == 0 and final_after.get('udp_fail', 0) == 0, 'final recovery loss'
+assert len(recovered) == int(os.environ.get('CSQTT_OUTAGE_CYCLES', '2')), 'missing recovery cycle'
+for index, phase in enumerate(recovered, 1):
+    assert phase.get('tcp_ok', 0) >= 40 and phase.get('udp_ok', 0) >= 40, f'recovery {index} missing'
+    assert phase.get('tcp_fail', 0) == 0 and phase.get('udp_fail', 0) == 0, f'recovery {index} lost requests'
