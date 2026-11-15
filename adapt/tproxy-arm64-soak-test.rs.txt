@@ -16,7 +16,14 @@
         let stats = Arc::new(TproxyStats::default());
         let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
         let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
-        tokio::time::sleep(Duration::from_secs(480)).await;
+        // Capture live UDP quota pressure every 10s; end-only counters hide stalls.
+        for second in (10..=480).step_by(10) {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            let sample = stats.snapshot();
+            println!("SOAK_SAMPLE second={} tcp_active={} udp_active={} udp_peak={} udp_total={} udp_budget_rejects={} tcp_budget_rejects={}",
+                second, sample.tcp_active, sample.udp_active, sample.udp_peak,
+                sample.udp_total, sample.udp_budget_rejects, sample.tcp_budget_rejects);
+        }
         let snapshot = stats.snapshot();
         println!("SOAK_NETWORK_TCP={} UDP={} UDP_PEAK={} UDP_ACTIVE={} UDP_BUDGET_REJECTS={} TCP_BUDGET_REJECTS={}",
             snapshot.tcp_total, snapshot.udp_total, snapshot.udp_peak,
