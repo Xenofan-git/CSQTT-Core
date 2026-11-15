@@ -53,6 +53,7 @@ echo quiet >"$lab/phase"
 printf "%s\n" "$(date -u +%FT%TZ)" >"$lab/quiet-start"
 if [[ "$client_rc" -eq 0 ]]; then echo PASS | sudo -n tee /tmp/csqtt-soak-client.verdict >/dev/null; else echo FAIL | sudo -n tee /tmp/csqtt-soak-client.verdict >/dev/null; fi
 wait "$core"; core_rc=$?
+python3 /tmp/recovery-resource-verdict.py "$lab/resources.log" "$lab/quiet-start" "$lab/resource-verdict.json"; resource_rc=$?
 printf "%s\n" "$(date -u +%FT%TZ)" >"$lab/quiet-end"
-printf 'CLIENT_EXIT=%s CORE_EXIT=%s\n' "$client_rc" "$core_rc" >"$lab/exit"
-[[ "$client_rc" -eq 0 && "$core_rc" -eq 0 ]]
+printf 'CLIENT_EXIT=%s CORE_EXIT=%s RESOURCE_EXIT=%s\n' "$client_rc" "$core_rc" "$resource_rc" >"$lab/exit"
+[[ "$client_rc" -eq 0 && "$core_rc" -eq 0 && "$resource_rc" -eq 0 ]]
