@@ -1,0 +1,24 @@
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "requires isolated ARM64 VM, root, netns, TPROXY and externally controlled SOCKS5 relay"]
+    async fn privileged_arm64_tproxy_socks_recovery() {
+        use std::sync::Arc;
+        use std::time::Duration;
+        use crate::model::LocalProxyProfile;
+        use tokio_util::sync::CancellationToken;
+        let config = Arc::new(LocalProxyProfile {
+            id: "recovery-lab".into(), name: "isolated-recovery".into(), port: 47996,
+            username: String::new(), password: String::new(),
+        });
+        let sockets = super::bind_sockets(47997).expect("bind real TPROXY listeners");
+        let cancel = CancellationToken::new();
+        let stats = Arc::new(TproxyStats::default());
+        let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
+        let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
+        tokio::time::sleep(Duration::from_secs(18)).await;
+        let total = stats.snapshot().udp_total;
+        println!("RECOVERY_UDP_TOTAL={total}");
+        cancel.cancel();
+        let counts = tokio::time::timeout(Duration::from_secs(8), task).await.expect("TPROXY task stopped").unwrap();
+        assert!(total >= 2 && counts.2 >= 2, "expected UDP datagrams before and after SOCKS5 restart");
+    }
