@@ -9,6 +9,7 @@ import time
 import threading
 
 fail_log_lock = threading.Lock()
+packet_log_lock = threading.Lock()
 
 root = Path(os.environ.get('CSQTT_LAB_DIR', '/tmp/csqtt-recovery'))
 duration = int(os.environ.get('CSQTT_RECOVERY_DURATION', '160'))
@@ -28,7 +29,14 @@ def request(protocol, index):
             sock.settimeout(1.4)
             data = f'REC_UDP_{index}'.encode()
             sock.sendto(data, ('198.18.0.1', 5555))
-            return sock.recvfrom(4096)[0] == data
+            with packet_log_lock:
+                with (root / 'udp-packets.log').open('a') as output:
+                    output.write(f'{time.monotonic():.6f} SEND index={index} phase={start_phase}\n')
+            received = sock.recvfrom(4096)[0]
+            with packet_log_lock:
+                with (root / 'udp-packets.log').open('a') as output:
+                    output.write(f'{time.monotonic():.6f} RECV index={index} phase={start_phase} matches={received == data}\n')
+            return received == data
     except OSError as error:
         with fail_log_lock:
             with (root / 'request-failures.log').open('a') as output:
@@ -37,6 +45,7 @@ def request(protocol, index):
 
 
 (root / 'request-failures.log').write_text('')
+(root / 'udp-packets.log').write_text('')
 start = time.monotonic()
 counts = {}
 iteration = 0

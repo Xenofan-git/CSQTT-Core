@@ -30,9 +30,15 @@ def udp():
         except socket.timeout:
             continue
         inc('udp_recv')
+        # SOCKS5 UDP header is 10 bytes for IPv4; the client payload follows.
+        marker = data[10:].decode('ascii', errors='replace') if len(data) >= 10 else '<short>'
+        if not marker.startswith('REC_UDP_'):
+            marker = '<other>'
+        print(f'RELAY_PACKET epoch_ns={time.time_ns()} event=RECV marker={marker}', flush=True)
         try:
             u.sendto(data, addr)
             inc('udp_sent')
+            print(f'RELAY_PACKET epoch_ns={time.time_ns()} event=SEND marker={marker}', flush=True)
         except OSError:
             inc('udp_send_error')
 
