@@ -1,0 +1,33 @@
+name: CSQTT TPROXY UDP port isolation source gate
+on:
+  push:
+    branches: [fix/direct-dnsmasq-dualstack-production]
+    paths:
+      - adapt/derive-csqtt-core-rust-250.py
+      - adapt/tproxy-udp-relay-port-isolation.py
+      - adapt/test-tproxy-udp-relay-port-isolation.py
+      - .github/workflows/csqtt-tproxy-udp-port-isolation.yml
+  pull_request:
+    paths:
+      - adapt/derive-csqtt-core-rust-250.py
+      - adapt/tproxy-udp-relay-port-isolation.py
+      - adapt/test-tproxy-udp-relay-port-isolation.py
+      - .github/workflows/csqtt-tproxy-udp-port-isolation.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release-source-guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned original CSQTT 2.5.0 source
+        run: |
+          git clone --depth 1 --branch v2.5.0 https://github.com/amurcanov/csqtt.git /tmp/csqtt-upstream
+      - name: Generate candidate Rust release source
+        run: |
+          python3 adapt/derive-csqtt-core-rust-250.py --upstream-root /tmp/csqtt-upstream --output /tmp/csqtt-candidate
+      - name: Assert UDP relay port isolation in generated Rust source
+        run: |
+          python3 adapt/test-tproxy-udp-relay-port-isolation.py --source /tmp/csqtt-candidate/rust-server/tproxy.rs

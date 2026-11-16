@@ -91,11 +91,12 @@ spec=importlib.util.spec_from_file_location('tproxy_udp_fd_budget', Path(__file_
 module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 module.apply(dest/'tproxy.rs')
-# Isolated lab packet-ID tracing (generated test source only).
+# SOCKS5 UDP relay port isolation applies to generated runtime Rust, not only lab tests.
 spec=importlib.util.spec_from_file_location('tproxy_udp_relay_port_isolation', Path(__file__).with_name('tproxy-udp-relay-port-isolation.py'))
 relay_port_module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(relay_port_module)
 relay_port_module.apply(dest/'tproxy.rs')
+# Isolated lab packet-ID tracing (generated test source only).
 spec=importlib.util.spec_from_file_location('tproxy_udp_packet_trace', Path(__file__).with_name('tproxy-udp-packet-trace.py'))
 trace_module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(trace_module)
