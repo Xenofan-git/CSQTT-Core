@@ -91,6 +91,11 @@ spec=importlib.util.spec_from_file_location('tproxy_udp_fd_budget', Path(__file_
 module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 module.apply(dest/'tproxy.rs')
+# Isolated lab packet-ID tracing (generated test source only).
+spec=importlib.util.spec_from_file_location('tproxy_udp_packet_trace', Path(__file__).with_name('tproxy-udp-packet-trace.py'))
+trace_module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(trace_module)
+trace_module.apply(dest/'tproxy.rs')
 assert any(f=='tun_device.rs' for f,_ in changed)
 assert any(f=='net_setup.rs' for f,_ in changed)
 assert any(f=='model.rs' for f,_ in changed)
