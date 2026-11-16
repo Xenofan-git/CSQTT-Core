@@ -22,11 +22,11 @@ def apply(path: Path) -> None:
     assert source.count(anchor) == 1
     source = source.replace(anchor, '                                    trace_lab_udp("EXISTING_FLOW", payload);\n' + anchor)
     anchor = '                                    queue.push(destination, payload, &opening_buffers);'
-    assert source.count(anchor) == 1
+    assert source.count(anchor) == 2
     source = source.replace(anchor, '''                                    trace_lab_udp("OPENING_QUEUED", payload);
                                     if !queue.push(destination, payload, &opening_buffers) {
                                         trace_lab_udp("OPENING_QUEUE_REJECTED", payload);
-                                    }''')
+                                    }''', 1)
     anchor = '                                    if at.elapsed() < ASSOCIATION_BACKOFF {\n                                        continue;'
     assert source.count(anchor) == 1
     source = source.replace(anchor, '''                                    if at.elapsed() < ASSOCIATION_BACKOFF {
