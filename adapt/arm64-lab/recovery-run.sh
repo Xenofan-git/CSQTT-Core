@@ -5,6 +5,7 @@ lab=${CSQTT_LAB_DIR:-/tmp/csqtt-recovery}
 cycles=${CSQTT_OUTAGE_CYCLES:-2}
 outage_seconds=${CSQTT_OUTAGE_SECONDS:-25}
 client_seconds=${CSQTT_RECOVERY_DURATION:-365}
+soak_seconds=${CSQTT_SOAK_SECONDS:-480}
 mkdir -p "$lab"
 rm -f "$lab/result.json" "$lab/exit" "$lab/resources.log" "$lab/relay-readiness.log" "$lab/quiet-start" "$lab/quiet-end" "$lab/resource-verdict.json" "$lab/udp-kernel.log"
 sudo -n rm -f /tmp/csqtt-soak-client.verdict
@@ -24,7 +25,7 @@ start_relay() {
 }
 echo before >"$lab/phase"
 start_relay before || exit 1
-sudo -n /tmp/csqtt-tproxy-test --ignored --exact tproxy::tests::privileged_arm64_mixed_tcp_udp_soak --nocapture >"$lab/core.log" 2>&1 & core=$!
+CSQTT_SOAK_SECONDS="$soak_seconds" sudo -n --preserve-env=CSQTT_SOAK_SECONDS /tmp/csqtt-tproxy-test --ignored --exact tproxy::tests::privileged_arm64_mixed_tcp_udp_soak --nocapture >"$lab/core.log" 2>&1 & core=$!
 (
   while kill -0 "$core" 2>/dev/null; do
     pid=$(pgrep -f '^/tmp/csqtt-tproxy-test --ignored --exact tproxy::tests::privileged_arm64_mixed_tcp_udp_soak' | head -1)
