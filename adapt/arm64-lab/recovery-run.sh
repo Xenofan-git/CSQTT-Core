@@ -6,12 +6,12 @@ cycles=${CSQTT_OUTAGE_CYCLES:-2}
 outage_seconds=${CSQTT_OUTAGE_SECONDS:-25}
 client_seconds=${CSQTT_RECOVERY_DURATION:-365}
 mkdir -p "$lab"
-rm -f "$lab/result.json" "$lab/exit" "$lab/resources.log" "$lab/relay-readiness.log" "$lab/quiet-start" "$lab/quiet-end" "$lab/resource-verdict.json"
+rm -f "$lab/result.json" "$lab/exit" "$lab/resources.log" "$lab/relay-readiness.log" "$lab/quiet-start" "$lab/quiet-end" "$lab/resource-verdict.json" "$lab/udp-kernel.log"
 sudo -n rm -f /tmp/csqtt-soak-client.verdict
-relay=; core=; client=; monitor=
+relay=; core=; client=; monitor=; kernel_monitor=
 cleanup() {
   local p
-  for p in "$client" "$core" "$relay" "$monitor"; do
+  for p in "$client" "$core" "$relay" "$monitor" "$kernel_monitor"; do
     if [[ -n "$p" ]]; then kill "$p" 2>/dev/null || true; fi
   done
   wait 2>/dev/null || true
@@ -36,6 +36,17 @@ sudo -n /tmp/csqtt-tproxy-test --ignored --exact tproxy::tests::privileged_arm64
     sleep 5
   done
 ) & monitor=$!
+# Observe kernel TPROXY UDP socket receive queue, drops and rule packet counts.
+# Read-only sampling in disposable VM; useful when Rust ingress logs stop.
+(
+  while kill -0 "$core" 2>/dev/null; do
+    printf 'KERNEL_SAMPLE epoch=%s phase=%s\n' "$(date -u +%FT%TZ)" "$(cat "$lab/phase" 2>/dev/null)"
+    sudo -n ss -H -u -a -n -m -p '( sport = :47997 )' 2>&1 || true
+    sudo -n iptables -t mangle -nvxL PREROUTING 2>&1 | grep -E 'Chain PREROUTING|TPROXY|pkts' || true
+    awk '/^Udp:/{print "UDP_SNMP",$0}' /proc/net/snmp 2>/dev/null || true
+    sleep 2
+  done
+) >"$lab/udp-kernel.log" 2>&1 & kernel_monitor=$!
 sleep 2
 CSQTT_LAB_DIR="$lab" CSQTT_RECOVERY_DURATION="$client_seconds" CSQTT_OUTAGE_CYCLES="$cycles" sudo -n --preserve-env=CSQTT_LAB_DIR,CSQTT_RECOVERY_DURATION,CSQTT_OUTAGE_CYCLES ip netns exec csqtt-lab python3 -u /tmp/recovery-client.py >"$lab/client.log" 2>&1 & client=$!
 sleep 20
