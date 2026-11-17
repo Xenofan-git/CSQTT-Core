@@ -2531,6 +2531,8 @@ main() {
 
             local total_started=$SECONDS
             detect_os
+            # Verify payload identity before installing packages or changing sysctls.
+            run_timed "проверка upload" prepare_uploaded_release
             run_timed "зависимости" install_prerequisites
             require_runtime_tools
             if [ "$DEPLOY_MODE" = "docker" ]; then
@@ -2540,7 +2542,6 @@ main() {
             run_timed "sysctl" setup_sysctl
             run_timed "CPU mitigations" tune_cpu_mitigations
 
-            run_timed "проверка upload" prepare_uploaded_release
             if [ "$DEPLOY_MODE" = "docker" ]; then
                 run_timed "Docker preflight" prepare_docker_candidate "$UPLOAD_BINARY"
             fi
