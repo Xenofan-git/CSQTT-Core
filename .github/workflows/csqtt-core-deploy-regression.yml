@@ -7,12 +7,14 @@ on:
       - server-assets/deploy-csqtt-core-250.sh
       - adapt/test-csqtt-core-deploy-isolation-250.py
       - adapt/test-csqtt-core-deploy-guard-live.py
+      - adapt/test-csqtt-core-release-hash-guard.py
       - .github/workflows/csqtt-core-deploy-regression.yml
   pull_request:
     paths:
       - server-assets/deploy-csqtt-core-250.sh
       - adapt/test-csqtt-core-deploy-isolation-250.py
       - adapt/test-csqtt-core-deploy-guard-live.py
+      - adapt/test-csqtt-core-release-hash-guard.py
       - .github/workflows/csqtt-core-deploy-regression.yml
   workflow_dispatch:
 permissions:
@@ -26,5 +28,7 @@ jobs:
         run: bash -n server-assets/deploy-csqtt-core-250.sh
       - name: Installer isolation contract
         run: python3 adapt/test-csqtt-core-deploy-isolation-250.py
+      - name: Verified binary SHA-256 preflight contract
+        run: python3 adapt/test-csqtt-core-release-hash-guard.py
       - name: Mutation refusal and read-only status
         run: sudo python3 adapt/test-csqtt-core-deploy-guard-live.py
