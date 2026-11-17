@@ -893,6 +893,17 @@ prepare_uploaded_release() {
     esac
     [ "$elf_machine" = "$expected_machine" ] || die "ELF architecture mismatch: host expects $expected_machine, got $elf_machine" "$EXIT_PREFLIGHT_FAILED"
 
+    # Fail closed: an uploaded ELF alone does not prove it came from tested Rust sources.
+    # Supply the SHA-256 recorded for the exact verified release binary.
+    local expected_sha actual_sha
+    expected_sha="${CSQTT_CORE_VERIFIED_BINARY_SHA256:-}"
+    [[ "$expected_sha" =~ ^[[:xdigit:]]{64}$ ]] || \
+        die "CSQTT_CORE_VERIFIED_BINARY_SHA256 (64 hex) is required for a verified release" "$EXIT_PREFLIGHT_FAILED"
+    actual_sha="$(sha256sum "$UPLOAD_BINARY" | awk '{print $1}')"
+    [ "${actual_sha,,}" = "${expected_sha,,}" ] || \
+        die "Verified CSQTT binary SHA-256 mismatch" "$EXIT_PREFLIGHT_FAILED"
+    log_info "SHA-256 загруженного бинарника совпадает с проверенным релизом"
+
     chmod 0755 "$UPLOAD_BINARY" || die "Не удалось подготовить загруженный бинарник csqtt-core" "$EXIT_PREFLIGHT_FAILED"
     chmod 0600 "$UPLOAD_ENV_FILE" "$UPLOAD_OVERRIDES_FILE" || \
         die "Не удалось защитить загруженную конфигурацию" "$EXIT_PREFLIGHT_FAILED"
