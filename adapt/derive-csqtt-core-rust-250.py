@@ -22,6 +22,12 @@ for file in sorted(dest.rglob('*.rs')):
  s=s.replace('CSQTT_TPROXY', 'CSQTT_CORE_TPROXY')
  if s!=old:
   file.write_text(s);changed.append((str(file.relative_to(dest)),hashlib.sha256(s.encode()).hexdigest()[:12]))
+# Instrument the pinned startup policy cleanup (opt-in diagnostics only).
+import importlib.util
+spec=importlib.util.spec_from_file_location('csqtt_startup_cleanup_diag', Path(__file__).with_name('instrument-csqtt-core-startup-cleanup.py'))
+cleanup_diag=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(cleanup_diag)
+cleanup_diag.apply(dest/'proxy_route.rs')
 # Exercise SOCKS5 UDP ASSOCIATE against a loopback relay in the generated Core test suite.
 fixture=Path(__file__).with_name('socks5-udp-loopback-test.rs.txt').read_text()
 proxy=dest/'proxy_route.rs'
