@@ -45,14 +45,15 @@ jobs:
           test "$(uname -m)" = aarch64
           echo "Runner memory:"; free -h
           echo "Runner disk:"; df -h .
-          cargo build --release --locked --bin csqtt
-          file target/release/csqtt
+          rustup target add aarch64-unknown-linux-gnu
+          cargo build --release --locked --target aarch64-unknown-linux-gnu --bin csqtt
+          file target/aarch64-unknown-linux-gnu/release/csqtt
       - name: Publish binary and matching SHA-256 as one artifact
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp /tmp/csqtt-candidate/rust-server/target/release/csqtt dist/csqtt-core-linux-arm64
+          cp /tmp/csqtt-candidate/rust-server/target/aarch64-unknown-linux-gnu/release/csqtt dist/csqtt-core-linux-arm64
           chmod 0755 dist/csqtt-core-linux-arm64
           (cd dist && sha256sum csqtt-core-linux-arm64 > SHA256SUMS)
           (cd dist && sha256sum -c SHA256SUMS)
