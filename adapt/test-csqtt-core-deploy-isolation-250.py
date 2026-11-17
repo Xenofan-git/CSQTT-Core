@@ -30,4 +30,14 @@ assert 'ELF architecture mismatch' in s
 assert 'elf_machine="$(od -An -tu2 -j18 -N2' in s
 assert s.index('ELF architecture mismatch') < s.index('chmod 0755 "$UPLOAD_BINARY"')
 assert s.count('CSQTT_DEPLOY_OK')>=2
+# The old service boot state must survive automatic rollback. The old
+# cutover explicitly disables the service, so merely restarting is not enough.
+snapshot=s.split("snapshot_existing_systemd() {",1)[1].split("\nrestore_previous_systemd() {",1)[0]
+restore=s.split("restore_previous_systemd() {",1)[1].split("\ncleanup_rollback_snapshot() {",1)[0]
+assert 'systemctl is-enabled --quiet csqtt-core' in snapshot
+assert 'ROLLBACK_WAS_ENABLED=1' in snapshot
+assert 'if [ "$ROLLBACK_WAS_ENABLED" -eq 1 ]; then' in restore
+assert 'systemctl enable csqtt-core' in restore
+assert 'systemctl disable csqtt-core' in restore
+assert restore.index('systemctl enable csqtt-core') < restore.index('systemctl restart csqtt-core')
 print('CSQTT 2.5 Core installer isolation/static syntax PASS')

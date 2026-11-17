@@ -55,6 +55,7 @@ CSQTT_DOCKER_CANDIDATE_IMAGE=""
 ROLLBACK_DIR=""
 ROLLBACK_ARMED=0
 ROLLBACK_WAS_ACTIVE=0
+ROLLBACK_WAS_ENABLED=0
 
 snapshot_existing_systemd() {
     [ "$DEPLOY_MODE" = systemd ] || return 0
@@ -63,6 +64,7 @@ snapshot_existing_systemd() {
     ROLLBACK_DIR="$(mktemp -d /tmp/csqtt-core-rollback.XXXXXXXX)"
     chmod 700 "$ROLLBACK_DIR"
     systemctl is-active --quiet csqtt-core && ROLLBACK_WAS_ACTIVE=1 || true
+    systemctl is-enabled --quiet csqtt-core && ROLLBACK_WAS_ENABLED=1 || true
     cp -a /usr/local/bin/csqtt-core "$ROLLBACK_DIR/binary"
     cp -a /etc/systemd/system/csqtt-core.service "$ROLLBACK_DIR/unit"
     if [ -d "$CSQTT_CONFIG_DIR" ]; then
@@ -92,6 +94,13 @@ restore_previous_systemd() {
         cp -a "$ROLLBACK_DIR/helpers/." /usr/local/lib/csqtt-core/ || return 1
     fi
     systemctl daemon-reload || return 1
+    # The cutover disables the old unit. A rollback must also restore its
+    # original boot-enabled state, not only restart the running process.
+    if [ "$ROLLBACK_WAS_ENABLED" -eq 1 ]; then
+        systemctl enable csqtt-core >/dev/null 2>&1 || return 1
+    else
+        systemctl disable csqtt-core >/dev/null 2>&1 || return 1
+    fi
     if [ "$ROLLBACK_WAS_ACTIVE" -eq 1 ]; then
         systemctl restart csqtt-core || return 1
         local attempt ready=0
