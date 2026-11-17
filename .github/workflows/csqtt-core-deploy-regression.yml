@@ -6,6 +6,7 @@ on:
     paths:
       - server-assets/deploy-csqtt-core-250.sh
       - adapt/test-csqtt-core-deploy-isolation-250.py
+      - adapt/test-csqtt-core-rollback-lifecycle.py
       - adapt/test-csqtt-core-deploy-guard-live.py
       - adapt/test-csqtt-core-release-hash-guard.py
       - .github/workflows/csqtt-core-deploy-regression.yml
@@ -13,6 +14,7 @@ on:
     paths:
       - server-assets/deploy-csqtt-core-250.sh
       - adapt/test-csqtt-core-deploy-isolation-250.py
+      - adapt/test-csqtt-core-rollback-lifecycle.py
       - adapt/test-csqtt-core-deploy-guard-live.py
       - adapt/test-csqtt-core-release-hash-guard.py
       - .github/workflows/csqtt-core-deploy-regression.yml
@@ -30,5 +32,7 @@ jobs:
         run: python3 adapt/test-csqtt-core-deploy-isolation-250.py
       - name: Verified binary SHA-256 preflight contract
         run: python3 adapt/test-csqtt-core-release-hash-guard.py
+      - name: Isolated rollback lifecycle behavior
+        run: python3 adapt/test-csqtt-core-rollback-lifecycle.py
       - name: Mutation refusal and read-only status
         run: sudo python3 adapt/test-csqtt-core-deploy-guard-live.py
