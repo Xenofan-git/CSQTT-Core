@@ -1,0 +1,62 @@
+name: CSQTT Core verified ARM64 Rust binary
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/direct-dnsmasq-dualstack-production]
+    paths:
+      - adapt/derive-csqtt-core-rust-250.py
+      - adapt/tproxy-udp-fd-budget.py
+      - adapt/tproxy-udp-relay-port-isolation.py
+      - adapt/tproxy-udp-packet-trace.py
+      - adapt/test-tproxy-udp-relay-port-isolation.py
+      - .github/workflows/csqtt-core-verified-arm64-release.yml
+permissions:
+  contents: read
+jobs:
+  verified-arm64-binary:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Checkout exact original CSQTT 2.5.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v2.5.0 https://github.com/amurcanov/csqtt.git /tmp/csqtt-upstream
+          test "$(git -C /tmp/csqtt-upstream rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
+      - name: Derive release Rust source and enforce port isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 adapt/derive-csqtt-core-rust-250.py --upstream-root /tmp/csqtt-upstream --output /tmp/csqtt-candidate
+          python3 adapt/test-tproxy-udp-relay-port-isolation.py --source /tmp/csqtt-candidate/rust-server/tproxy.rs
+      - name: Compile ARM64 server release binary
+        working-directory: /tmp/csqtt-candidate/rust-server
+        shell: bash
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          cargo build --release --locked --bin csqtt
+          file target/release/csqtt
+      - name: Publish binary and matching SHA-256 as one artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp /tmp/csqtt-candidate/rust-server/target/release/csqtt dist/csqtt-core-linux-arm64
+          chmod 0755 dist/csqtt-core-linux-arm64
+          (cd dist && sha256sum csqtt-core-linux-arm64 > SHA256SUMS)
+          (cd dist && sha256sum -c SHA256SUMS)
+          printf 'repo_commit=%s\nupstream_commit=%s\narchitecture=aarch64\n' "$GITHUB_SHA" fd936ef087c34cc46f26111dc2361f43b8b03c07 > dist/BUILD-INFO.txt
+          cat dist/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+          echo "This artifact contains the compiled binary and SHA-256 from the same workflow run; no production deployment performed." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csqtt-core-verified-linux-arm64-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
