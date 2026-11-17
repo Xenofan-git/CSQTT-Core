@@ -40,4 +40,11 @@ assert 'if [ "$ROLLBACK_WAS_ENABLED" -eq 1 ]; then' in restore
 assert 'systemctl enable csqtt-core' in restore
 assert 'systemctl disable csqtt-core' in restore
 assert restore.index('systemctl enable csqtt-core') < restore.index('systemctl restart csqtt-core')
+# An unsuccessful rollback must remain armed and keep the private snapshot.
+assert restore.index('ROLLBACK_ARMED=0') > restore.index('systemctl restart csqtt-core')
+retention=s.split("cleanup_rollback_snapshot() {",1)[1].split("\nvalidate_port() {",1)[0]
+assert 'if [ "$ROLLBACK_ARMED" -eq 1 ]; then' in retention
+assert 'finish_deploy_rollback() {' in retention
+assert 'recovery files preserved at $ROLLBACK_DIR' in retention
+assert s.count('    finish_deploy_rollback || true')==2
 print('CSQTT 2.5 Core installer isolation/static syntax PASS')

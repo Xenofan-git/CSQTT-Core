@@ -80,7 +80,7 @@ snapshot_existing_systemd() {
 
 restore_previous_systemd() {
     [ "$ROLLBACK_ARMED" -eq 1 ] || return 0
-    ROLLBACK_ARMED=0
+    # Preserve the rollback lease until every restoration step has succeeded.
     log_warn "Ошибка обновления: восстанавливаем предыдущий systemd runtime"
     systemctl stop csqtt-core >/dev/null 2>&1 || true
     install -m 755 "$ROLLBACK_DIR/binary" /usr/local/bin/csqtt-core || return 1
@@ -114,13 +114,27 @@ restore_previous_systemd() {
         [ "$ready" -eq 1 ] || return 1
     fi
     log_info "Предыдущий systemd runtime восстановлен"
+    ROLLBACK_ARMED=0
 }
 
 cleanup_rollback_snapshot() {
+    # Do not destroy the only recovery copy on a failed restoration.
+    if [ "$ROLLBACK_ARMED" -eq 1 ]; then
+        return 1
+    fi
     if [ -n "$ROLLBACK_DIR" ] && [ -d "$ROLLBACK_DIR" ]; then
         rm -rf -- "$ROLLBACK_DIR"
     fi
     ROLLBACK_DIR=""
+}
+
+finish_deploy_rollback() {
+    if restore_previous_systemd; then
+        cleanup_rollback_snapshot
+    else
+        log_error "CRITICAL: automatic rollback failed; recovery files preserved at $ROLLBACK_DIR (mode 0700)"
+        return 1
+    fi
 }
 
 validate_port() {
@@ -172,10 +186,7 @@ die() {
     log_error "$message"
     printf 'CSQTT_DEPLOY_ERROR|%s|%s\n' "$DEPLOY_PHASE" "$message"
     cleanup_deploy_uploads
-    if ! restore_previous_systemd; then
-        log_error "CRITICAL: automatic rollback failed; inspect service manually"
-    fi
-    cleanup_rollback_snapshot
+    finish_deploy_rollback || true
     exit "$code"
 }
 
@@ -2485,10 +2496,7 @@ handle_unexpected_error() {
     log_error "Неперехваченная ошибка deploy.sh (строка $line, exit=$status)"
     printf 'CSQTT_DEPLOY_ERROR|%s|Неперехваченная ошибка deploy.sh (строка %s, exit=%s)\n' "$DEPLOY_PHASE" "$line" "$status"
     cleanup_deploy_uploads
-    if ! restore_previous_systemd; then
-        log_error "CRITICAL: automatic rollback failed; inspect service manually"
-    fi
-    cleanup_rollback_snapshot
+    finish_deploy_rollback || true
     case "$DEPLOY_PHASE" in
         validation) exit "$EXIT_INVALID_ARGUMENT" ;;
         preflight) exit "$EXIT_PREFLIGHT_FAILED" ;;

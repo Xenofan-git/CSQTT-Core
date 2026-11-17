@@ -7,7 +7,7 @@ import tempfile
 
 source = Path("server-assets/deploy-csqtt-core-250.sh").read_text()
 start = source.index("snapshot_existing_systemd() {")
-end = source.index("\ncleanup_rollback_snapshot() {", start)
+end = source.index("\nvalidate_port() {", start)
 production = source[start:end]
 
 systemctl = """#!/bin/sh
@@ -35,7 +35,7 @@ set -eu
 cases = 0
 for originally_active in (False, True):
     for originally_enabled in (False, True):
-        fail_choices = ("", "enable" if originally_enabled else "disable")
+        fail_choices = ("", "enable" if originally_enabled else "disable") + (("restart",) if originally_active else ())
         for fail in fail_choices:
             cases += 1
             with tempfile.TemporaryDirectory(prefix="csqtt-rollback-mock-") as tmp:
@@ -76,6 +76,7 @@ ROLLBACK_WAS_ACTIVE=0
 ROLLBACK_WAS_ENABLED=0
 log_info() {{ :; }}
 log_warn() {{ :; }}
+log_error() {{ :; }}
 {functions}
 snapshot_existing_systemd
 [ "$ROLLBACK_WAS_ACTIVE" -eq {int(originally_active)} ]
@@ -87,9 +88,12 @@ echo no > {str(root/'enabled')!r}
 rm -f {str(binary)!r} {str(unit)!r}
 echo NEW_ENV=bad > {str(config/'csqtt-core.env')!r}
 echo new > {str(helpers/'network-up.sh')!r}
-if restore_previous_systemd; then result=success; else result=failed; fi
+if finish_deploy_rollback; then result=success; else result=failed; fi
 if [ -z "$MOCK_FAIL_ACTION" ]; then
   [ "$result" = success ]
+  [ "$ROLLBACK_ARMED" -eq 0 ]
+  [ -z "$ROLLBACK_DIR" ]
+  [ -z "$(find {str(root)!r} -maxdepth 1 -name 'rollback.*' -print)" ]
   [ "$(cat {str(root/'enabled')!r})" = {'yes' if originally_enabled else 'no'} ]
   [ "$(cat {str(root/'active')!r})" = {'yes' if originally_active else 'no'} ]
   [ "$(cat {str(binary)!r})" = 'old verified binary' ]
@@ -98,6 +102,22 @@ if [ -z "$MOCK_FAIL_ACTION" ]; then
   [ "$(cat {str(helpers/'network-up.sh')!r})" = 'echo old' ]
 else
   [ "$result" = failed ]
+  [ "$ROLLBACK_ARMED" -eq 1 ]
+  [ -f "$ROLLBACK_DIR/binary" ]
+  [ -f "$ROLLBACK_DIR/unit" ]
+  [ -d "$ROLLBACK_DIR/config" ]
+  [ "$(stat -c %a "$ROLLBACK_DIR")" = 700 ]
+  # The transient systemctl error is now resolved. The same protected
+  # snapshot must allow an operator to retry without re-installation.
+  export MOCK_FAIL_ACTION=''
+  finish_deploy_rollback
+  [ "$ROLLBACK_ARMED" -eq 0 ]
+  [ -z "$ROLLBACK_DIR" ]
+  [ -z "$(find {str(root)!r} -maxdepth 1 -name 'rollback.*' -print)" ]
+  [ "$(cat {str(root/'enabled')!r})" = {'yes' if originally_enabled else 'no'} ]
+  [ "$(cat {str(root/'active')!r})" = {'yes' if originally_active else 'no'} ]
+  [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
+  [ "$(cat {str(helpers/'network-up.sh')!r})" = 'echo old' ]
 fi
 [ "$(cat {str(config/'csqtt.db')!r})" = 'live SQLite data' ]
 """
