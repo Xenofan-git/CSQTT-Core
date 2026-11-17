@@ -37,9 +37,14 @@ jobs:
         shell: bash
         env:
           CARGO_TERM_COLOR: never
+          CARGO_BUILD_JOBS: "2"
+          CARGO_PROFILE_RELEASE_LTO: "thin"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "4"
         run: |
           set -euo pipefail
           test "$(uname -m)" = aarch64
+          echo "Runner memory:"; free -h
+          echo "Runner disk:"; df -h .
           cargo build --release --locked --bin csqtt
           file target/release/csqtt
       - name: Publish binary and matching SHA-256 as one artifact
