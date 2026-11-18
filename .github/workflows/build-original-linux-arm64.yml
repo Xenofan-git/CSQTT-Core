@@ -17,6 +17,19 @@ on:
       - fix/direct-ip-hashmode-captcha-e2e
       - fix/socks5-dns-udp-health-e2e
       - fix/direct-dnsmasq-dualstack-production
+    # The full LaLune QEMU suite is expensive. Core-only installer tests and
+    # read-only UI smoke scripts have their own targeted checks; none change
+    # LaLune's compiled Go/ARM64 artifacts.
+    paths-ignore:
+      - README.md
+      - adapt/*.md
+      - adapt/test-csqtt-panel-auth-boundary-readonly.py
+      - adapt/test-csqtt-live-login-responsive.py
+      - adapt/test-csqtt-core-deploy-isolation-250.py
+      - adapt/test-csqtt-core-rollback-lifecycle.py
+      - adapt/test-csqtt-core-deploy-guard-live.py
+      - adapt/test-csqtt-core-release-hash-guard.py
+      - server-assets/deploy-csqtt-core-250.sh
   workflow_dispatch:
 
 permissions:
