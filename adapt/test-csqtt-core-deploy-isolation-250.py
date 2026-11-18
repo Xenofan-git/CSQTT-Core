@@ -40,6 +40,11 @@ assert 'if [ "$ROLLBACK_WAS_ENABLED" -eq 1 ]; then' in restore
 assert 'systemctl enable csqtt-core' in restore
 assert 'systemctl disable csqtt-core' in restore
 assert restore.index('systemctl enable csqtt-core') < restore.index('systemctl restart csqtt-core')
+# Candidate-owned optional files absent before upgrade must be removed on rollback.
+for owned_file in ('csqtt-core.env','deploy-overrides.json','web_cert.pem','web_key.pem','letsencrypt-ip.env'):
+ assert owned_file in restore, owned_file
+assert 'rm -f -- "$CSQTT_CONFIG_DIR/$rollback_managed_file"' in restore
+assert restore.index('rm -f -- "$CSQTT_CONFIG_DIR/$rollback_managed_file"') < restore.index('cp -a "$ROLLBACK_DIR/config/."')
 # An unsuccessful rollback must remain armed and keep the private snapshot.
 assert restore.index('ROLLBACK_ARMED=0') > restore.index('systemctl restart csqtt-core')
 retention=s.split("cleanup_rollback_snapshot() {",1)[1].split("\nvalidate_port() {",1)[0]

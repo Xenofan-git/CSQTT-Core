@@ -86,7 +86,21 @@ restore_previous_systemd() {
     install -m 755 "$ROLLBACK_DIR/binary" /usr/local/bin/csqtt-core || return 1
     cp -a "$ROLLBACK_DIR/unit" /etc/systemd/system/csqtt-core.service || return 1
     if [ -d "$ROLLBACK_DIR/config" ]; then
-        mkdir -p "$CSQTT_CONFIG_DIR"
+        mkdir -p "$CSQTT_CONFIG_DIR" || return 1
+        # cp -a only overlays files: it would leave a newly introduced deploy
+        # override, TLS key/cert or Let's Encrypt metadata in place even if the
+        # previous runtime never had them. Reconcile only known CSQTT-owned
+        # mutable files; keep live SQLite, WAL, imported legacy credentials and
+        # unrelated files completely untouched.
+        local rollback_managed_file
+        for rollback_managed_file in \
+            csqtt-core.env deploy-overrides.json \
+            web_cert.pem web_key.pem letsencrypt-ip.env; do
+            if [ ! -e "$ROLLBACK_DIR/config/$rollback_managed_file" ] &&
+               [ ! -L "$ROLLBACK_DIR/config/$rollback_managed_file" ]; then
+                rm -f -- "$CSQTT_CONFIG_DIR/$rollback_managed_file" || return 1
+            fi
+        done
         cp -a "$ROLLBACK_DIR/config/." "$CSQTT_CONFIG_DIR/" || return 1
     fi
     if [ -d "$ROLLBACK_DIR/helpers" ]; then

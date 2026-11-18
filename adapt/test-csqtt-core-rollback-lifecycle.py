@@ -49,7 +49,15 @@ for originally_active in (False, True):
                 binary.write_text("old verified binary\n")
                 unit.write_text("ExecStart=old\n")
                 (config/"csqtt-core.env").write_text("OLD_ENV=ok\n")
+                # Existing optional files must come back; newly introduced ones
+                # must disappear, without deleting unrelated persistent state.
+                if originally_enabled:
+                    (config/"deploy-overrides.json").write_text("OLD_OVERRIDE\n")
+                    (config/"web_cert.pem").write_text("OLD_CERT\n")
+                    (config/"web_key.pem").write_text("OLD_KEY\n")
+                    (config/"letsencrypt-ip.env").write_text("OLD_LE\n")
                 (config/"csqtt.db").write_text("live SQLite data")
+                (config/"unrelated.txt").write_text("keep unrelated state\n")
                 (helpers/"network-up.sh").write_text("echo old\n")
                 (root/"active").write_text("yes" if originally_active else "no")
                 (root/"enabled").write_text("yes" if originally_enabled else "no")
@@ -87,6 +95,10 @@ echo no > {str(root/'active')!r}
 echo no > {str(root/'enabled')!r}
 rm -f {str(binary)!r} {str(unit)!r}
 echo NEW_ENV=bad > {str(config/'csqtt-core.env')!r}
+echo NEW_OVERRIDE > {str(config/'deploy-overrides.json')!r}
+echo NEW_CERT > {str(config/'web_cert.pem')!r}
+echo NEW_KEY > {str(config/'web_key.pem')!r}
+echo NEW_LE > {str(config/'letsencrypt-ip.env')!r}
 echo new > {str(helpers/'network-up.sh')!r}
 if finish_deploy_rollback; then result=success; else result=failed; fi
 if [ -z "$MOCK_FAIL_ACTION" ]; then
@@ -99,6 +111,18 @@ if [ -z "$MOCK_FAIL_ACTION" ]; then
   [ "$(cat {str(binary)!r})" = 'old verified binary' ]
   [ "$(cat {str(unit)!r})" = 'ExecStart=old' ]
   [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
+  if [ {int(originally_enabled)} -eq 1 ]; then
+    [ "$(cat {str(config/'deploy-overrides.json')!r})" = 'OLD_OVERRIDE' ]
+    [ "$(cat {str(config/'web_cert.pem')!r})" = 'OLD_CERT' ]
+    [ "$(cat {str(config/'web_key.pem')!r})" = 'OLD_KEY' ]
+    [ "$(cat {str(config/'letsencrypt-ip.env')!r})" = 'OLD_LE' ]
+  else
+    [ ! -e {str(config/'deploy-overrides.json')!r} ]
+    [ ! -e {str(config/'web_cert.pem')!r} ]
+    [ ! -e {str(config/'web_key.pem')!r} ]
+    [ ! -e {str(config/'letsencrypt-ip.env')!r} ]
+  fi
+  [ "$(cat {str(config/'unrelated.txt')!r})" = 'keep unrelated state' ]
   [ "$(cat {str(helpers/'network-up.sh')!r})" = 'echo old' ]
 else
   [ "$result" = failed ]
@@ -117,6 +141,18 @@ else
   [ "$(cat {str(root/'enabled')!r})" = {'yes' if originally_enabled else 'no'} ]
   [ "$(cat {str(root/'active')!r})" = {'yes' if originally_active else 'no'} ]
   [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
+  if [ {int(originally_enabled)} -eq 1 ]; then
+    [ "$(cat {str(config/'deploy-overrides.json')!r})" = 'OLD_OVERRIDE' ]
+    [ "$(cat {str(config/'web_cert.pem')!r})" = 'OLD_CERT' ]
+    [ "$(cat {str(config/'web_key.pem')!r})" = 'OLD_KEY' ]
+    [ "$(cat {str(config/'letsencrypt-ip.env')!r})" = 'OLD_LE' ]
+  else
+    [ ! -e {str(config/'deploy-overrides.json')!r} ]
+    [ ! -e {str(config/'web_cert.pem')!r} ]
+    [ ! -e {str(config/'web_key.pem')!r} ]
+    [ ! -e {str(config/'letsencrypt-ip.env')!r} ]
+  fi
+  [ "$(cat {str(config/'unrelated.txt')!r})" = 'keep unrelated state' ]
   [ "$(cat {str(helpers/'network-up.sh')!r})" = 'echo old' ]
 fi
 [ "$(cat {str(config/'csqtt.db')!r})" = 'live SQLite data' ]
