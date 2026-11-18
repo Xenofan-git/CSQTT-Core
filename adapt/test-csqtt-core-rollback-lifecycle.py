@@ -40,7 +40,7 @@ for originally_active in (False, True):
             cases += 1
             with tempfile.TemporaryDirectory(prefix="csqtt-rollback-mock-") as tmp:
                 root = Path(tmp)
-                for sub in ("bin", "systemd", "config", "helpers", "mockbin"):
+                for sub in ("bin", "systemd", "helpers", "mockbin"):
                     (root/sub).mkdir()
                 binary = root/"bin/csqtt-core"
                 unit = root/"systemd/csqtt-core.service"
@@ -48,16 +48,17 @@ for originally_active in (False, True):
                 helpers = root/"helpers"
                 binary.write_text("old verified binary\n")
                 unit.write_text("ExecStart=old\n")
-                (config/"csqtt-core.env").write_text("OLD_ENV=ok\n")
-                # Existing optional files must come back; newly introduced ones
-                # must disappear, without deleting unrelated persistent state.
+                # Previously disabled old units may have no config directory
+                # at all. Candidate-owned files still must not survive rollback.
                 if originally_enabled:
+                    config.mkdir()
+                    (config/"csqtt-core.env").write_text("OLD_ENV=ok\n")
                     (config/"deploy-overrides.json").write_text("OLD_OVERRIDE\n")
                     (config/"web_cert.pem").write_text("OLD_CERT\n")
                     (config/"web_key.pem").write_text("OLD_KEY\n")
                     (config/"letsencrypt-ip.env").write_text("OLD_LE\n")
-                (config/"csqtt.db").write_text("live SQLite data")
-                (config/"unrelated.txt").write_text("keep unrelated state\n")
+                    (config/"csqtt.db").write_text("live SQLite data")
+                    (config/"unrelated.txt").write_text("keep unrelated state\n")
                 (helpers/"network-up.sh").write_text("echo old\n")
                 (root/"active").write_text("yes" if originally_active else "no")
                 (root/"enabled").write_text("yes" if originally_enabled else "no")
@@ -90,7 +91,11 @@ snapshot_existing_systemd
 [ "$ROLLBACK_WAS_ACTIVE" -eq {int(originally_active)} ]
 [ "$ROLLBACK_WAS_ENABLED" -eq {int(originally_enabled)} ]
 # Simulate a successful cutover stop/disable without consuming the fault
-# injection reserved for the subsequent rollback action.
+# injection reserved for the subsequent rollback action. Candidate creates
+# the config dir when the old runtime lacked one.
+mkdir -p {str(config)!r}
+echo 'live SQLite data' > {str(config/'csqtt.db')!r}
+echo 'keep unrelated state' > {str(config/'unrelated.txt')!r}
 echo no > {str(root/'active')!r}
 echo no > {str(root/'enabled')!r}
 rm -f {str(binary)!r} {str(unit)!r}
@@ -110,13 +115,14 @@ if [ -z "$MOCK_FAIL_ACTION" ]; then
   [ "$(cat {str(root/'active')!r})" = {'yes' if originally_active else 'no'} ]
   [ "$(cat {str(binary)!r})" = 'old verified binary' ]
   [ "$(cat {str(unit)!r})" = 'ExecStart=old' ]
-  [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
   if [ {int(originally_enabled)} -eq 1 ]; then
+    [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
     [ "$(cat {str(config/'deploy-overrides.json')!r})" = 'OLD_OVERRIDE' ]
     [ "$(cat {str(config/'web_cert.pem')!r})" = 'OLD_CERT' ]
     [ "$(cat {str(config/'web_key.pem')!r})" = 'OLD_KEY' ]
     [ "$(cat {str(config/'letsencrypt-ip.env')!r})" = 'OLD_LE' ]
   else
+    [ ! -e {str(config/'csqtt-core.env')!r} ]
     [ ! -e {str(config/'deploy-overrides.json')!r} ]
     [ ! -e {str(config/'web_cert.pem')!r} ]
     [ ! -e {str(config/'web_key.pem')!r} ]
@@ -129,7 +135,11 @@ else
   [ "$ROLLBACK_ARMED" -eq 1 ]
   [ -f "$ROLLBACK_DIR/binary" ]
   [ -f "$ROLLBACK_DIR/unit" ]
-  [ -d "$ROLLBACK_DIR/config" ]
+  if [ {int(originally_enabled)} -eq 1 ]; then
+    [ -d "$ROLLBACK_DIR/config" ]
+  else
+    [ ! -e "$ROLLBACK_DIR/config" ]
+  fi
   [ "$(stat -c %a "$ROLLBACK_DIR")" = 700 ]
   # The transient systemctl error is now resolved. The same protected
   # snapshot must allow an operator to retry without re-installation.
@@ -140,13 +150,14 @@ else
   [ -z "$(find {str(root)!r} -maxdepth 1 -name 'rollback.*' -print)" ]
   [ "$(cat {str(root/'enabled')!r})" = {'yes' if originally_enabled else 'no'} ]
   [ "$(cat {str(root/'active')!r})" = {'yes' if originally_active else 'no'} ]
-  [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
   if [ {int(originally_enabled)} -eq 1 ]; then
+    [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
     [ "$(cat {str(config/'deploy-overrides.json')!r})" = 'OLD_OVERRIDE' ]
     [ "$(cat {str(config/'web_cert.pem')!r})" = 'OLD_CERT' ]
     [ "$(cat {str(config/'web_key.pem')!r})" = 'OLD_KEY' ]
     [ "$(cat {str(config/'letsencrypt-ip.env')!r})" = 'OLD_LE' ]
   else
+    [ ! -e {str(config/'csqtt-core.env')!r} ]
     [ ! -e {str(config/'deploy-overrides.json')!r} ]
     [ ! -e {str(config/'web_cert.pem')!r} ]
     [ ! -e {str(config/'web_key.pem')!r} ]
