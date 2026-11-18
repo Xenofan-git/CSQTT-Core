@@ -1,9 +1,9 @@
-# CSQTT–sing-box for Debian/Ubuntu ARM64
+# CSQTT-Core — Debian/Ubuntu ARM64
 
 **Единая русскоязычная панель управления двумя независимыми сетевыми ядрами для Linux ARM64.**
 
-- **Репозиторий:** [Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64)
-- **CI:** [GitHub Actions](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64/actions)
+- **Репозиторий:** [Xenofan-git/CSQTT-Core](https://github.com/Xenofan-git/CSQTT-Core)
+- **CI:** [GitHub Actions](https://github.com/Xenofan-git/CSQTT-Core/actions)
 - **Целевые ОС:** Debian ARM64 и Ubuntu ARM64
 - **Первая аппаратная платформа:** NanoPi R3S LTS (RK3566, 2 GB RAM), Debian 13 Trixie
 
@@ -63,9 +63,9 @@ TCP и UDP relay проверяются E2E через реальную реал
 ### Правила вкладки «Маршрут»
 
 - **DIRECT** — всегда первая карточка; нельзя перемещать или удалять; можно только включать/выключать. В редакторе можно менять список доменов, IP/CIDR и категорий Rule Set.
-- **CSQTT** — обязательная системная карточка основного подключения. Нельзя удалить или включать/выключать из «Маршрут»; состояние подключения управляется только вкладкой «Подключение». Карточку можно перемещать среди пользовательских правил, и её позиция должна реально менять first-match приоритет. Выше DIRECT перемещать нельзя.
+- **CSQTT** — обязательная системная карточка основного подключения. Нельзя удалить; можно включать/выключать именно правило маршрутизации и перемещать его среди пользовательских правил, изменяя first-match приоритет (выше DIRECT нельзя). Включение самого подключения CSQTT Core остаётся отдельным действием на вкладке «Подключение». Для включения правила необходим настроенный SOCKS5 endpoint CSQTT.
 - **Пользовательские SOCKS5 правила** — максимум 15 одновременно. Можно создавать, редактировать, удалять, включать/выключать и менять порядок перетаскиванием. Каждое правило выбирает конкретный SOCKS5 outbound.
-- Обработка сверху вниз: выключенные правила пропускаются, первое совпадение определяет выход. route.final = csqtt остаётся безопасным fallback для трафика, не совпавшего ни с одним правилом.
+- Обработка сверху вниз: выключенные правила пропускаются, первое совпадение определяет выход. По умолчанию route.final = direct, а не скрытый безусловный CSQTT fallback. Неподошедший под условия трафик уходит DIRECT, если пользователь явно не задал иной финальный выход.
 - Нажатие на карточку раскрывает снизу редактор выбранного правила. В нём можно добавлять/удалять домены, IPv4/IPv6 CIDR и категории route.rule_set; категории ищутся по тегу/имени и загружаются динамически из зарегистрированных наборов. Содержимое правил не меняется при reorder.
 
 ### Вкладка «Sing-Box» и Rule Set
@@ -131,11 +131,11 @@ TCP и UDP relay проверяются E2E через реальную реал
 
 GitHub Actions собирает и проверяет существующую ARM64 адаптацию на основе закреплённого upstream LaLune. Проверки включают исходную адаптацию, панель и API, Chromium smoke test, DeployManager, ARM64 сборку, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с nftables и Linux routes, а также испытания в изолированной Debian ARM64 system VM.
 
-Последний подтверждённый успешный контрольный запуск: [CI #1529](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64/actions/runs/43284612321), commit `6a32083b704b908aadd1f6f32e3f9584868aa128`. Оба задания успешны: pinned Go/ARM64 build и испытания реального CSQTT artifact в Debian ARM64 system VM. Дополнительно исправлена несовместимость сохранения/загрузки UDP DNS без явного detour и добавлен регрессионный тест. Это не подтверждает аппаратную готовность NanoPi или полное распознавание доменов для QUIC/ECH/предварительно разрешённых IP.
+Актуальные проверки ветки fix/direct-dnsmasq-dualstack-production: [verified Rust ARM64 #4](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44181280329) (commit e90b12f), [UDP port isolation #2](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44181280272), [Deploy regression #9](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44350874233) (commit 8ba8001) — SUCCESS. Ранее проведённый [интеграционный CI #1529](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/43284612321) подтверждал реальный CSQTT artifact и Debian ARM64 system VM в пределах своего набора тестов. Зелёные CI не заменяют полный тест обновления/отката новой версии на VM и аппаратную приёмку NanoPi; DNS/sniffing для QUIC/ECH/заранее разрешённых IP требуют отдельного покрытия.
 
 ## Репозиторий и правила разработки
 
-- Основной репозиторий: [CSQTT-sing-box-for-Debian-Ubuntu-ARM64](https://github.com/Xenofan-git/CSQTT-sing-box-for-Debian-Ubuntu-ARM64).
+- Основной репозиторий: [CSQTT-Core](https://github.com/Xenofan-git/CSQTT-Core).
 - Default branch: `main`.
 - Рабочая ветка текущего этапа: `fix/direct-dnsmasq-dualstack-production`.
 - Не менять `main` без отдельного решения.
