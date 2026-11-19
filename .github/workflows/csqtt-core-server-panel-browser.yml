@@ -1,0 +1,41 @@
+name: CSQTT Core server-panel browser smoke
+on:
+  push:
+    branches:
+      - fix/direct-dnsmasq-dualstack-production
+    paths:
+      - adapt/test-original-server-all-dialogs-browser.py
+      - adapt/csqtt-server-panel-upstream-250.html
+      - .github/workflows/csqtt-core-server-panel-browser.yml
+  pull_request:
+    paths:
+      - adapt/test-original-server-all-dialogs-browser.py
+      - adapt/csqtt-server-panel-upstream-250.html
+      - .github/workflows/csqtt-core-server-panel-browser.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install isolated browser test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.56.0'
+          if command -v google-chrome >/dev/null 2>&1; then
+            echo "CSQTT_TEST_CHROMIUM=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null 2>&1; then
+            echo "CSQTT_TEST_CHROMIUM=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            python -m playwright install --with-deps chromium
+          fi
+      - name: Read-only original 2.5 server tabs and dialogs on Desktop/Mobile
+        run: |
+          python adapt/test-original-server-all-dialogs-browser.py
