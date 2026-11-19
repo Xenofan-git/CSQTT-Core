@@ -41,13 +41,23 @@ set -eu
 install = """#!/bin/sh
 set -eu
 [ "$MOCK_FAIL_ACTION" != install ] || exit 41
-exec /usr/bin/install "$@"
+/usr/bin/install "$@"
+if [ "$MOCK_FAIL_ACTION" = install-corrupt ]; then
+  for arg in "$@"; do dest=$arg; done
+  printf 'CORRUPTED AFTER INSTALL\n' >> "$dest"
+fi
 """
 cp = """#!/bin/sh
 set -eu
 case "$2" in
  "$MOCK_ROOT"/rollback.*/unit)
-   [ "$MOCK_FAIL_ACTION" != copy-unit ] || exit 41 ;;
+   [ "$MOCK_FAIL_ACTION" != copy-unit ] || exit 41
+   /usr/bin/cp "$@"
+   if [ "$MOCK_FAIL_ACTION" = copy-unit-corrupt ]; then
+     for arg in "$@"; do dest=$arg; done
+     printf 'CORRUPTED AFTER COPY\n' >> "$dest"
+   fi
+   exit 0 ;;
 esac
 exec /usr/bin/cp "$@"
 """
@@ -81,7 +91,8 @@ exit 10
 cases = 0
 for originally_active in (False, True):
     for originally_enabled in (False, True):
-        fail_choices = ("", "install", "copy-unit", "enable" if originally_enabled else "disable") + (
+        fail_choices = ("", "install", "install-corrupt", "copy-unit", "copy-unit-corrupt",
+                        "enable" if originally_enabled else "disable") + (
             ("restart", "restart-no-activate", "tun-missing", "web-unreachable", "web-http-403", "web-http-401")
             if originally_active else ()
         )
@@ -354,6 +365,13 @@ print("PASS incomplete/symlinked previous runtime is never silently upgraded")
 # Snapshot creation itself must be transactional: a partial disk copy may
 # contain credentials/database fragments and must never remain in /tmp.
 # Inject one copy failure at each stage before ROLLBACK_ARMED is set.
+snapshot_hash = """#!/bin/sh
+set -eu
+# Force failure only at creation of the digest, not while verifying it.
+[ "$MOCK_FAIL_SNAPSHOT_STAGE" != sha256 ] || exit 74
+exec /usr/bin/sha256sum "$@"
+"""
+
 snapshot_cp = """#!/bin/sh
 set -eu
 case "$MOCK_FAIL_SNAPSHOT_STAGE" in
@@ -369,7 +387,7 @@ esac
 exec /usr/bin/cp "$@"
 """
 
-for failed_stage in ("binary", "unit", "config", "helpers"):
+for failed_stage in ("binary", "unit", "config", "helpers", "sha256"):
     with tempfile.TemporaryDirectory(prefix="csqtt-snapshot-copy-fail-") as tmp:
         root = Path(tmp)
         for d in ("bin", "systemd", "config", "helpers", "mockbin"):
@@ -385,7 +403,7 @@ for failed_stage in ("binary", "unit", "config", "helpers"):
         (helpers/"network-up.sh").write_text("original helper\n")
         (root/"active").write_text("yes")
         (root/"enabled").write_text("yes")
-        for name, body in (("systemctl", systemctl), ("cp", snapshot_cp)):
+        for name, body in (("systemctl", systemctl), ("cp", snapshot_cp), ("sha256sum", snapshot_hash)):
             shim = root/"mockbin"/name
             shim.write_text(body)
             shim.chmod(0o755)
@@ -433,3 +451,66 @@ fi
             failed_stage, result.returncode, result.stdout, result.stderr)
         print(f"PASS snapshot copy failure stage={failed_stage} removes incomplete secret-bearing archive")
 print("PASS failed snapshots leave no incomplete copies or runtime mutations")
+
+# Snapshot corruption is different from an I/O error: a copy can succeed
+# and then be modified before rollback. Fail before stopping a live service,
+# keeping the private snapshot intact for deliberate recovery.
+for tampered in ("binary", "unit"):
+    with tempfile.TemporaryDirectory(prefix="csqtt-snapshot-tamper-") as tmp:
+        root = Path(tmp)
+        for d in ("bin", "systemd", "mockbin"):
+            (root/d).mkdir()
+        binary = root/"bin/csqtt-core"
+        unit = root/"systemd/csqtt-core.service"
+        binary.write_text("ORIGINAL ELF\n")
+        unit.write_text("ORIGINAL UNIT\n")
+        (root/"active").write_text("yes")
+        (root/"enabled").write_text("yes")
+        ctl = root/"mockbin/systemctl"
+        ctl.write_text(systemctl)
+        ctl.chmod(0o755)
+        scoped = production
+        for old,new in (
+            ("/usr/local/bin/csqtt-core",str(binary)),
+            ("/etc/systemd/system/csqtt-core.service",str(unit)),
+            ("/usr/local/lib/csqtt-core",str(root/"helpers")),
+            ("/tmp/csqtt-core-rollback.XXXXXXXX",str(root/"rollback.XXXXXXXX")),
+        ):
+            scoped=scoped.replace(old,new)
+        script=f"""
+set -euo pipefail
+DEPLOY_MODE=systemd
+CSQTT_CONFIG_DIR={str(root/'config')!r}
+ROLLBACK_DIR=""
+ROLLBACK_ARMED=0
+ROLLBACK_WAS_ACTIVE=0
+ROLLBACK_WAS_ENABLED=0
+log_info() {{ :; }}
+log_warn() {{ :; }}
+log_error() {{ :; }}
+{scoped}
+snapshot_existing_systemd
+[ "$ROLLBACK_ARMED" -eq 1 ]
+[ -f "$ROLLBACK_DIR/SHA256SUMS" ]
+# Corrupt the snapshot while the old service remains online.
+echo CORRUPTED >> "$ROLLBACK_DIR/{tampered}"
+if finish_deploy_rollback; then
+    echo "ERROR: corrupted snapshot accepted" >&2
+    exit 80
+fi
+[ "$ROLLBACK_ARMED" -eq 1 ]
+[ -d "$ROLLBACK_DIR" ]
+[ "$(stat -c %a "$ROLLBACK_DIR")" = 700 ]
+[ "$(cat {str(binary)!r})" = 'ORIGINAL ELF' ]
+[ "$(cat {str(unit)!r})" = 'ORIGINAL UNIT' ]
+[ "$(cat {str(root/'active')!r})" = yes ]
+[ "$(cat {str(root/'enabled')!r})" = yes ]
+"""
+        env=dict(os.environ)
+        env.update(MOCK_ROOT=str(root),MOCK_FAIL_ACTION="",
+                   PATH=f"{root/'mockbin'}:{os.environ.get('PATH','/usr/bin:/bin')}")
+        res=subprocess.run(["bash","-c",script],capture_output=True,
+                           text=True,env=env,timeout=15)
+        assert res.returncode==0,(tampered,res.returncode,res.stdout,res.stderr)
+        print(f"PASS corrupted prior {tampered} refused before stopping live service")
+print("PASS tampered ELF and unit snapshots fail closed before cutover")

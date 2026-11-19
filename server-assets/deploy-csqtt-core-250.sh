@@ -119,6 +119,12 @@ snapshot_existing_systemd() {
         discard_unarmed_systemd_snapshot
         return 1
     fi
+    # Verify the exact previous ELF/unit later, before stopping any service.
+    # Relative paths allow sha256sum -c to work inside the private snapshot.
+    if ! (cd "$ROLLBACK_DIR" && sha256sum binary unit > SHA256SUMS); then
+        discard_unarmed_systemd_snapshot
+        return 1
+    fi
     ROLLBACK_ARMED=1
     log_info "Резервная копия предыдущего systemd runtime подготовлена"
 }
@@ -172,13 +178,31 @@ verify_rollback_web_panel() {
     return 1
 }
 
+verify_rollback_snapshot_integrity() {
+    [ "$ROLLBACK_ARMED" -eq 1 ] || return 1
+    [ -d "$ROLLBACK_DIR" ] && [ ! -L "$ROLLBACK_DIR" ] || return 1
+    [ -f "$ROLLBACK_DIR/binary" ] && [ ! -L "$ROLLBACK_DIR/binary" ] || return 1
+    [ -f "$ROLLBACK_DIR/unit" ] && [ ! -L "$ROLLBACK_DIR/unit" ] || return 1
+    [ -f "$ROLLBACK_DIR/SHA256SUMS" ] && [ ! -L "$ROLLBACK_DIR/SHA256SUMS" ] || return 1
+    # Do not trust partial or modified snapshots; verify before stopping the
+    # currently running service, not during restoration after the cutover.
+    (cd "$ROLLBACK_DIR" && sha256sum --check --status SHA256SUMS)
+}
+
 restore_previous_systemd() {
     [ "$ROLLBACK_ARMED" -eq 1 ] || return 0
+    if ! verify_rollback_snapshot_integrity; then
+        log_error "Previous CSQTT-Core ELF/unit snapshot failed SHA-256 verification; recovery copy preserved"
+        return 1
+    fi
     # Preserve the rollback lease until every restoration step has succeeded.
     log_warn "Ошибка обновления: восстанавливаем предыдущий systemd runtime"
     systemctl stop csqtt-core >/dev/null 2>&1 || true
     install -m 755 "$ROLLBACK_DIR/binary" /usr/local/bin/csqtt-core || return 1
     cp -a "$ROLLBACK_DIR/unit" /etc/systemd/system/csqtt-core.service || return 1
+    # Detect successful-but-corrupted writes before trying to restart the old unit.
+    cmp -s "$ROLLBACK_DIR/binary" /usr/local/bin/csqtt-core || return 1
+    cmp -s "$ROLLBACK_DIR/unit" /etc/systemd/system/csqtt-core.service || return 1
     # The previous runtime may not have had a config directory. Reconcile
     # candidate-only files regardless, keeping SQLite, WAL, legacy state and
     # unrelated data untouched. Refuse symlinked config directories.

@@ -41,6 +41,12 @@ assert 'discard_unarmed_systemd_snapshot' in snapshot
 assert snapshot.index('ROLLBACK_ARMED=1') > snapshot.index('discard_unarmed_systemd_snapshot')
 restore=s.split("restore_previous_systemd() {",1)[1].split("\ncleanup_rollback_snapshot() {",1)[0]
 assert 'systemctl is-enabled --quiet csqtt-core' in snapshot
+assert '(cd "$ROLLBACK_DIR" && sha256sum binary unit > SHA256SUMS)' in snapshot
+assert 'verify_rollback_snapshot_integrity() {' in s
+assert '(cd "$ROLLBACK_DIR" && sha256sum --check --status SHA256SUMS)' in s
+assert restore.index('verify_rollback_snapshot_integrity') < restore.index('systemctl stop csqtt-core')
+assert 'cmp -s "$ROLLBACK_DIR/binary" /usr/local/bin/csqtt-core' in restore
+assert 'cmp -s "$ROLLBACK_DIR/unit" /etc/systemd/system/csqtt-core.service' in restore
 # Incomplete/symlinked prior installation must not enter an unprotected cutover.
 assert 'local old_binary=/usr/local/bin/csqtt-core' in snapshot
 assert 'local old_unit=/etc/systemd/system/csqtt-core.service' in snapshot
