@@ -22,14 +22,18 @@ case "$1" in
    if [ "$1" = enable ]; then echo yes > "$MOCK_ROOT/enabled"
    elif [ "$1" = disable ]; then echo no > "$MOCK_ROOT/enabled"
    else [ -f "$MOCK_ROOT/bin/csqtt-core" ] || exit 42
-        echo yes > "$MOCK_ROOT/active"; fi ;;
+        if [ "$MOCK_FAIL_ACTION" != restart-no-activate ]; then
+          echo yes > "$MOCK_ROOT/active"
+        fi
+   fi ;;
  *) echo "unexpected systemctl $1" >&2; exit 43 ;;
 esac
 """
 ip = """#!/bin/sh
 set -eu
 [ "$1" = link ] && [ "$2" = show ] && [ "$3" = csqtt-core0 ] &&
-[ "$(cat "$MOCK_ROOT/active")" = yes ]
+[ "$(cat "$MOCK_ROOT/active")" = yes ] &&
+[ "$MOCK_FAIL_ACTION" != tun-missing ]
 """
 
 # The production rollback also needs to survive disk / permission failures
@@ -48,10 +52,19 @@ esac
 exec /usr/bin/cp "$@"
 """
 
+# The real rollback polls a restored TUN up to ten times. Eliminate wait
+# time in fault injection, not in the production installer.
+sleep = """#!/bin/sh
+set -eu
+case "$1" in 1) exit 0 ;; *) exit 44 ;; esac
+"""
+
 cases = 0
 for originally_active in (False, True):
     for originally_enabled in (False, True):
-        fail_choices = ("", "install", "copy-unit", "enable" if originally_enabled else "disable") + (("restart",) if originally_active else ())
+        fail_choices = ("", "install", "copy-unit", "enable" if originally_enabled else "disable") + (
+            ("restart", "restart-no-activate", "tun-missing") if originally_active else ()
+        )
         for fail in fail_choices:
             cases += 1
             with tempfile.TemporaryDirectory(prefix="csqtt-rollback-mock-") as tmp:
@@ -83,7 +96,8 @@ for originally_active in (False, True):
                     (helpers/"tun-recover.sh").write_text("echo old tun\n")
                 (root/"active").write_text("yes" if originally_active else "no")
                 (root/"enabled").write_text("yes" if originally_enabled else "no")
-                for name, contents in (("systemctl", systemctl), ("ip", ip), ("install", install), ("cp", cp)):
+                for name, contents in (("systemctl", systemctl), ("ip", ip),
+                                       ("install", install), ("cp", cp), ("sleep", sleep)):
                     shim = root/"mockbin"/name
                     shim.write_text(contents)
                     shim.chmod(0o755)
