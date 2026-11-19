@@ -35,6 +35,8 @@ on:
       - adapt/test-csqtt-core-release-hash-guard.py
       - adapt/extend-csqtt-core-startup-cleanup-budget.py
       - adapt/test-csqtt-core-startup-cleanup-budget.py
+      - adapt/test-csqtt-core-native-arm64-runtime.py
+      - .github/workflows/csqtt-core-verified-arm64-release.yml
       - server-assets/deploy-csqtt-core-250.sh
   workflow_dispatch:
 

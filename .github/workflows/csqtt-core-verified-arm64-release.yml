@@ -9,6 +9,7 @@ on:
       - adapt/test-csqtt-core-startup-cleanup-diag.py
       - adapt/extend-csqtt-core-startup-cleanup-budget.py
       - adapt/test-csqtt-core-startup-cleanup-budget.py
+      - adapt/test-csqtt-core-native-arm64-runtime.py
       - adapt/tproxy-udp-fd-budget.py
       - adapt/tproxy-udp-relay-port-isolation.py
       - adapt/tproxy-udp-packet-trace.py
@@ -54,6 +55,13 @@ jobs:
           rustup target add aarch64-unknown-linux-gnu
           cargo build --release --locked --target aarch64-unknown-linux-gnu --bin csqtt
           file target/aarch64-unknown-linux-gnu/release/csqtt
+      - name: Runtime smoke of compiled ARM64 ELF (no real firewall/routes)
+        working-directory: /tmp/csqtt-candidate/rust-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          sudo env             GITHUB_ACTIONS="$GITHUB_ACTIONS"             RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT"             CSQTT_NATIVE_ARM64_SMOKE=disposable-runner-only             python3 "$GITHUB_WORKSPACE/adapt/test-csqtt-core-native-arm64-runtime.py"             --binary "$PWD/target/aarch64-unknown-linux-gnu/release/csqtt"
       - name: Publish binary and matching SHA-256 as one artifact
         shell: bash
         run: |
