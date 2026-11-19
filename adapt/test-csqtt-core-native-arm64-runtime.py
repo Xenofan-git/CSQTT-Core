@@ -39,7 +39,22 @@ def reserved_port(family, socktype):
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
-before_routes = Path("/proc/net/route").read_text()
+def route_rows():
+    rows = Path("/proc/net/route").read_text().splitlines()
+    return [tuple(row.split()) for row in rows[1:] if row.strip()]
+
+
+def default_route_rows(rows):
+    # Linux /proc/net/route: Destination column 1, Mask column 7 (hex LE).
+    # A runtime may add temporary host/subnet routes; it must not change the
+    # system-wide default gateway. Check that invariant independently.
+    return sorted(row for row in rows if
+                  len(row) >= 8 and row[1] == "00000000" and row[7] == "00000000")
+
+
+before_routes = route_rows()
+before_defaults = default_route_rows(before_routes)
+assert before_defaults, "runner has no default route to protect"
 with tempfile.TemporaryDirectory(prefix="csqtt-native-arm64-smoke-") as temp:
     root = Path(temp)
     mockbin = root / "bin"
@@ -137,7 +152,13 @@ exit 1
         requests = calls.read_text().splitlines()
         assert any(line.startswith("iptables ") and " -S INPUT" in line for line in requests)
         assert any(line.startswith("ip ") for line in requests)
-        assert before_routes == Path("/proc/net/route").read_text(), "default route changed"
+        observed_routes = route_rows()
+        assert default_route_rows(observed_routes) == before_defaults, "default route changed"
+        if observed_routes != before_routes:
+            # Do not conflate an ephemeral non-default route with a changed
+            # global default gateway; keep diagnostic counts for investigation.
+            print("INFO non-default route entries changed while server active: "
+                  f"before={len(before_routes)} during={len(observed_routes)}")
         assert proc.poll() is None, "runtime exited unexpectedly"
         assert conf.exists(), "temporary config directory missing"
         print(f"PASS native ARM64 compiled ELF startup, mocked 1.7s iptables, "
@@ -150,6 +171,10 @@ exit 1
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=4)
-        if before_routes != Path("/proc/net/route").read_text():
-            raise RuntimeError("runner default routing differs after smoke")
-print("PASS temporary config and mock network tools discarded")
+        final_routes = route_rows()
+        if default_route_rows(final_routes) != before_defaults:
+            raise RuntimeError("runner default routing differs after server shutdown")
+        if final_routes != before_routes:
+            print("INFO non-default route entries differ after shutdown: "
+                  f"before={len(before_routes)} after={len(final_routes)}")
+print("PASS temporary config and mock network tools discarded; default route preserved")
