@@ -6,11 +6,15 @@ on:
     paths:
       - adapt/test-original-server-all-dialogs-browser.py
       - adapt/csqtt-server-panel-upstream-250.html
+      - adapt/test-csqtt-live-authenticated-browser-readonly.py
+      - adapt/test-csqtt-live-authenticated-browser-readonly-guard.py
       - .github/workflows/csqtt-core-server-panel-browser.yml
   pull_request:
     paths:
       - adapt/test-original-server-all-dialogs-browser.py
       - adapt/csqtt-server-panel-upstream-250.html
+      - adapt/test-csqtt-live-authenticated-browser-readonly.py
+      - adapt/test-csqtt-live-authenticated-browser-readonly-guard.py
       - .github/workflows/csqtt-core-server-panel-browser.yml
   workflow_dispatch:
 
@@ -39,3 +43,6 @@ jobs:
       - name: Read-only original 2.5 server tabs and dialogs on Desktop/Mobile
         run: |
           python adapt/test-original-server-all-dialogs-browser.py
+      - name: Guard live authenticated browser test (strictly offline)
+        run: |
+          python adapt/test-csqtt-live-authenticated-browser-readonly-guard.py
