@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 source = Path("server-assets/deploy-csqtt-core-250.sh").read_text()
-start = source.index("snapshot_existing_systemd() {")
+start = source.index("discard_unarmed_systemd_snapshot() {")
 end = source.index("\nvalidate_port() {", start)
 production = source[start:end]
 
@@ -350,3 +350,86 @@ esac
             prior_state, test.returncode, test.stdout, test.stderr)
         print(f"PASS previous-install snapshot guard={prior_state}")
 print("PASS incomplete/symlinked previous runtime is never silently upgraded")
+
+# Snapshot creation itself must be transactional: a partial disk copy may
+# contain credentials/database fragments and must never remain in /tmp.
+# Inject one copy failure at each stage before ROLLBACK_ARMED is set.
+snapshot_cp = """#!/bin/sh
+set -eu
+case "$MOCK_FAIL_SNAPSHOT_STAGE" in
+ binary)
+   case "$*" in *"/binary") exit 73 ;; esac ;;
+ unit)
+   case "$*" in *"/unit") exit 73 ;; esac ;;
+ config)
+   case "$*" in *"/config") exit 73 ;; esac ;;
+ helpers)
+   case "$*" in *"/helpers") exit 73 ;; esac ;;
+esac
+exec /usr/bin/cp "$@"
+"""
+
+for failed_stage in ("binary", "unit", "config", "helpers"):
+    with tempfile.TemporaryDirectory(prefix="csqtt-snapshot-copy-fail-") as tmp:
+        root = Path(tmp)
+        for d in ("bin", "systemd", "config", "helpers", "mockbin"):
+            (root/d).mkdir()
+        binary = root/"bin/csqtt-core"
+        unit = root/"systemd/csqtt-core.service"
+        config = root/"config"
+        helpers = root/"helpers"
+        binary.write_text("ORIGINAL ELF\n")
+        unit.write_text("ORIGINAL UNIT\n")
+        (config/"csqtt-core.env").write_text("OLD_SECRET=snapshot-canary\n")
+        (config/"csqtt.db").write_text("PERSISTENT DB\n")
+        (helpers/"network-up.sh").write_text("original helper\n")
+        (root/"active").write_text("yes")
+        (root/"enabled").write_text("yes")
+        for name, body in (("systemctl", systemctl), ("cp", snapshot_cp)):
+            shim = root/"mockbin"/name
+            shim.write_text(body)
+            shim.chmod(0o755)
+        scoped = production
+        for old, new in (
+            ("/usr/local/bin/csqtt-core", str(binary)),
+            ("/etc/systemd/system/csqtt-core.service", str(unit)),
+            ("/usr/local/lib/csqtt-core", str(helpers)),
+            ("/tmp/csqtt-core-rollback.XXXXXXXX", str(root/"rollback.XXXXXXXX")),
+        ):
+            scoped = scoped.replace(old, new)
+        sh = f"""
+set -euo pipefail
+DEPLOY_MODE=systemd
+CSQTT_CONFIG_DIR={str(config)!r}
+ROLLBACK_DIR=""
+ROLLBACK_ARMED=0
+ROLLBACK_WAS_ACTIVE=0
+ROLLBACK_WAS_ENABLED=0
+log_info() {{ :; }}
+log_warn() {{ :; }}
+log_error() {{ :; }}
+{scoped}
+if snapshot_existing_systemd; then
+  echo "ERROR: failed snapshot was accepted" >&2
+  exit 77
+fi
+[ "$ROLLBACK_ARMED" -eq 0 ]
+[ -z "$ROLLBACK_DIR" ]
+[ -z "$(find {str(root)!r} -maxdepth 1 -name 'rollback.*' -print)" ]
+[ "$(cat {str(binary)!r})" = 'ORIGINAL ELF' ]
+[ "$(cat {str(unit)!r})" = 'ORIGINAL UNIT' ]
+[ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_SECRET=snapshot-canary' ]
+[ "$(cat {str(config/'csqtt.db')!r})" = 'PERSISTENT DB' ]
+[ "$(cat {str(root/'active')!r})" = yes ]
+[ "$(cat {str(root/'enabled')!r})" = yes ]
+"""
+        env = dict(os.environ)
+        env.update(MOCK_ROOT=str(root), MOCK_FAIL_ACTION="",
+                   MOCK_FAIL_SNAPSHOT_STAGE=failed_stage,
+                   PATH=f"{root/'mockbin'}:{os.environ.get('PATH','/usr/bin:/bin')}")
+        result = subprocess.run(["bash", "-c", sh], text=True,
+                                capture_output=True, env=env, timeout=12)
+        assert result.returncode == 0, (
+            failed_stage, result.returncode, result.stdout, result.stderr)
+        print(f"PASS snapshot copy failure stage={failed_stage} removes incomplete secret-bearing archive")
+print("PASS failed snapshots leave no incomplete copies or runtime mutations")

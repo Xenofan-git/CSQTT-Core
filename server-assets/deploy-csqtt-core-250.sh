@@ -57,6 +57,19 @@ ROLLBACK_ARMED=0
 ROLLBACK_WAS_ACTIVE=0
 ROLLBACK_WAS_ENABLED=0
 
+# Only a snapshot created by our own mktemp path may be discarded here.
+# Never delete an armed recovery snapshot, even if cleaning failed earlier.
+discard_unarmed_systemd_snapshot() {
+    [ "$ROLLBACK_ARMED" -eq 0 ] || return 1
+    if [ -n "$ROLLBACK_DIR" ] && [ -d "$ROLLBACK_DIR" ]; then
+        rm -rf -- "$ROLLBACK_DIR" || {
+            log_error "Cannot delete incomplete CSQTT recovery copy: $ROLLBACK_DIR"
+            return 1
+        }
+    fi
+    ROLLBACK_DIR=""
+}
+
 snapshot_existing_systemd() {
     [ "$DEPLOY_MODE" = systemd ] || return 0
     local old_binary=/usr/local/bin/csqtt-core
@@ -73,19 +86,39 @@ snapshot_existing_systemd() {
         log_error "Previous CSQTT-Core systemd runtime is incomplete or symlinked; refusing upgrade without rollback snapshot"
         return 1
     fi
-    ROLLBACK_DIR="$(mktemp -d /tmp/csqtt-core-rollback.XXXXXXXX)"
-    chmod 700 "$ROLLBACK_DIR"
+    ROLLBACK_DIR="$(mktemp -d /tmp/csqtt-core-rollback.XXXXXXXX)" || return 1
+    # Before the rollback lease is armed, a failed cp can leave a partial
+    # credentials/SQLite copy under /tmp. Explicitly clean every partial
+    # snapshot, including when this function is called from an if-condition
+    # (where Bash's implicit errexit is disabled).
+    if ! chmod 700 "$ROLLBACK_DIR"; then
+        discard_unarmed_systemd_snapshot
+        return 1
+    fi
     systemctl is-active --quiet csqtt-core && ROLLBACK_WAS_ACTIVE=1 || true
     systemctl is-enabled --quiet csqtt-core && ROLLBACK_WAS_ENABLED=1 || true
-    cp -a /usr/local/bin/csqtt-core "$ROLLBACK_DIR/binary"
-    cp -a /etc/systemd/system/csqtt-core.service "$ROLLBACK_DIR/unit"
+    if ! cp -a /usr/local/bin/csqtt-core "$ROLLBACK_DIR/binary" ||
+       ! cp -a /etc/systemd/system/csqtt-core.service "$ROLLBACK_DIR/unit"; then
+        discard_unarmed_systemd_snapshot
+        return 1
+    fi
     if [ -d "$CSQTT_CONFIG_DIR" ]; then
-        cp -a "$CSQTT_CONFIG_DIR" "$ROLLBACK_DIR/config"
+        if ! cp -a "$CSQTT_CONFIG_DIR" "$ROLLBACK_DIR/config"; then
+            discard_unarmed_systemd_snapshot
+            return 1
+        fi
         # Persistent SQLite/credentials are preserved in place by csqtt_cleanup.
         # Never overwrite a live WAL database from a non-transactional copy.
-        rm -f "$ROLLBACK_DIR/config/csqtt.db" "$ROLLBACK_DIR/config/csqtt.db-wal" "$ROLLBACK_DIR/config/csqtt.db-shm"
+        if ! rm -f "$ROLLBACK_DIR/config/csqtt.db" "$ROLLBACK_DIR/config/csqtt.db-wal" "$ROLLBACK_DIR/config/csqtt.db-shm"; then
+            discard_unarmed_systemd_snapshot
+            return 1
+        fi
     fi
-    [ ! -d /usr/local/lib/csqtt-core ] || cp -a /usr/local/lib/csqtt-core "$ROLLBACK_DIR/helpers"
+    if [ -d /usr/local/lib/csqtt-core ] &&
+       ! cp -a /usr/local/lib/csqtt-core "$ROLLBACK_DIR/helpers"; then
+        discard_unarmed_systemd_snapshot
+        return 1
+    fi
     ROLLBACK_ARMED=1
     log_info "Резервная копия предыдущего systemd runtime подготовлена"
 }

@@ -33,6 +33,12 @@ assert s.count('CSQTT_DEPLOY_OK')>=2
 # The old service boot state must survive automatic rollback. The old
 # cutover explicitly disables the service, so merely restarting is not enough.
 snapshot=s.split("snapshot_existing_systemd() {",1)[1].split("\nrestore_previous_systemd() {",1)[0]
+assert "discard_unarmed_systemd_snapshot() {" in s
+assert 'rm -rf -- "$ROLLBACK_DIR"' in s
+assert 'if ! cp -a /usr/local/bin/csqtt-core "$ROLLBACK_DIR/binary"' in snapshot
+assert 'if ! cp -a "$CSQTT_CONFIG_DIR" "$ROLLBACK_DIR/config"' in snapshot
+assert 'discard_unarmed_systemd_snapshot' in snapshot
+assert snapshot.index('ROLLBACK_ARMED=1') > snapshot.index('discard_unarmed_systemd_snapshot')
 restore=s.split("restore_previous_systemd() {",1)[1].split("\ncleanup_rollback_snapshot() {",1)[0]
 assert 'systemctl is-enabled --quiet csqtt-core' in snapshot
 # Incomplete/symlinked prior installation must not enter an unprotected cutover.
