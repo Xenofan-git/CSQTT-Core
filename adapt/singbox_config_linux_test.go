@@ -913,3 +913,100 @@ func TestSingBoxTLSSNISniffRoutesIPDestinationToCSQTT(t *testing.T) {
  _=tlsConn.Handshake() // The echo backend has no TLS certificate; only SNI routing is under test.
  select{case target:=<-targets:if target!="198.51.100.42:443"{t.Fatalf("CSQTT target %q",target)};case <-time.After(3*time.Second):t.Fatalf("HTTP Host sniff did not select CSQTT; logs: %s",logs.String())}
 }
+
+// TestSingBoxDeadSOCKSOutboundNeverFallsBackToDIRECT verifies that the
+// explicit DIRECT default applies only to unmatched flows. A flow matched to
+// an unavailable SOCKS5 upstream must fail closed, not leak to its destination.
+func TestSingBoxDeadSOCKSOutboundNeverFallsBackToDIRECT(t *testing.T) {
+	binaryPath := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+	if binaryPath == "" { t.Skip("requires pinned sing-box binary from CI") }
+
+	echo, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil { t.Fatal(err) }
+	defer echo.Close()
+	accepted := make(chan struct{}, 8)
+	go func() {
+		for {
+			conn, acceptErr := echo.Accept()
+			if acceptErr != nil { return }
+			select { case accepted <- struct{}{}: default: }
+			go func(c net.Conn) { defer c.Close(); _, _ = io.Copy(c, c) }(conn)
+		}
+	}()
+	echoPort := echo.Addr().(*net.TCPAddr).Port
+
+	// Reserve then release a loopback port which has no SOCKS5 server.
+	// The upstream is deliberately absent in both phases.
+	unavailable := reserveSingBoxTestAddress(t)
+	_, portText, err := net.SplitHostPort(unavailable)
+	if err != nil { t.Fatal(err) }
+	deadPort, err := strconv.Atoi(portText)
+	if err != nil { t.Fatal(err) }
+	if deadPort == echoPort { t.Fatal("unavailable upstream unexpectedly shares echo port") }
+
+	runPhase := func(matchedToDeadSOCKS bool) bool {
+		t.Helper()
+		inbound := reserveSingBoxTestAddress(t)
+		input := singBoxConfigInput{
+			ListenAddress: inbound,
+			FinalOutbound: singBoxDirectTag,
+			SOCKS5: []singBoxSOCKS5Outbound{{
+				ID: "dead", Server: "127.0.0.1", ServerPort: deadPort, Enabled: true,
+			}},
+		}
+		if matchedToDeadSOCKS {
+			input.Rules = []singBoxRouteRule{{
+				ID: "matched-dead-socks", IPCIDRs: []string{"127.0.0.1/32"},
+				Outbound: "socks-dead", Enabled: true,
+			}}
+		}
+		config, err := buildSingBoxConfig(input)
+		if err != nil { t.Fatal(err) }
+		configPath := filepath.Join(t.TempDir(), "sing-box-dead-outbound.json")
+		if err := os.WriteFile(configPath, config, 0600); err != nil { t.Fatal(err) }
+		cmd := exec.Command(binaryPath, "run", "-c", configPath)
+		logs := &singBoxTestLogBuffer{}
+		cmd.Stdout, cmd.Stderr = logs, logs
+		if err := cmd.Start(); err != nil { t.Fatal(err) }
+		defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+		var client net.Conn
+		until := time.Now().Add(8 * time.Second)
+		for time.Now().Before(until) {
+			client, err = net.DialTimeout("tcp", inbound, 200*time.Millisecond)
+			if err == nil { break }
+			time.Sleep(50 * time.Millisecond)
+		}
+		if client == nil { t.Fatalf("sing-box inbound unavailable: %v; logs: %s", err, logs.String()) }
+		defer client.Close()
+		_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+		if _, err := client.Write([]byte{5, 1, 0}); err != nil { t.Fatal(err) }
+		var greeting [2]byte
+		if _, err := io.ReadFull(client, greeting[:]); err != nil { t.Fatal(err) }
+		if greeting != [2]byte{5, 0} { t.Fatalf("unexpected SOCKS greeting %v", greeting) }
+		request := []byte{5, 1, 0, 1, 127, 0, 0, 1, byte(echoPort >> 8), byte(echoPort)}
+		if _, err := client.Write(request); err != nil { t.Fatal(err) }
+		var response [10]byte
+		if _, err := io.ReadFull(client, response[:]); err != nil { return false }
+		if response[1] != 0 { return false }
+		payload := []byte("test-no-direct-fail-open")
+		if _, err := client.Write(payload); err != nil { return false }
+		got := make([]byte, len(payload))
+		if _, err := io.ReadFull(client, got); err != nil { return false }
+		return bytes.Equal(got, payload)
+	}
+
+	// Positive control: unmatched traffic must still use the explicitly
+	// configured DIRECT fallback and reach the loopback echo server.
+	if !runPhase(false) { t.Fatal("unmatched DIRECT fallback failed its positive control") }
+	select {
+	case <-accepted:
+	case <-time.After(2*time.Second):
+		t.Fatal("DIRECT control was not observed at destination")
+	}
+	if runPhase(true) { t.Fatal("matched dead SOCKS5 unexpectedly delivered data over DIRECT") }
+	select {
+	case <-accepted:
+		t.Fatal("matched flow leaked to DIRECT destination while SOCKS5 was unavailable")
+	case <-time.After(500 * time.Millisecond):
+	}
+}
