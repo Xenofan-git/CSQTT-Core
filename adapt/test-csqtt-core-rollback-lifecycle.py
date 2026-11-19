@@ -32,10 +32,26 @@ set -eu
 [ "$(cat "$MOCK_ROOT/active")" = yes ]
 """
 
+# The production rollback also needs to survive disk / permission failures
+# while restoring the old ELF and systemd unit, not only systemctl failures.
+install = """#!/bin/sh
+set -eu
+[ "$MOCK_FAIL_ACTION" != install ] || exit 41
+exec /usr/bin/install "$@"
+"""
+cp = """#!/bin/sh
+set -eu
+case "$2" in
+ "$MOCK_ROOT"/rollback.*/unit)
+   [ "$MOCK_FAIL_ACTION" != copy-unit ] || exit 41 ;;
+esac
+exec /usr/bin/cp "$@"
+"""
+
 cases = 0
 for originally_active in (False, True):
     for originally_enabled in (False, True):
-        fail_choices = ("", "enable" if originally_enabled else "disable") + (("restart",) if originally_active else ())
+        fail_choices = ("", "install", "copy-unit", "enable" if originally_enabled else "disable") + (("restart",) if originally_active else ())
         for fail in fail_choices:
             cases += 1
             with tempfile.TemporaryDirectory(prefix="csqtt-rollback-mock-") as tmp:
@@ -67,7 +83,7 @@ for originally_active in (False, True):
                     (helpers/"tun-recover.sh").write_text("echo old tun\n")
                 (root/"active").write_text("yes" if originally_active else "no")
                 (root/"enabled").write_text("yes" if originally_enabled else "no")
-                for name, contents in (("systemctl", systemctl), ("ip", ip)):
+                for name, contents in (("systemctl", systemctl), ("ip", ip), ("install", install), ("cp", cp)):
                     shim = root/"mockbin"/name
                     shim.write_text(contents)
                     shim.chmod(0o755)
@@ -167,6 +183,8 @@ else
   [ -z "$(find {str(root)!r} -maxdepth 1 -name 'rollback.*' -print)" ]
   [ "$(cat {str(root/'enabled')!r})" = {'yes' if originally_enabled else 'no'} ]
   [ "$(cat {str(root/'active')!r})" = {'yes' if originally_active else 'no'} ]
+  [ "$(cat {str(binary)!r})" = 'old verified binary' ]
+  [ "$(cat {str(unit)!r})" = 'ExecStart=old' ]
   if [ {int(originally_enabled)} -eq 1 ]; then
     [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
     [ "$(cat {str(config/'deploy-overrides.json')!r})" = 'OLD_OVERRIDE' ]
