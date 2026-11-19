@@ -44,6 +44,11 @@ assert restore.index('systemctl enable csqtt-core') < restore.index('systemctl r
 for owned_file in ('csqtt-core.env','deploy-overrides.json','web_cert.pem','web_key.pem','letsencrypt-ip.env'):
  assert owned_file in restore, owned_file
 assert 'rm -f -- "$CSQTT_CONFIG_DIR/$rollback_managed_file"' in restore
+# Newly introduced helper scripts must not survive a failed cutover.
+assert "for rollback_helper in network-up.sh tun-recover.sh docker-prereq.sh" in restore
+assert 'rm -f -- "/usr/local/lib/csqtt-core/$rollback_helper"' in restore
+assert '[ ! -L /usr/local/lib/csqtt-core ] || return 1' in restore
+assert restore.index('rm -f -- "/usr/local/lib/csqtt-core/$rollback_helper"') < restore.index('cp -a "$ROLLBACK_DIR/helpers/."')
 assert "[ ! -L \"$CSQTT_CONFIG_DIR\" ] || return 1" in restore
 assert restore.index('if [ -d "$CSQTT_CONFIG_DIR" ]; then') < restore.index('if [ -d "$ROLLBACK_DIR/config" ]; then')
 assert restore.index('rm -f -- "$CSQTT_CONFIG_DIR/$rollback_managed_file"') < restore.index('cp -a "$ROLLBACK_DIR/config/."')

@@ -104,8 +104,20 @@ restore_previous_systemd() {
         mkdir -p "$CSQTT_CONFIG_DIR" || return 1
         cp -a "$ROLLBACK_DIR/config/." "$CSQTT_CONFIG_DIR/" || return 1
     fi
+    # Revert candidate helper scripts even if the previous runtime had no
+    # helper directory. Never remove other files in the shared parent directory.
+    [ ! -L /usr/local/lib/csqtt-core ] || return 1
+    if [ -d /usr/local/lib/csqtt-core ]; then
+        local rollback_helper
+        for rollback_helper in network-up.sh tun-recover.sh docker-prereq.sh; do
+            if [ ! -e "$ROLLBACK_DIR/helpers/$rollback_helper" ] &&
+               [ ! -L "$ROLLBACK_DIR/helpers/$rollback_helper" ]; then
+                rm -f -- "/usr/local/lib/csqtt-core/$rollback_helper" || return 1
+            fi
+        done
+    fi
     if [ -d "$ROLLBACK_DIR/helpers" ]; then
-        mkdir -p /usr/local/lib/csqtt-core
+        mkdir -p /usr/local/lib/csqtt-core || return 1
         cp -a "$ROLLBACK_DIR/helpers/." /usr/local/lib/csqtt-core/ || return 1
     fi
     systemctl daemon-reload || return 1

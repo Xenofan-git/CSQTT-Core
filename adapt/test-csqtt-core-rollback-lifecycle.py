@@ -40,7 +40,7 @@ for originally_active in (False, True):
             cases += 1
             with tempfile.TemporaryDirectory(prefix="csqtt-rollback-mock-") as tmp:
                 root = Path(tmp)
-                for sub in ("bin", "systemd", "helpers", "mockbin"):
+                for sub in ("bin", "systemd", "mockbin"):
                     (root/sub).mkdir()
                 binary = root/"bin/csqtt-core"
                 unit = root/"systemd/csqtt-core.service"
@@ -59,7 +59,12 @@ for originally_active in (False, True):
                     (config/"letsencrypt-ip.env").write_text("OLD_LE\n")
                     (config/"csqtt.db").write_text("live SQLite data")
                     (config/"unrelated.txt").write_text("keep unrelated state\n")
-                (helpers/"network-up.sh").write_text("echo old\n")
+                # Old runtime may lack helper directory. A pre-existing
+                # helper directory may also lack the newly added Docker helper.
+                if originally_enabled:
+                    helpers.mkdir()
+                    (helpers/"network-up.sh").write_text("echo old\n")
+                    (helpers/"tun-recover.sh").write_text("echo old tun\n")
                 (root/"active").write_text("yes" if originally_active else "no")
                 (root/"enabled").write_text("yes" if originally_enabled else "no")
                 for name, contents in (("systemctl", systemctl), ("ip", ip)):
@@ -104,7 +109,11 @@ echo NEW_OVERRIDE > {str(config/'deploy-overrides.json')!r}
 echo NEW_CERT > {str(config/'web_cert.pem')!r}
 echo NEW_KEY > {str(config/'web_key.pem')!r}
 echo NEW_LE > {str(config/'letsencrypt-ip.env')!r}
+mkdir -p {str(helpers)!r}
+echo 'keep unrelated helper' > {str(helpers/'unrelated.txt')!r}
 echo new > {str(helpers/'network-up.sh')!r}
+echo newtun > {str(helpers/'tun-recover.sh')!r}
+echo newdocker > {str(helpers/'docker-prereq.sh')!r}
 if finish_deploy_rollback; then result=success; else result=failed; fi
 if [ -z "$MOCK_FAIL_ACTION" ]; then
   [ "$result" = success ]
@@ -129,7 +138,15 @@ if [ -z "$MOCK_FAIL_ACTION" ]; then
     [ ! -e {str(config/'letsencrypt-ip.env')!r} ]
   fi
   [ "$(cat {str(config/'unrelated.txt')!r})" = 'keep unrelated state' ]
-  [ "$(cat {str(helpers/'network-up.sh')!r})" = 'echo old' ]
+  if [ {int(originally_enabled)} -eq 1 ]; then
+    [ "$(cat {str(helpers/'network-up.sh')!r})" = 'echo old' ]
+    [ "$(cat {str(helpers/'tun-recover.sh')!r})" = 'echo old tun' ]
+  else
+    [ ! -e {str(helpers/'network-up.sh')!r} ]
+    [ ! -e {str(helpers/'tun-recover.sh')!r} ]
+  fi
+  [ ! -e {str(helpers/'docker-prereq.sh')!r} ]
+  [ "$(cat {str(helpers/'unrelated.txt')!r})" = 'keep unrelated helper' ]
 else
   [ "$result" = failed ]
   [ "$ROLLBACK_ARMED" -eq 1 ]
@@ -164,7 +181,15 @@ else
     [ ! -e {str(config/'letsencrypt-ip.env')!r} ]
   fi
   [ "$(cat {str(config/'unrelated.txt')!r})" = 'keep unrelated state' ]
-  [ "$(cat {str(helpers/'network-up.sh')!r})" = 'echo old' ]
+  if [ {int(originally_enabled)} -eq 1 ]; then
+    [ "$(cat {str(helpers/'network-up.sh')!r})" = 'echo old' ]
+    [ "$(cat {str(helpers/'tun-recover.sh')!r})" = 'echo old tun' ]
+  else
+    [ ! -e {str(helpers/'network-up.sh')!r} ]
+    [ ! -e {str(helpers/'tun-recover.sh')!r} ]
+  fi
+  [ ! -e {str(helpers/'docker-prereq.sh')!r} ]
+  [ "$(cat {str(helpers/'unrelated.txt')!r})" = 'keep unrelated helper' ]
 fi
 [ "$(cat {str(config/'csqtt.db')!r})" = 'live SQLite data' ]
 """
