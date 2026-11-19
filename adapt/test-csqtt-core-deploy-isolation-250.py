@@ -51,6 +51,11 @@ assert 'cmp -s "$ROLLBACK_DIR/unit" /etc/systemd/system/csqtt-core.service' in r
 assert 'local old_binary=/usr/local/bin/csqtt-core' in snapshot
 assert 'local old_unit=/etc/systemd/system/csqtt-core.service' in snapshot
 assert 'Previous CSQTT-Core systemd runtime is incomplete or symlinked' in snapshot
+assert 'Previous CSQTT-Core config path is symlinked or not a directory' in snapshot
+assert 'Previous CSQTT-Core helper path is symlinked or not a directory' in snapshot
+assert snapshot.index('[ -L "$CSQTT_CONFIG_DIR" ]') < snapshot.index('ROLLBACK_DIR="$(mktemp')
+assert snapshot.index('[ -L /usr/local/lib/csqtt-core ]') < snapshot.index('ROLLBACK_DIR="$(mktemp')
+assert snapshot.index('[ -L "$CSQTT_CONFIG_DIR" ]') < snapshot.index('if [ -d "$CSQTT_CONFIG_DIR" ]')
 assert snapshot.index('if [ ! -e "$old_binary" ]') < snapshot.index('ROLLBACK_DIR="$(mktemp')
 assert snapshot.index('if [ ! -f "$old_binary" ]') < snapshot.index('ROLLBACK_DIR="$(mktemp')
 assert 'ROLLBACK_WAS_ENABLED=1' in snapshot

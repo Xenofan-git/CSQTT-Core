@@ -74,6 +74,20 @@ snapshot_existing_systemd() {
     [ "$DEPLOY_MODE" = systemd ] || return 0
     local old_binary=/usr/local/bin/csqtt-core
     local old_unit=/etc/systemd/system/csqtt-core.service
+    # Reject unsafe pre-existing paths BEFORE cp -a creates any snapshot.
+    # If config is a symlink, the SQLite-exclusion rm inside the saved copy
+    # would traverse the link and could delete a LIVE source csqtt.db.
+    # A helper symlink or non-directory also prevents reliable rollback.
+    if [ -L "$CSQTT_CONFIG_DIR" ] ||
+       { [ -e "$CSQTT_CONFIG_DIR" ] && [ ! -d "$CSQTT_CONFIG_DIR" ]; }; then
+        log_error "Previous CSQTT-Core config path is symlinked or not a directory; refusing install"
+        return 1
+    fi
+    if [ -L /usr/local/lib/csqtt-core ] ||
+       { [ -e /usr/local/lib/csqtt-core ] && [ ! -d /usr/local/lib/csqtt-core ]; }; then
+        log_error "Previous CSQTT-Core helper path is symlinked or not a directory; refusing install"
+        return 1
+    fi
     # Fresh install is safe only when BOTH prior runtime paths are absent.
     # A half-installed runtime or symlink cannot be upgraded without an
     # unambiguous rollback snapshot. Fail before cutover, never fail-open.

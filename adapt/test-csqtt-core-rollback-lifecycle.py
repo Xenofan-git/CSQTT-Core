@@ -362,6 +362,92 @@ esac
         print(f"PASS previous-install snapshot guard={prior_state}")
 print("PASS incomplete/symlinked previous runtime is never silently upgraded")
 
+# A symlinked configuration directory is much more dangerous than a bad
+# rollback: cp -a preserves the symlink in the snapshot and then the snapshot's
+# SQLite exclusion rm may FOLLOW that link and delete the original database.
+# Keep all adversarial fixtures inside an isolated temporary directory.
+for bad_dir in ("config-symlink", "helpers-symlink", "config-file", "helpers-file"):
+    with tempfile.TemporaryDirectory(prefix="csqtt-dir-snapshot-guard-") as tmp:
+        root = Path(tmp)
+        for sub in ("bin", "systemd", "mockbin", "external-config", "external-helpers"):
+            (root/sub).mkdir()
+        binary = root/"bin/csqtt-core"
+        unit = root/"systemd/csqtt-core.service"
+        binary.write_text("EXISTING ELF\n")
+        unit.write_text("EXISTING UNIT\n")
+        (root/"external-config/csqtt.db").write_text("DO NOT DELETE LIVE DB\n")
+        (root/"external-config/csqtt-core.env").write_text("OLD_SECRET=unchanged\n")
+        (root/"external-helpers/network-up.sh").write_text("DO NOT ALTER HELPER\n")
+        config = root/"config"
+        helpers = root/"helpers"
+        if bad_dir=="config-symlink":
+            config.symlink_to(root/"external-config",target_is_directory=True)
+        else:
+            config.mkdir()
+            (config/"csqtt.db").write_text("LOCAL LIVE DB\n")
+        if bad_dir=="helpers-symlink":
+            helpers.symlink_to(root/"external-helpers",target_is_directory=True)
+        else:
+            helpers.mkdir()
+            (helpers/"network-up.sh").write_text("LOCAL HELPER\n")
+        if bad_dir=="config-file":
+            (config/"csqtt.db").unlink()
+            config.rmdir()
+            config.write_text("NOT A DIRECTORY\n")
+        if bad_dir=="helpers-file":
+            (helpers/"network-up.sh").unlink()
+            helpers.rmdir()
+            helpers.write_text("NOT A DIRECTORY\n")
+        (root/"active").write_text("yes")
+        (root/"enabled").write_text("yes")
+        ctl=root/"mockbin/systemctl"
+        ctl.write_text(systemctl)
+        ctl.chmod(0o755)
+        scoped=production
+        for old,new in (
+            ("/usr/local/bin/csqtt-core",str(binary)),
+            ("/etc/systemd/system/csqtt-core.service",str(unit)),
+            ("/usr/local/lib/csqtt-core",str(helpers)),
+            ("/tmp/csqtt-core-rollback.XXXXXXXX",str(root/"rollback.XXXXXXXX")),
+        ):
+            scoped=scoped.replace(old,new)
+        script=f"""
+set -euo pipefail
+DEPLOY_MODE=systemd
+CSQTT_CONFIG_DIR={str(config)!r}
+ROLLBACK_DIR=""
+ROLLBACK_ARMED=0
+ROLLBACK_WAS_ACTIVE=0
+ROLLBACK_WAS_ENABLED=0
+log_info() {{ :; }}
+log_warn() {{ :; }}
+log_error() {{ :; }}
+{scoped}
+if snapshot_existing_systemd; then
+    echo "ERROR: unsafe previous directory accepted" >&2
+    exit 90
+fi
+[ "$ROLLBACK_ARMED" -eq 0 ]
+[ -z "$ROLLBACK_DIR" ]
+[ -z "$(find {str(root)!r} -maxdepth 1 -name 'rollback.*' -print)" ]
+[ "$(cat {str(binary)!r})" = 'EXISTING ELF' ]
+[ "$(cat {str(unit)!r})" = 'EXISTING UNIT' ]
+[ "$(cat {str(root/'active')!r})" = yes ]
+[ "$(cat {str(root/'enabled')!r})" = yes ]
+"""
+        env=dict(os.environ)
+        env.update(MOCK_ROOT=str(root),MOCK_FAIL_ACTION="",
+                   PATH=f"{root/'mockbin'}:{os.environ.get('PATH','/usr/bin:/bin')}")
+        result=subprocess.run(["bash","-c",script],capture_output=True,text=True,
+                              env=env,timeout=12)
+        assert (root/"external-config/csqtt.db").read_text()=="DO NOT DELETE LIVE DB\n", (
+            bad_dir,"unsafe snapshot deleted external SQLite database")
+        assert (root/"external-config/csqtt-core.env").read_text()=="OLD_SECRET=unchanged\n"
+        assert (root/"external-helpers/network-up.sh").read_text()=="DO NOT ALTER HELPER\n"
+        assert result.returncode==0,(bad_dir,result.returncode,result.stdout,result.stderr)
+        print(f"PASS unsafe previous directory refused before snapshot: {bad_dir}")
+print("PASS previous config/helpers symlinks or non-directory paths are rejected")
+
 # Snapshot creation itself must be transactional: a partial disk copy may
 # contain credentials/database fragments and must never remain in /tmp.
 # Inject one copy failure at each stage before ROLLBACK_ARMED is set.
