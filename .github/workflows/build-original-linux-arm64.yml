@@ -25,6 +25,8 @@ on:
       - adapt/*.md
       - adapt/test-csqtt-panel-auth-boundary-readonly.py
       - adapt/test-csqtt-live-login-responsive.py
+      - adapt/test-csqtt-original-server-e2e.py
+      - adapt/test-csqtt-original-server-e2e-safety.py
       - adapt/test-csqtt-core-deploy-isolation-250.py
       - adapt/test-csqtt-core-rollback-lifecycle.py
       - adapt/test-csqtt-core-deploy-guard-live.py

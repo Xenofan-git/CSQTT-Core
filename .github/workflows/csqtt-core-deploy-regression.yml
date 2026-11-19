@@ -9,6 +9,8 @@ on:
       - adapt/test-csqtt-core-rollback-lifecycle.py
       - adapt/test-csqtt-core-deploy-guard-live.py
       - adapt/test-csqtt-core-release-hash-guard.py
+      - adapt/test-csqtt-original-server-e2e.py
+      - adapt/test-csqtt-original-server-e2e-safety.py
       - .github/workflows/csqtt-core-deploy-regression.yml
   pull_request:
     paths:
@@ -17,6 +19,8 @@ on:
       - adapt/test-csqtt-core-rollback-lifecycle.py
       - adapt/test-csqtt-core-deploy-guard-live.py
       - adapt/test-csqtt-core-release-hash-guard.py
+      - adapt/test-csqtt-original-server-e2e.py
+      - adapt/test-csqtt-original-server-e2e-safety.py
       - .github/workflows/csqtt-core-deploy-regression.yml
   workflow_dispatch:
 permissions:
@@ -36,3 +40,5 @@ jobs:
         run: python3 adapt/test-csqtt-core-rollback-lifecycle.py
       - name: Mutation refusal and read-only status
         run: sudo python3 adapt/test-csqtt-core-deploy-guard-live.py
+      - name: Isolated panel API E2E mutation guard and guaranteed cleanup
+        run: python3 adapt/test-csqtt-original-server-e2e-safety.py
