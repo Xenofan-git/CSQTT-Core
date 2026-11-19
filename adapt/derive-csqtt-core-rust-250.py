@@ -28,6 +28,14 @@ spec=importlib.util.spec_from_file_location('csqtt_startup_cleanup_diag', Path(_
 cleanup_diag=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cleanup_diag)
 cleanup_diag.apply(dest/'proxy_route.rs')
+# Keep startup cleanup longer than a single iptables/ip command's 2s budget.
+# The timeout remains bounded; upstream sources stay pinned and untouched.
+spec=importlib.util.spec_from_file_location(
+    'csqtt_core_startup_budget',
+    Path(__file__).with_name('extend-csqtt-core-startup-cleanup-budget.py'))
+startup_budget=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(startup_budget)
+startup_budget.apply(dest/'main.rs')
 # Exercise SOCKS5 UDP ASSOCIATE against a loopback relay in the generated Core test suite.
 fixture=Path(__file__).with_name('socks5-udp-loopback-test.rs.txt').read_text()
 proxy=dest/'proxy_route.rs'

@@ -33,6 +33,8 @@ on:
       - adapt/test-csqtt-core-rollback-lifecycle.py
       - adapt/test-csqtt-core-deploy-guard-live.py
       - adapt/test-csqtt-core-release-hash-guard.py
+      - adapt/extend-csqtt-core-startup-cleanup-budget.py
+      - adapt/test-csqtt-core-startup-cleanup-budget.py
       - server-assets/deploy-csqtt-core-250.sh
   workflow_dispatch:
 

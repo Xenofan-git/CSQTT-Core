@@ -7,6 +7,8 @@ on:
       - adapt/derive-csqtt-core-rust-250.py
       - adapt/instrument-csqtt-core-startup-cleanup.py
       - adapt/test-csqtt-core-startup-cleanup-diag.py
+      - adapt/extend-csqtt-core-startup-cleanup-budget.py
+      - adapt/test-csqtt-core-startup-cleanup-budget.py
       - adapt/tproxy-udp-fd-budget.py
       - adapt/tproxy-udp-relay-port-isolation.py
       - adapt/tproxy-udp-packet-trace.py
@@ -34,6 +36,7 @@ jobs:
           set -euo pipefail
           python3 adapt/derive-csqtt-core-rust-250.py --upstream-root /tmp/csqtt-upstream --output /tmp/csqtt-candidate
           python3 adapt/test-csqtt-core-startup-cleanup-diag.py --source /tmp/csqtt-candidate/rust-server/proxy_route.rs
+          python3 adapt/test-csqtt-core-startup-cleanup-budget.py --source /tmp/csqtt-candidate/rust-server/main.rs --proxy-source /tmp/csqtt-candidate/rust-server/proxy_route.rs
           python3 adapt/test-tproxy-udp-relay-port-isolation.py --source /tmp/csqtt-candidate/rust-server/tproxy.rs
       - name: Compile ARM64 server release binary
         working-directory: /tmp/csqtt-candidate/rust-server
