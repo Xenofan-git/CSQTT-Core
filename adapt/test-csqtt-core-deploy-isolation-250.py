@@ -35,6 +35,12 @@ assert s.count('CSQTT_DEPLOY_OK')>=2
 snapshot=s.split("snapshot_existing_systemd() {",1)[1].split("\nrestore_previous_systemd() {",1)[0]
 restore=s.split("restore_previous_systemd() {",1)[1].split("\ncleanup_rollback_snapshot() {",1)[0]
 assert 'systemctl is-enabled --quiet csqtt-core' in snapshot
+# Incomplete/symlinked prior installation must not enter an unprotected cutover.
+assert 'local old_binary=/usr/local/bin/csqtt-core' in snapshot
+assert 'local old_unit=/etc/systemd/system/csqtt-core.service' in snapshot
+assert 'Previous CSQTT-Core systemd runtime is incomplete or symlinked' in snapshot
+assert snapshot.index('if [ ! -e "$old_binary" ]') < snapshot.index('ROLLBACK_DIR="$(mktemp')
+assert snapshot.index('if [ ! -f "$old_binary" ]') < snapshot.index('ROLLBACK_DIR="$(mktemp')
 assert 'ROLLBACK_WAS_ENABLED=1' in snapshot
 assert 'if [ "$ROLLBACK_WAS_ENABLED" -eq 1 ]; then' in restore
 assert 'systemctl enable csqtt-core' in restore

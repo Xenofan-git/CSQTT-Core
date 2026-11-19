@@ -59,8 +59,20 @@ ROLLBACK_WAS_ENABLED=0
 
 snapshot_existing_systemd() {
     [ "$DEPLOY_MODE" = systemd ] || return 0
-    [ -f /usr/local/bin/csqtt-core ] || return 0
-    [ -f /etc/systemd/system/csqtt-core.service ] || return 0
+    local old_binary=/usr/local/bin/csqtt-core
+    local old_unit=/etc/systemd/system/csqtt-core.service
+    # Fresh install is safe only when BOTH prior runtime paths are absent.
+    # A half-installed runtime or symlink cannot be upgraded without an
+    # unambiguous rollback snapshot. Fail before cutover, never fail-open.
+    if [ ! -e "$old_binary" ] && [ ! -L "$old_binary" ] &&
+       [ ! -e "$old_unit" ] && [ ! -L "$old_unit" ]; then
+        return 0
+    fi
+    if [ ! -f "$old_binary" ] || [ -L "$old_binary" ] ||
+       [ ! -f "$old_unit" ] || [ -L "$old_unit" ]; then
+        log_error "Previous CSQTT-Core systemd runtime is incomplete or symlinked; refusing upgrade without rollback snapshot"
+        return 1
+    fi
     ROLLBACK_DIR="$(mktemp -d /tmp/csqtt-core-rollback.XXXXXXXX)"
     chmod 700 "$ROLLBACK_DIR"
     systemctl is-active --quiet csqtt-core && ROLLBACK_WAS_ACTIVE=1 || true

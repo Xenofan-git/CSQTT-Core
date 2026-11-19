@@ -222,3 +222,87 @@ fi
                 )
                 print(f"PASS active={originally_active} enabled={originally_enabled} fail={fail or 'none'}")
 print(f"PASS {cases} isolated rollback behavior scenarios; host unchanged")
+
+# The first safety decision is whether to snapshot at all. An interrupted old
+# installation (only an ELF or only a systemd unit) must NOT be mistaken for
+# a clean install: deployment would otherwise overwrite the only known runtime
+# without a rollback lease. Reject dangling or externally pointed symlinks too.
+for prior_state in ("fresh", "binary-only", "unit-only",
+                    "symlink-binary", "symlink-unit", "complete"):
+    with tempfile.TemporaryDirectory(prefix="csqtt-prior-runtime-") as tmp:
+        root = Path(tmp)
+        for sub in ("bin", "systemd", "mockbin"):
+            (root/sub).mkdir()
+        binary = root/"bin/csqtt-core"
+        unit = root/"systemd/csqtt-core.service"
+        if prior_state in ("binary-only", "complete"):
+            binary.write_text("unchanged existing ELF\n")
+        if prior_state in ("unit-only", "complete"):
+            unit.write_text("ExecStart=existing\n")
+        if prior_state == "symlink-binary":
+            target = root/"external-old-binary"
+            target.write_text("external ELF must not be followed\n")
+            binary.symlink_to(target)
+            unit.write_text("ExecStart=existing\n")
+        if prior_state == "symlink-unit":
+            target = root/"external-old-unit"
+            target.write_text("external unit must not be followed\n")
+            unit.symlink_to(target)
+            binary.write_text("unchanged existing ELF\n")
+        (root/"active").write_text("no")
+        (root/"enabled").write_text("no")
+        ctl = root/"mockbin/systemctl"
+        ctl.write_text(systemctl)
+        ctl.chmod(0o755)
+        scoped = production
+        for old, new in (
+            ("/usr/local/bin/csqtt-core", str(binary)),
+            ("/etc/systemd/system/csqtt-core.service", str(unit)),
+            ("/usr/local/lib/csqtt-core", str(root/"helpers")),
+            ("/tmp/csqtt-core-rollback.XXXXXXXX", str(root/"rollback.XXXXXXXX")),
+        ):
+            scoped = scoped.replace(old, new)
+        script = f"""
+set -euo pipefail
+DEPLOY_MODE=systemd
+CSQTT_CONFIG_DIR={str(root/'config')!r}
+CSQTT_IFACE=csqtt-core0
+ROLLBACK_DIR=""
+ROLLBACK_ARMED=0
+ROLLBACK_WAS_ACTIVE=0
+ROLLBACK_WAS_ENABLED=0
+log_info() {{ :; }}
+log_warn() {{ :; }}
+log_error() {{ printf 'EXPECTED_ABORT:%s\\n' "$*" >&2; }}
+{scoped}
+result=success
+if snapshot_existing_systemd; then :; else result=failed; fi
+case {prior_state!r} in
+  fresh)
+    [ "$result" = success ]
+    [ "$ROLLBACK_ARMED" -eq 0 ]
+    ;;
+  complete)
+    [ "$result" = success ]
+    [ "$ROLLBACK_ARMED" -eq 1 ]
+    [ -f "$ROLLBACK_DIR/binary" ]
+    [ -f "$ROLLBACK_DIR/unit" ]
+    [ "$(stat -c %a "$ROLLBACK_DIR")" = 700 ]
+    ;;
+  *)
+    [ "$result" = failed ]
+    [ "$ROLLBACK_ARMED" -eq 0 ]
+    [ -z "$ROLLBACK_DIR" ]
+    [ -z "$(find {str(root)!r} -maxdepth 1 -name 'rollback.*' -print)" ]
+    ;;
+esac
+"""
+        env = dict(os.environ)
+        env.update(MOCK_ROOT=str(root), MOCK_FAIL_ACTION="",
+                   PATH=f"{root/'mockbin'}:{os.environ.get('PATH','/usr/bin:/bin')}")
+        test = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                              env=env, timeout=12)
+        assert test.returncode == 0, (
+            prior_state, test.returncode, test.stdout, test.stderr)
+        print(f"PASS previous-install snapshot guard={prior_state}")
+print("PASS incomplete/symlinked previous runtime is never silently upgraded")
