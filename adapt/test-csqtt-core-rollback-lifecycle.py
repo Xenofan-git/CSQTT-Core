@@ -59,11 +59,31 @@ set -eu
 case "$1" in 1) exit 0 ;; *) exit 44 ;; esac
 """
 
+curl = """#!/bin/sh
+set -eu
+case "$MOCK_FAIL_ACTION" in
+ web-unreachable) exit 7 ;;
+ web-http-403) printf '403'; exit 0 ;;
+ web-http-401) printf '401'; exit 0 ;;
+esac
+for arg in "$@"; do
+ case "$arg" in
+  https://127.0.0.1:47002/*)
+   [ "$arg" = "$MOCK_EXPECTED_PANEL_URL" ] || exit 8
+   printf '200'
+   exit 0 ;;
+  http://*|https://*) exit 9 ;;
+ esac
+done
+exit 10
+"""
+
 cases = 0
 for originally_active in (False, True):
     for originally_enabled in (False, True):
         fail_choices = ("", "install", "copy-unit", "enable" if originally_enabled else "disable") + (
-            ("restart", "restart-no-activate", "tun-missing") if originally_active else ()
+            ("restart", "restart-no-activate", "tun-missing", "web-unreachable", "web-http-403", "web-http-401")
+            if originally_active else ()
         )
         for fail in fail_choices:
             cases += 1
@@ -76,12 +96,12 @@ for originally_active in (False, True):
                 config = root/"config"
                 helpers = root/"helpers"
                 binary.write_text("old verified binary\n")
-                unit.write_text("ExecStart=old\n")
+                unit.write_text("ExecStart=/usr/local/bin/csqtt-core --listen 0.0.0.0:47000 --web-port 47002 --config-dir /etc/csqtt-core\n")
                 # Previously disabled old units may have no config directory
                 # at all. Candidate-owned files still must not survive rollback.
                 if originally_enabled:
                     config.mkdir()
-                    (config/"csqtt-core.env").write_text("OLD_ENV=ok\n")
+                    (config/"csqtt-core.env").write_text("OLD_ENV=ok\nCSQTT_WEB_SECRET_PATH=old-panel-secret\n")
                     (config/"deploy-overrides.json").write_text("OLD_OVERRIDE\n")
                     (config/"web_cert.pem").write_text("OLD_CERT\n")
                     (config/"web_key.pem").write_text("OLD_KEY\n")
@@ -97,7 +117,7 @@ for originally_active in (False, True):
                 (root/"active").write_text("yes" if originally_active else "no")
                 (root/"enabled").write_text("yes" if originally_enabled else "no")
                 for name, contents in (("systemctl", systemctl), ("ip", ip),
-                                       ("install", install), ("cp", cp), ("sleep", sleep)):
+                                       ("install", install), ("cp", cp), ("sleep", sleep), ("curl", curl)):
                     shim = root/"mockbin"/name
                     shim.write_text(contents)
                     shim.chmod(0o755)
@@ -114,6 +134,8 @@ set -euo pipefail
 DEPLOY_MODE=systemd
 CSQTT_CONFIG_DIR={str(config)!r}
 CSQTT_IFACE=csqtt-core0
+WEB_PORT=49999
+CSQTT_WEB_SECRET_PATH=candidate-secret-do-not-use
 ROLLBACK_DIR=""
 ROLLBACK_ARMED=0
 ROLLBACK_WAS_ACTIVE=0
@@ -125,6 +147,8 @@ log_error() {{ :; }}
 snapshot_existing_systemd
 [ "$ROLLBACK_WAS_ACTIVE" -eq {int(originally_active)} ]
 [ "$ROLLBACK_WAS_ENABLED" -eq {int(originally_enabled)} ]
+# The new candidate requests a different web port/path; the rollback MUST
+# use the old unit + old env rather than candidate settings.
 # Simulate a successful cutover stop/disable without consuming the fault
 # injection reserved for the subsequent rollback action. Candidate creates
 # the config dir when the old runtime lacked one.
@@ -145,7 +169,7 @@ echo new > {str(helpers/'network-up.sh')!r}
 echo newtun > {str(helpers/'tun-recover.sh')!r}
 echo newdocker > {str(helpers/'docker-prereq.sh')!r}
 if finish_deploy_rollback; then result=success; else result=failed; fi
-if [ -z "$MOCK_FAIL_ACTION" ]; then
+if [ -z "$MOCK_FAIL_ACTION" ] || [ "$MOCK_FAIL_ACTION" = web-http-401 ]; then
   [ "$result" = success ]
   [ "$ROLLBACK_ARMED" -eq 0 ]
   [ -z "$ROLLBACK_DIR" ]
@@ -153,9 +177,10 @@ if [ -z "$MOCK_FAIL_ACTION" ]; then
   [ "$(cat {str(root/'enabled')!r})" = {'yes' if originally_enabled else 'no'} ]
   [ "$(cat {str(root/'active')!r})" = {'yes' if originally_active else 'no'} ]
   [ "$(cat {str(binary)!r})" = 'old verified binary' ]
-  [ "$(cat {str(unit)!r})" = 'ExecStart=old' ]
+  grep -Fq -- '--web-port 47002' {str(unit)!r}
   if [ {int(originally_enabled)} -eq 1 ]; then
-    [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
+    grep -Fxq 'OLD_ENV=ok' {str(config/'csqtt-core.env')!r}
+  grep -Fxq 'CSQTT_WEB_SECRET_PATH=old-panel-secret' {str(config/'csqtt-core.env')!r}
     [ "$(cat {str(config/'deploy-overrides.json')!r})" = 'OLD_OVERRIDE' ]
     [ "$(cat {str(config/'web_cert.pem')!r})" = 'OLD_CERT' ]
     [ "$(cat {str(config/'web_key.pem')!r})" = 'OLD_KEY' ]
@@ -198,9 +223,10 @@ else
   [ "$(cat {str(root/'enabled')!r})" = {'yes' if originally_enabled else 'no'} ]
   [ "$(cat {str(root/'active')!r})" = {'yes' if originally_active else 'no'} ]
   [ "$(cat {str(binary)!r})" = 'old verified binary' ]
-  [ "$(cat {str(unit)!r})" = 'ExecStart=old' ]
+  grep -Fq -- '--web-port 47002' {str(unit)!r}
   if [ {int(originally_enabled)} -eq 1 ]; then
-    [ "$(cat {str(config/'csqtt-core.env')!r})" = 'OLD_ENV=ok' ]
+    grep -Fxq 'OLD_ENV=ok' {str(config/'csqtt-core.env')!r}
+  grep -Fxq 'CSQTT_WEB_SECRET_PATH=old-panel-secret' {str(config/'csqtt-core.env')!r}
     [ "$(cat {str(config/'deploy-overrides.json')!r})" = 'OLD_OVERRIDE' ]
     [ "$(cat {str(config/'web_cert.pem')!r})" = 'OLD_CERT' ]
     [ "$(cat {str(config/'web_key.pem')!r})" = 'OLD_KEY' ]
@@ -227,6 +253,8 @@ fi
 """
                 env = dict(os.environ)
                 env.update(MOCK_ROOT=str(root), MOCK_FAIL_ACTION=fail,
+                           MOCK_EXPECTED_PANEL_URL=("https://127.0.0.1:47002/old-panel-secret/"
+                                                    if originally_enabled else "https://127.0.0.1:47002/"),
                            PATH=f"{root/'mockbin'}:{os.environ.get('PATH','/usr/bin:/bin')}")
                 result = subprocess.run(["bash", "-c", sh], capture_output=True,
                                         text=True, env=env, timeout=15)
@@ -281,6 +309,8 @@ set -euo pipefail
 DEPLOY_MODE=systemd
 CSQTT_CONFIG_DIR={str(root/'config')!r}
 CSQTT_IFACE=csqtt-core0
+WEB_PORT=49999
+CSQTT_WEB_SECRET_PATH=candidate-secret-do-not-use
 ROLLBACK_DIR=""
 ROLLBACK_ARMED=0
 ROLLBACK_WAS_ACTIVE=0

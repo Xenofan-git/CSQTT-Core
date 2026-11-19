@@ -90,6 +90,55 @@ snapshot_existing_systemd() {
     log_info "Резервная копия предыдущего systemd runtime подготовлена"
 }
 
+# Verify the RESTORED runtime, never the failed candidate's WEB_PORT or
+# CSQTT_WEB_SECRET_PATH. Bind exclusively to loopback and do not log secrets.
+verify_rollback_web_panel() {
+    local unit=/etc/systemd/system/csqtt-core.service
+    local line old_port="" secret_path="" code attempt port_matches=0
+    [ -f "$unit" ] && [ ! -L "$unit" ] || return 1
+    while IFS= read -r line; do
+        case "$line" in
+            ExecStart=*)
+                if [[ "$line" =~ (^|[[:space:]])--web-port[[:space:]]+([0-9]{1,5})($|[[:space:]]) ]]; then
+                    old_port="${BASH_REMATCH[2]}"
+                    port_matches=$((port_matches + 1))
+                fi
+                ;;
+        esac
+    done < "$unit"
+    if [ "$port_matches" -ne 1 ] || [ "$old_port" -lt 1 ] || [ "$old_port" -gt 65535 ]; then
+        log_error "Cannot determine unique previous CSQTT web port from restored systemd unit"
+        return 1
+    fi
+
+    # Read the old secret path only AFTER restoring its saved env file. The
+    # candidate's process environment may point to a different login URL.
+    if [ -f "$CSQTT_CONFIG_DIR/csqtt-core.env" ]; then
+        secret_path="$(grep -m1 -E '^[[:space:]]*(export[[:space:]]+)?CSQTT_WEB_SECRET_PATH=' "$CSQTT_CONFIG_DIR/csqtt-core.env" 2>/dev/null | cut -d= -f2- | tr -d "\"'" | tr -d '[:space:]' || true)"
+    fi
+    while [ "${secret_path#/}" != "$secret_path" ]; do secret_path="${secret_path#/}"; done
+    while [ "${secret_path%/}" != "$secret_path" ]; do secret_path="${secret_path%/}"; done
+    case "$secret_path" in
+        *..*|*[!a-zA-Z0-9_./~-]*)
+            log_error "Invalid previous CSQTT secret-path format; refusing false-positive rollback health check"
+            return 1 ;;
+    esac
+    local health_url="https://127.0.0.1:${old_port}/${secret_path}"
+    [ -z "$secret_path" ] || health_url="${health_url}/"
+    for attempt in 1 2 3 4 5; do
+        code="$(curl --silent --insecure --noproxy '*' --output /dev/null --write-out '%{http_code}' \
+            --connect-timeout 1 --max-time 2 "$health_url" 2>/dev/null || true)"
+        case "$code" in
+            200|301|302|401)
+                log_info "Previous CSQTT HTTPS panel restored (HTTP $code)"
+                return 0 ;;
+        esac
+        sleep 1
+    done
+    log_error "Previous CSQTT HTTPS panel unavailable after rollback"
+    return 1
+}
+
 restore_previous_systemd() {
     [ "$ROLLBACK_ARMED" -eq 1 ] || return 0
     # Preserve the rollback lease until every restoration step has succeeded.
@@ -151,6 +200,9 @@ restore_previous_systemd() {
             sleep 1
         done
         [ "$ready" -eq 1 ] || return 1
+        # A running unit + TUN is not sufficient: ensure the previous server's
+        # own HTTPS login is reachable before deleting its recovery snapshot.
+        verify_rollback_web_panel || return 1
     fi
     log_info "Предыдущий systemd runtime восстановлен"
     ROLLBACK_ARMED=0

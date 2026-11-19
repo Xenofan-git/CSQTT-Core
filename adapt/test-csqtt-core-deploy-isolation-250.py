@@ -60,6 +60,18 @@ assert restore.index('if [ -d "$CSQTT_CONFIG_DIR" ]; then') < restore.index('if 
 assert restore.index('rm -f -- "$CSQTT_CONFIG_DIR/$rollback_managed_file"') < restore.index('cp -a "$ROLLBACK_DIR/config/."')
 # An unsuccessful rollback must remain armed and keep the private snapshot.
 assert restore.index('ROLLBACK_ARMED=0') > restore.index('systemctl restart csqtt-core')
+# A restored TUN alone is insufficient: the old, not candidate, HTTPS panel
+# must answer before a rollback is marked complete and its snapshot erased.
+web_probe=s.split("verify_rollback_web_panel() {",1)[1].split("\nrestore_previous_systemd() {",1)[0]
+assert 'local unit=/etc/systemd/system/csqtt-core.service' in web_probe
+assert '--web-port' in web_probe and 'old_port' in web_probe
+assert 'CSQTT_WEB_SECRET_PATH=' in web_probe
+assert 'https://127.0.0.1:' in web_probe
+assert "--noproxy '*'" in web_probe
+assert 'http://127.0.0.1:' not in web_probe
+assert '200|301|302|401' in web_probe
+assert 'verify_rollback_web_panel || return 1' in restore
+assert restore.index('verify_rollback_web_panel || return 1') < restore.index('ROLLBACK_ARMED=0')
 retention=s.split("cleanup_rollback_snapshot() {",1)[1].split("\nvalidate_port() {",1)[0]
 assert 'if [ "$ROLLBACK_ARMED" -eq 1 ]; then' in retention
 assert 'finish_deploy_rollback() {' in retention
