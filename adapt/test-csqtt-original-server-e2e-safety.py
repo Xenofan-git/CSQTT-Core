@@ -37,11 +37,25 @@ class FakeResponse:
 
 
 class FakeOpener:
-    def __init__(self, export_fails=False):
+    def __init__(self, export_fails=False, lost_group_reply=False, lost_client_reply=False):
         self.export_fails = export_fails
+        self.lost_group_reply = lost_group_reply
+        self.lost_client_reply = lost_client_reply
         self.group = None
+        self.client = None
+        # Nonempty preexisting records ensure the E2E cannot pass merely by
+        # deleting the entire database or wiping unrelated clients/groups.
+        self.existing_group = {"id": "grp_preexisting", "name": "Do not touch",
+                               "routing_rule_id": ""}
+        self.existing_client = {"password": "baseline-only-placeholder",
+                                "name": "Existing account", "group_id": "grp_preexisting",
+                                "workers": 3}
         self.creates = 0
         self.deletes = 0
+        self.client_creates = 0
+        self.client_deletes = 0
+        self.group_updates = 0
+        self.client_updates = 0
         self.cookie_seen = False
 
     def open(self, req, timeout=None):
@@ -62,16 +76,51 @@ class FakeOpener:
         if (method, path) == ("POST", "/api/login"):
             return FakeResponse(200, {"ok": True}, {"Set-Cookie": "csqtt_session=test; HttpOnly; Secure"})
         if (method, path) == ("GET", "/api/clients"):
-            return FakeResponse(200, [])
+            return FakeResponse(200, [self.existing_client] +
+                                ([self.client] if self.client else []))
         if (method, path) == ("GET", "/api/groups"):
-            return FakeResponse(200, [self.group] if self.group else [])
+            return FakeResponse(200, [self.existing_group] +
+                                ([self.group] if self.group else []))
         if (method, path) == ("POST", "/api/groups"):
             self.creates += 1
             data = json.loads(req.data)
             assert data["name"].startswith("E2E test ")
             self.group = {"id": "grp_mock_test", "name": data["name"]}
+            if self.lost_group_reply:
+                raise ConnectionResetError("injected lost group response")
             return FakeResponse(200, {"id": self.group["id"]})
+        if (method, path) == ("PUT", "/api/groups/grp_mock_test"):
+            data = json.loads(req.data)
+            assert data["name"].startswith("E2E edited ")
+            self.group["name"] = data["name"]
+            self.group_updates += 1
+            return FakeResponse(200, {"ok": True})
+        if (method, path) == ("POST", "/api/clients"):
+            data = json.loads(req.data)
+            assert data["group_id"] == "grp_mock_test"
+            assert data["workers"] == 3 and data["days"] == 3
+            self.client = {
+                "password": data["password"], "name": data["name"],
+                "group_id": data["group_id"], "workers": data["workers"],
+            }
+            self.client_creates += 1
+            if self.lost_client_reply:
+                raise ConnectionResetError("injected lost client response")
+            return FakeResponse(200, {"password": self.client["password"]})
+        if method == "POST" and path.startswith("/api/clients/"):
+            data = json.loads(req.data)
+            assert self.client and path == "/api/clients/" + self.client["password"]
+            assert data["days"] == 5 and data["workers"] == 4
+            self.client.update({k: data[k] for k in ("name", "group_id", "workers")})
+            self.client_updates += 1
+            return FakeResponse(200, {"ok": True})
+        if method == "DELETE" and path.startswith("/api/clients/"):
+            assert self.client and path == "/api/clients/" + self.client["password"]
+            self.client_deletes += 1
+            self.client = None
+            return FakeResponse(200, {"ok": True})
         if (method, path) == ("DELETE", "/api/groups/grp_mock_test"):
+            assert self.client is None, "group must not cascade-delete its test client"
             self.deletes += 1
             self.group = None
             return FakeResponse(200, {"ok": True})
@@ -118,20 +167,31 @@ for bad in (
 success = FakeOpener()
 run_script(BASE, success)
 assert success.creates == success.deletes == 1 and success.group is None
+assert success.client_creates == success.client_deletes == 1 and success.client is None
+assert success.group_updates == success.client_updates == 1
+assert success.existing_group["name"] == "Do not touch"
+assert success.existing_client["name"] == "Existing account"
 assert success.cookie_seen
-print("PASS successful API E2E removes exactly one mock group")
+print("PASS mocked create/update/read/delete client and group; both fully cleaned")
 
-failure = FakeOpener(export_fails=True)
-observed_output = io.StringIO()
-with redirect_stdout(observed_output):
-    try:
-        run_script(BASE, failure)
-    except RuntimeError as exc:
-        assert "original-format export" in str(exc)
-    else:
-        raise AssertionError("injected export error was not reported")
-assert "FAIL original-format export" in observed_output.getvalue()
-assert "PASS cleanup test group" in observed_output.getvalue()
-assert failure.creates == failure.deletes == 1 and failure.group is None
-print("PASS injected API failure reported and mock group cleaned in finally")
-print("PASS destructive E2E guard and cleanup tests, no network or real credentials")
+for reason, failure, expected, expected_clients in (
+    ("export failure", FakeOpener(export_fails=True), "original-format export", 1),
+    ("lost group reply", FakeOpener(lost_group_reply=True), "create group", 0),
+    ("lost client reply", FakeOpener(lost_client_reply=True), "create isolated client", 1),
+):
+    observed_output = io.StringIO()
+    with redirect_stdout(observed_output):
+        try:
+            run_script(BASE, failure)
+        except RuntimeError as exc:
+            assert expected in str(exc), (reason, str(exc))
+        else:
+            raise AssertionError("injected failure was not reported: " + reason)
+    assert "PASS cleanup test group" in observed_output.getvalue()
+    assert failure.creates == failure.deletes == 1 and failure.group is None
+    assert failure.client_creates == failure.client_deletes == expected_clients
+    assert failure.client is None
+    assert failure.existing_group["name"] == "Do not touch"
+    assert failure.existing_client["name"] == "Existing account"
+    print("PASS " + reason + " cleans all owned objects, including after committed lost response")
+print("PASS destructive E2E guard, CRUD and cleanup tests, no network or real credentials")
