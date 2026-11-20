@@ -24,15 +24,36 @@ def verify(http: str, bridge: str, tests: str, workflow: str) -> None:
     ):
         if token not in http:
             raise AssertionError("CSQTT Core HTTP boundary missing: "+token)
-    if bridge.count('import legacy "lalune-desktop/Libs"')!=1:
+    request_source = Path("adapt/csqtt_core_deploy_request_linux.go").read_text()
+    request_tests = Path("adapt/csqtt_core_deploy_request_test.go").read_text()
+    for token in ("func csqttValidateDeployRequest(raw string) error",
+                  "csqttDeployDevice.MatchString(req.DeviceID)",
+                  "csqttDeployAlnum.MatchString(req.WebPassword)",
+                  "req.DockerInstall",
+                  "ssh == core || ssh == web || core == web"):
+        if token not in request_source:
+            raise AssertionError("CSQTT Core owned Deploy validation missing: "+token)
+    for token in ("TestCSQTTCoreOwnDeployPreflightRejectsBadRequestsBeforeTransport",
+                  "TestCSQTTCoreOwnDeployPreflightMalformedJSON",
+                  "delegate:func(got string)bool"):
+        if token not in request_tests:
+            raise AssertionError("CSQTT Core request preflight tests missing: "+token)
+    for filename in ("csqtt_core_deploy_request_linux.go","csqtt_core_deploy_request_test.go"):
+        expected = "cp adapt/"+filename+" upstream-lalune/Desktop/Linux/"+filename
+        if expected not in workflow:
+            raise AssertionError("owned CSQTT Core Deploy request source omitted from Linux build: "+filename)
+    if bridge.count('legacy "lalune-desktop/Libs"')!=1:
         raise AssertionError("deploy backend still depends on unexpected packages")
     for token in (
         'type csqttDeployBackend interface',
         'type csqttLegacyDeployBackend struct',
         'legacy.DeployProtocol(requestJSON)',
+        'csqttValidateDeployRequest(requestJSON)',
+        'backend.preflightError = "[deploy] " + err.Error()',
+        'func (backend *csqttLegacyDeployBackend) DeployLog() string',
         'legacy.DeployLog()',
         'legacy.DeployBusy()',
-        'var csqttDeployService csqttDeployBackend = csqttLegacyDeployBackend{}',
+        'var csqttDeployService csqttDeployBackend = &csqttLegacyDeployBackend{}',
     ):
         if token not in bridge:
             raise AssertionError("original deploy implementation is not transparently wrapped: "+token)
@@ -41,6 +62,7 @@ def verify(http: str, bridge: str, tests: str, workflow: str) -> None:
         'func TestCSQTTCoreDeployBridgeBlocksPublicRequests',
         'func TestCSQTTCoreDeviceIDDoesNotNeedExternalGoPackage',
         'func TestCSQTTCoreDeployBridgeRefusesMalformedRequestBeforeBackend',
+        # Own request preflight tests live in a separate Go test file.
         'csqttDeployService = stub',
         'http.StatusForbidden',
     ):
@@ -84,6 +106,8 @@ def main() -> None:
     must_refuse(http,bridge,tests,
                 workflow.replace('go test -race -count=1 .','echo no-race-testing',1),
                 "Go race acceptance silently removed")
+    must_refuse(http,bridge.replace('csqttValidateDeployRequest(requestJSON)', 'nil',1),
+                tests, workflow, "owned CSQTT Deploy request guard removed")
     print("PASS CSQTT Core HTTP panel has narrow Deploy and settings interfaces")
     print("PASS compatibility adapter preserves existing deploy implementation; full Go VM build required")
 

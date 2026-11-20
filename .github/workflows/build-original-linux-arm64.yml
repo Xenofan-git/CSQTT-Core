@@ -307,6 +307,8 @@ jobs:
           cp adapt/headless_main.go upstream-lalune/Desktop/Linux/headless_main.go
           cp adapt/csqtt_core_deploy_bridge_linux.go upstream-lalune/Desktop/Linux/csqtt_core_deploy_bridge_linux.go
           cp adapt/csqtt_core_deploy_bridge_test.go upstream-lalune/Desktop/Linux/csqtt_core_deploy_bridge_test.go
+          cp adapt/csqtt_core_deploy_request_linux.go upstream-lalune/Desktop/Linux/csqtt_core_deploy_request_linux.go
+          cp adapt/csqtt_core_deploy_request_test.go upstream-lalune/Desktop/Linux/csqtt_core_deploy_request_test.go
           cp adapt/headless_main_test.go upstream-lalune/Desktop/Linux/headless_main_test.go
           cp adapt/headless_api_contract_test.go upstream-lalune/Desktop/Linux/headless_api_contract_test.go
           cp adapt/vktoken_input_test.go upstream-lalune/Desktop/Libs/vktoken_input_test.go

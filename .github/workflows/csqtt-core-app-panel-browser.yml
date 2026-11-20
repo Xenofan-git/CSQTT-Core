@@ -16,6 +16,8 @@ on:
       - adapt/test-csqtt-core-go-api-boundary.py
       - adapt/csqtt_core_deploy_bridge_linux.go
       - adapt/csqtt_core_deploy_bridge_test.go
+      - adapt/csqtt_core_deploy_request_linux.go
+      - adapt/csqtt_core_deploy_request_test.go
       - adapt/apply-pinned-original-linux-arm64-policy.py
       - adapt/nanopi.js
       - captcha-bridge/manifest.json
@@ -36,6 +38,8 @@ on:
       - adapt/test-csqtt-core-go-api-boundary.py
       - adapt/csqtt_core_deploy_bridge_linux.go
       - adapt/csqtt_core_deploy_bridge_test.go
+      - adapt/csqtt_core_deploy_request_linux.go
+      - adapt/csqtt_core_deploy_request_test.go
       - adapt/apply-pinned-original-linux-arm64-policy.py
       - adapt/nanopi.js
       - captcha-bridge/manifest.json

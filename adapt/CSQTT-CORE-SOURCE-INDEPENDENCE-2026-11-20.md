@@ -70,6 +70,23 @@ This does NOT remove the compiled Go/Linux runner/Libs nor DeployManager;
 it merely makes the HTTP panel replaceable and confines one category of
 external dependency. Do not describe it as a full independent backend.
 
+## Owned CSQTT Core Deploy preflight (new boundary)
+
+The CSQTT Core Deploy adapter now owns request parsing and fail-closed
+validation for CSQTT-specific input: endpoint syntax, SSH user, port range
+and collisions, Docker mode, installer secrets, web credentials and device
+ID. Errors are fixed diagnostics with no submitted SSH or web credentials
+in the log. The adapter forwards the **unmodified** valid JSON request to
+the previous Deploy runner, which still performs its own target-DNS/IP
+checks and remote SSH/SCP/installer logic. Uninstall remains possible
+without new web credentials; other protocol behavior is unchanged.
+
+The own Go test exercises a table of invalid/valid requests and proves
+invalid input never calls the injected transport. Actual Go compilation
+and execution in integrated ARM64 CI must be verified separately. This
+does **not** mean the old Go Deploy transport or external Rust
+DeployManager have been removed.
+
 ## Next work (not yet done)
 
 1. Replace Go Libs and external Linux runner with CSQTT Core-owned module,
