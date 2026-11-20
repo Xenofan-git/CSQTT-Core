@@ -40,6 +40,11 @@ jobs:
           set -euo pipefail
           df -h .
           free -h
+          # Original rust-client/sni.rs uses include_str!("../domains.txt").
+          # The pinned 2.5.0 repository stores this file in the app assets.
+          # Stage the ORIGINAL asset without modifying any Rust source.
+          cp /tmp/original-csqtt-250/app/src/main/assets/domains.txt /tmp/original-csqtt-250/domains.txt
+          echo '3783f488db5378a9d91120c43f874bf70cab62bd0a799b6951f7859a492cecd1  /tmp/original-csqtt-250/domains.txt' | sha256sum -c -
           cargo build --release --locked --bin client
           file target/release/client
           file target/release/client | grep -Fq 'ARM aarch64'
