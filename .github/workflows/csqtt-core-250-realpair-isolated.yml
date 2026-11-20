@@ -1,0 +1,137 @@
+name: CSQTT Core 2.5.0 real client-server protocol E2E (isolated ARM64)
+on:
+  push:
+    branches: [test/csqtt-250-native-client-20261121]
+    paths:
+      - .github/workflows/csqtt-core-250-realpair-isolated.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-v250-realpair:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 75
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_DEV_OPT_LEVEL: "1"
+      CSQTT_TEST_NS: csqttv250
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned Rust 1.97.1
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+      - name: Original 2.5.0 source and original matched APK server
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          git clone --depth 1 --branch v2.5.0 https://github.com/amurcanov/csqtt.git /tmp/csqtt-original
+          test "$(git -C /tmp/csqtt-original rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
+          cp /tmp/csqtt-original/app/src/main/assets/domains.txt /tmp/csqtt-original/domains.txt
+          echo '3783f488db5378a9d91120c43f874bf70cab62bd0a799b6951f7859a492cecd1  /tmp/csqtt-original/domains.txt' | sha256sum -c -
+          curl -fL --retry 3 https://github.com/amurcanov/csqtt/releases/download/v2.5.0/CSQTT-arm64-v8a.apk -o /tmp/csqtt-original.apk
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          z=zipfile.ZipFile('/tmp/csqtt-original.apk')
+          p=Path('/tmp/csqtt-official-server')
+          p.write_bytes(z.read('assets/csqtt-linux-arm64'))
+          p.chmod(0o755)
+          PY
+          file /tmp/csqtt-official-server | grep -F 'ARM aarch64'
+          test "$(/tmp/csqtt-official-server --protocol-revision)" = CSQTT-WIRE-3
+          echo 'ORIGINAL_250_ARM64_SERVER_VERIFIED'
+      - name: Build client integration-test executable from unmodified 2.5.0 sources
+        shell: bash
+        working-directory: /tmp/csqtt-original/rust-client
+        run: |
+          set -euo pipefail
+          cargo test --locked --bin client --no-run --message-format=json > /tmp/csqtt-250-build-jsonl 2>/tmp/csqtt-250-build-stderr || {
+            tail -70 /tmp/csqtt-250-build-stderr
+            exit 1
+          }
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          entries=[]
+          for line in Path('/tmp/csqtt-250-build-jsonl').read_text().splitlines():
+            try: obj=json.loads(line)
+            except ValueError: continue
+            if obj.get('reason')=='compiler-artifact' and obj.get('executable') and obj.get('profile',{}).get('test'):
+              entries.append(obj['executable'])
+          assert len(entries)==1,entries
+          p=Path(entries[0]); assert p.is_file()
+          Path('/tmp/csqtt-250-test-executable').write_text(str(p))
+          print('ORIGINAL_RUST_CLIENT_TEST_BINARY',p)
+          PY
+          file "$(cat /tmp/csqtt-250-test-executable)" | grep -F 'ARM aarch64'
+      - name: Start real original 2.5.0 server with network-isolated TUN
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ip
+          sudo test -c /dev/net/tun
+          sudo ip netns add "$CSQTT_TEST_NS"
+          sudo ip -n "$CSQTT_TEST_NS" link set lo up
+          test -z "$(sudo ip -n "$CSQTT_TEST_NS" -4 route show default)"
+          sudo ip netns exec "$CSQTT_TEST_NS" /tmp/csqtt-official-server \
+            --listen 127.0.0.1:46920 --web-port 46921 \
+            --config-dir /tmp/csqtt-test-250-realpair \
+            --password e2e-local-password-20260830 \
+            --web-user e2e --web-pass e2e-test-password \
+            > /tmp/csqtt-250-real-server.log 2>&1 &
+          printf '%s\n' "$!" > /tmp/csqtt-250-server-pid
+          sleep 5
+          kill -0 "$(cat /tmp/csqtt-250-server-pid)"
+          sudo ip netns exec "$CSQTT_TEST_NS" ss -lun | grep -F ':46920'
+          sudo ip -n "$CSQTT_TEST_NS" addr show csqtt1
+          echo 'ORIGINAL_SERVER_RUNNING_INSIDE_ISOLATED_NETNS'
+      - name: Real original 2.5.0 client session via synthetic local TURN and independent server
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_BIN="$(cat /tmp/csqtt-250-test-executable)"
+          set +e
+          timeout 110 sudo ip netns exec "$CSQTT_TEST_NS" \
+            env CSQTT_E2E_PEER=127.0.0.1:46920 \
+            "$TEST_BIN" windows_client_reaches_wsl_server_through_a_real_turn_channel_and_dispatcher \
+            --ignored --test-threads=1 --nocapture > /tmp/csqtt-250-realpair-client.log 2>&1
+          code=$?
+          set -e
+          tail -65 /tmp/csqtt-250-realpair-client.log
+          if [ "$code" -ne 0 ] || ! grep -q '1 passed; 0 failed;' /tmp/csqtt-250-realpair-client.log; then
+            echo "CLIENT_SERVER_E2E_NOT_YET_VERIFIED code=$code"
+            tail -65 /tmp/csqtt-250-real-server.log
+            exit 1
+          fi
+          echo 'ORIGINAL_250_CLIENT_SERVER_REAL_TURN_E2E_PASS'
+      - name: Check GETCONF timeout recovery on actual isolated client-server pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_BIN="$(cat /tmp/csqtt-250-test-executable)"
+          set +e
+          timeout 130 sudo ip netns exec "$CSQTT_TEST_NS" \
+            env CSQTT_E2E_PEER=127.0.0.1:46920 \
+            "$TEST_BIN" getconf_timeout_recovers_without_terminating_the_tunnel \
+            --ignored --test-threads=1 --nocapture > /tmp/csqtt-250-recovery.log 2>&1
+          code=$?
+          set -e
+          tail -65 /tmp/csqtt-250-recovery.log
+          if [ "$code" -ne 0 ] || ! grep -q '1 passed; 0 failed;' /tmp/csqtt-250-recovery.log; then
+            echo "RECOVERY_E2E_NOT_YET_VERIFIED code=$code"
+            tail -60 /tmp/csqtt-250-real-server.log
+            exit 1
+          fi
+          echo 'ORIGINAL_250_CLIENT_SERVER_GETCONF_RECOVERY_PASS'
+      - name: Isolated test cleanup
+        if: always()
+        shell: bash
+        run: |
+          sudo ip netns pids "$CSQTT_TEST_NS" 2>/dev/null | xargs -r sudo kill 2>/dev/null || true
+          sudo ip netns delete "$CSQTT_TEST_NS" 2>/dev/null || true
+          if [ -f /tmp/csqtt-250-real-server.log ]; then tail -25 /tmp/csqtt-250-real-server.log; fi
+          echo ISOLATED_250_TEST_ENV_CLEANED
