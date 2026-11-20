@@ -8,12 +8,16 @@ on:
       - adapt/csqtt-panel-preview.html
       - adapt/test-csqtt-panel-browser.py
       - adapt/test-csqtt-panel-contract.py
+      - adapt/test-csqtt-panel-api-method-contract.py
+      - adapt/headless_main.go
       - .github/workflows/csqtt-core-app-panel-browser.yml
   pull_request:
     paths:
       - adapt/csqtt-panel-preview.html
       - adapt/test-csqtt-panel-browser.py
       - adapt/test-csqtt-panel-contract.py
+      - adapt/test-csqtt-panel-api-method-contract.py
+      - adapt/headless_main.go
       - .github/workflows/csqtt-core-app-panel-browser.yml
   workflow_dispatch:
 
@@ -29,9 +33,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Validate seven tabs and headless API contracts
+      - name: Validate seven tabs, route existence and actual Go API verbs
         run: |
           python adapt/test-csqtt-panel-contract.py
+          python adapt/test-csqtt-panel-api-method-contract.py
       - name: Prepare isolated Chromium/Playwright browser test
         run: |
           python -m pip install --disable-pip-version-check 'playwright==1.56.0'

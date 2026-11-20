@@ -29,6 +29,7 @@ on:
       - adapt/test-csqtt-live-authenticated-browser-readonly-guard.py
       - adapt/test-csqtt-panel-browser.py
       - adapt/test-csqtt-panel-contract.py
+      - adapt/test-csqtt-panel-api-method-contract.py
       - .github/workflows/csqtt-core-app-panel-browser.yml
       - adapt/test-original-server-all-dialogs-browser.py
       - .github/workflows/csqtt-core-server-panel-browser.yml
