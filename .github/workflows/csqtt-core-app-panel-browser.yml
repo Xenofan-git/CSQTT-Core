@@ -1,0 +1,47 @@
+name: CSQTT Core seven-tab app browser acceptance
+
+on:
+  push:
+    branches:
+      - fix/direct-dnsmasq-dualstack-production
+    paths:
+      - adapt/csqtt-panel-preview.html
+      - adapt/test-csqtt-panel-browser.py
+      - adapt/test-csqtt-panel-contract.py
+      - .github/workflows/csqtt-core-app-panel-browser.yml
+  pull_request:
+    paths:
+      - adapt/csqtt-panel-preview.html
+      - adapt/test-csqtt-panel-browser.py
+      - adapt/test-csqtt-panel-contract.py
+      - .github/workflows/csqtt-core-app-panel-browser.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  seven-tab-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate seven tabs and headless API contracts
+        run: |
+          python adapt/test-csqtt-panel-contract.py
+      - name: Prepare isolated Chromium/Playwright browser test
+        run: |
+          python -m pip install --disable-pip-version-check 'playwright==1.56.0'
+          if command -v google-chrome >/dev/null 2>&1; then
+            echo "CSQTT_TEST_CHROMIUM=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null 2>&1; then
+            echo "CSQTT_TEST_CHROMIUM=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            python -m playwright install --with-deps chromium
+          fi
+      - name: Run seven-tab Desktop/Mobile mock API browser acceptance
+        run: |
+          python adapt/test-csqtt-panel-browser.py

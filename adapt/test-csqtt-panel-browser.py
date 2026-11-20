@@ -17,7 +17,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(".").resolve()
 HTML = ROOT / "adapt" / "csqtt-panel-preview.html"
 EXPECTED = ["connect", "settings", "deploy", "logs", "direct", "route", "singbox"]
-WIDTHS = [390, 768, 1280]
+WIDTHS = [390, 768, 1280, 1440, 1920]
 
 
 class QuietHandler(SimpleHTTPRequestHandler):
@@ -688,7 +688,7 @@ def main():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
-    print("CSQTT_CHROMIUM_UI_SMOKE_PASS widths=320,360,390,768,1280 tabs=7 singbox-config-api=PASS profile-api=PASS connect-disconnect=PASS tunnel-settings=PASS direct-settings-api=PASS deploy-api=PASS socks5-live-status=PASS socks5-address-hidden-when-inactive=PASS logs=PASS captcha-bridge-trusted-origin=PASS captcha-bridge-fail-closed=PASS")
+    print(f"CSQTT_CHROMIUM_UI_SMOKE_PASS widths={','.join(map(str, WIDTHS))} tabs=7 singbox-config-api=PASS profile-api=PASS connect-disconnect=PASS tunnel-settings=PASS direct-settings-api=PASS deploy-api=PASS socks5-live-status=PASS socks5-address-hidden-when-inactive=PASS logs=PASS captcha-bridge-trusted-origin=PASS captcha-bridge-fail-closed=PASS")
 
 
 if __name__ == "__main__":

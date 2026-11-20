@@ -27,6 +27,9 @@ on:
       - adapt/test-csqtt-live-login-responsive.py
       - adapt/test-csqtt-live-authenticated-browser-readonly.py
       - adapt/test-csqtt-live-authenticated-browser-readonly-guard.py
+      - adapt/test-csqtt-panel-browser.py
+      - adapt/test-csqtt-panel-contract.py
+      - .github/workflows/csqtt-core-app-panel-browser.yml
       - adapt/test-original-server-all-dialogs-browser.py
       - .github/workflows/csqtt-core-server-panel-browser.yml
       - adapt/test-csqtt-original-server-e2e.py
