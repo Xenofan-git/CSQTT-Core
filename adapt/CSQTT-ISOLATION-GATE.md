@@ -64,7 +64,7 @@ Pinned references used for comparison:
 
 - LaLune desktop Linux implementation: `Endlad2/LaLune@e4a6d08b63aef6025bf8ad8f77da660ea552e04b`, file `Desktop/Linux/app_linux.go`.
 - CSQTT server: `amurcanov/csqtt@v2.1.9`, files `app/src/main/assets/deploy.sh`, `rust-server/net_setup.rs`, `rust-server/tun_device.rs`, and `rust-server/protocol.rs`.
-- Integration patcher: `adapt/patch-csqtt-lalune-source.py` in this repository.
+- Integration patcher: `adapt/patch-csqtt-core-source.py` in this repository.
 
 ### Confirmed differences
 

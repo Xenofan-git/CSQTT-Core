@@ -1,12 +1,12 @@
-# LaLune CSQTT CAPTCHA Bridge
+# CSQTT Core CAPTCHA Bridge
 
-The optional Manifest V3 bridge observes VK Smart CAPTCHA completion on `id.vk.com` / `id.vk.ru` and returns the resulting `success_token` to the waiting LaLune panel.
+The optional Manifest V3 bridge observes VK Smart CAPTCHA completion on `id.vk.com` / `id.vk.ru` and returns the resulting `success_token` to the waiting CSQTT Core panel.
 
 ## Configure the trusted panel first
 
 1. Open the extension's **Details** page.
 2. Open **Extension options**.
-3. Enter the exact LaLune panel origin, for example `https://nanopi.example.com` or `http://192.168.1.10:47002`.
+3. Enter the exact CSQTT Core panel origin, for example `https://nanopi.example.com` or `http://192.168.1.10:47002`.
 4. Save the setting, then open the VK CAPTCHA flow from the panel.
 
 Only the explicitly saved origin is used as the return destination. The bridge ignores `lalune_panel` URL fragments and `document.referrer`. If no valid trusted origin is configured, the token is not redirected anywhere.
@@ -27,7 +27,7 @@ The page fragment/referrer never selects the destination. The panel still consum
 2. Enable Developer mode.
 3. Choose Load unpacked and select this `captcha-bridge` directory.
 4. Open the extension's Details → Extension options and configure the panel origin.
-5. Open the LaLune panel and connect normally.
+5. Open the CSQTT Core panel and connect normally.
 
 ## Android
 

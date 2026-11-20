@@ -26,4 +26,4 @@ jobs:
       - name: Validate both production workflows
         run: |
           set -euo pipefail
-          $(go env GOPATH)/bin/actionlint -color -ignore 'shellcheck' -verbose .github/workflows/build-original-linux-arm64.yml .github/workflows/csqtt-lalune-arm64-vm-test.yml
+          $(go env GOPATH)/bin/actionlint -color -ignore 'shellcheck' -verbose .github/workflows/build-original-linux-arm64.yml .github/workflows/csqtt-core-arm64-system-vm-test.yml

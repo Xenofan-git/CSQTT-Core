@@ -89,15 +89,15 @@ for token in (
     "border:2px solid #92949b",
     "width:min(900px,calc(100% - 34px))",
     "v2.1.9",
-    "CSQTT · NanoPi ARM64",
-    "Механизм LaLune используется только для автоматического получения VK-токена.",
+    "CSQTT Core · NanoPi ARM64",
+    "Автоматическое получение VK-токена реализовано отдельным компонентом.",
     "width:390px;min-width:390px;max-width:390px",
 ):
     if token not in html:
         raise SystemExit("CSQTT 2.5.0 visual token missing: " + token)
 
 # Preserve CSQTT's two independent authentication selectors. The core accepts
-# legacy/vkcalls/auto_js for credential acquisition; LaLune captchaMode remains
+# legacy/vkcalls/auto_js for credential acquisition; CSQTT Core captchaMode remains
 # a separate automatic/manual challenge policy.
 for token in (
     'id="vkAuthMode"',
@@ -205,8 +205,8 @@ if "failed.push(names[i])" not in js or "'API частично · '+failed.lengt
 
 # renderStatus must not overwrite refreshAll() partial-failure diagnostics.
 # Catch browser-script syntax regressions that static route/button checks cannot see.
-if not re.search(r"async\s+function\s+refreshInfo\s*\(\)", js):
-    raise SystemExit("refreshInfo uses await and must be declared async")
+if 'id="laluneUpdate"' in html or '/updates/lalune' in js:
+    raise SystemExit("obsolete unrelated updater must not appear in the CSQTT Core native UI")
 
 if "function renderStatus(){" not in js or "function fillSettings(){" not in js:
     raise SystemExit("renderStatus function could not be isolated for API-status regression check")
@@ -219,9 +219,9 @@ if "if(!answer){toast('Введите ответ CAPTCHA или откройте
     raise SystemExit("CAPTCHA form does not validate an empty answer before calling the backend")
 
 # Uninstall confirmation must describe the actual full namespaced runtime cleanup.
-if "Полностью удалить runtime LaLune CSQTT" not in html:
+if "Полностью удалить runtime CSQTT Core" not in html:
     raise SystemExit("uninstall confirmation still understates the removal scope")
-for token in ("вспомогательные службы LaLune", "TUN-интерфейс", "правила firewall с маркерами LaLune", "База SQLite, файл конфигурации и сертификаты сохраняются", "Оригинальный CSQTT и другие службы/маршруты не должны затрагиваться"):
+for token in ("вспомогательные службы CSQTT Core", "TUN-интерфейс", "правила firewall с маркерами CSQTT Core", "База SQLite, файл конфигурации и сертификаты сохраняются", "Оригинальный CSQTT и другие службы/маршруты не должны затрагиваться"):
     if token not in html:
         raise SystemExit("uninstall confirmation is missing scope detail: " + token)
 if "Удалить только csqtt-lalune.service" in html:
@@ -238,7 +238,7 @@ if 'validateCSQTTDeployTarget(req.Host)' not in deploy_patcher:
 if "state.deployLog.toLowerCase().includes('error')" not in js:
     raise SystemExit("deployment error status is case-sensitive")
 
-# The panel deploys the isolated LaLune-namespaced service, not the stock
+# The panel deploys the isolated CSQTT Core-namespaced service, not the stock
 # upstream installer; do not assert guessed legacy port numbers in the UI.
 if "Это не штатная установка оригинального CSQTT" not in html:
     raise SystemExit("deploy tab does not distinguish the isolated fork from stock CSQTT")
@@ -271,7 +271,6 @@ for contract in (
     "if('deployLog'in data){state.deployLog",
     "if('logs'in data)state.logs",
     "if('version'in data)state.version",
-    "if(name==='settings')refreshInfo()",
 ):
     if contract not in js:
         raise SystemExit("backend response is not applied to panel state: " + contract)

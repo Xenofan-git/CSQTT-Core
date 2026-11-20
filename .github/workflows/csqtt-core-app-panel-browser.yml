@@ -9,6 +9,10 @@ on:
       - adapt/test-csqtt-panel-browser.py
       - adapt/test-csqtt-panel-contract.py
       - adapt/test-csqtt-panel-api-method-contract.py
+      - adapt/test-csqtt-core-branding.py
+      - captcha-bridge/manifest.json
+      - captcha-bridge/options.html
+      - captcha-bridge/README.md
       - adapt/headless_main.go
       - .github/workflows/csqtt-core-app-panel-browser.yml
   pull_request:
@@ -17,6 +21,10 @@ on:
       - adapt/test-csqtt-panel-browser.py
       - adapt/test-csqtt-panel-contract.py
       - adapt/test-csqtt-panel-api-method-contract.py
+      - adapt/test-csqtt-core-branding.py
+      - captcha-bridge/manifest.json
+      - captcha-bridge/options.html
+      - captcha-bridge/README.md
       - adapt/headless_main.go
       - .github/workflows/csqtt-core-app-panel-browser.yml
   workflow_dispatch:
@@ -37,6 +45,7 @@ jobs:
         run: |
           python adapt/test-csqtt-panel-contract.py
           python adapt/test-csqtt-panel-api-method-contract.py
+          python adapt/test-csqtt-core-branding.py
       - name: Prepare isolated Chromium/Playwright browser test
         run: |
           python -m pip install --disable-pip-version-check 'playwright==1.56.0'

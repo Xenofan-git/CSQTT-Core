@@ -77,7 +77,7 @@
 
 ### 2026-11-13: Deploy security trace (CSQTT-Core)
 
-Reviewed `adapt/patch-csqtt-deploy-manager.py`, `adapt/patch-csqtt-deploy-script.py` and `adapt/test-csqtt-lalune-deploy-script.py` without modifying production deployment.
+Reviewed `adapt/patch-csqtt-deploy-manager.py`, `adapt/patch-csqtt-deploy-script.py` and `adapt/test-csqtt-core-deploy-script.py` without modifying production deployment.
 
 - **SSH host identity:** both SCP and SSH paths must retain `StrictHostKeyChecking=accept-new`; this is TOFU, not a pre-verified host identity. Pin rotation/review UI is not yet implemented.
 - **Credential transport:** DeployManager reads a one-shot local secrets file, removes it after reading, writes two staging credential files with mode 0600 under a 0700 directory, and removes the local bundle after the operation. Remote staging uses a unique 0700 directory with cleanup trap on the main install/uninstall script. Verify cleanup on *every* early SSH/SCP failure path and verify remote file modes in a disposable integration test.

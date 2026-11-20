@@ -1,4 +1,4 @@
-name: CSQTT LaLune ARM64 system VM lifecycle test
+name: CSQTT Core ARM64 system VM lifecycle test
 
 on:
   workflow_call:

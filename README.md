@@ -7,11 +7,11 @@
 - **Целевые ОС:** Debian ARM64 и Ubuntu ARM64
 - **Первая аппаратная платформа:** NanoPi R3S LTS (RK3566, 2 GB RAM), Debian 13 Trixie
 
-> Переименование репозитория сохраняет историю существующей разработки LaLune/CSQTT. Интеграция sing-box реализована в рабочей ветке и проходит проверку закреплённым бинарником и ARM64 system VM; аппаратное тестирование на NanoPi остаётся отдельным этапом.
+> Продукт называется **CSQTT Core**. История исходных компонентов и проверки происхождения сохраняются отдельно от пользовательских названий. Интеграция sing-box реализована в рабочей ветке и проходит проверку закреплённым бинарником и ARM64 system VM; аппаратное тестирование на NanoPi остаётся отдельным этапом.
 
 ## Цель проекта
 
-Развить существующую адаптацию LaLune/CSQTT в Linux-платформу, объединяющую два независимых сетевых ядра под одной панелью:
+Развить CSQTT Core в Linux-платформу, объединяющую два независимых сетевых ядра под одной панелью:
 
 1. **CSQTT Core** — исходный CSQTT VPN-механизм, VK-авторизация и получение токена, туннель, клиентская/серверная части и Deploy.
 2. **sing-box** — независимое второе ядро для локального SOCKS5 inbound, нескольких SOCKS5 outbound, доменных/IP/Rule Set правил, DIRECT и выбора исходящего подключения. DNS/sniffing остаются отдельной зоной проверки и не должны считаться полностью покрытыми только по TCP/UDP relay-тестам.
@@ -85,7 +85,7 @@ TCP и UDP relay проверяются E2E через реальную реал
 
 ## Linux Network Integration: текущая реализация
 
-В существующей адаптации используются следующие параметры. Это описание текущей CSQTT/LaLune реализации, а не уже завершённой интеграции sing-box:
+В существующей адаптации используются следующие параметры. Это описание текущей реализации CSQTT Core, а не уже завершённой интеграции sing-box:
 
 | Компонент | Параметр |
 |---|---|
@@ -101,7 +101,7 @@ TCP и UDP relay проверяются E2E через реальную реал
 
 Текущий Direct-механизм использует DNSmasq nftset для IPv4/IPv6 и является IP-based routing, а не полноценным domain-aware routing. Общие CDN IP могут создавать ложные совпадения. Это ограничение нужно учитывать при проектировании новой маршрутизации.
 
-`adapt/lalune_socks5_linux.go` реализует два независимых CSQTT SOCKS5 listener: динамический bind на private IPv4 интерфейса eth1:12500 и loopback listener 127.0.0.1:12500 для sing-box. Оба используют один CSQTT dataplane; исходящие TCP/UDP сокеты помечаются `SO_MARK=0x4d53` и попадают в policy table `202`. Динамический downstream listener перепривязывается при изменении адреса eth1. E2E TCP/UDP проверки выполняются в CI.
+`adapt/csqtt_core_socks5_linux.go` реализует два независимых CSQTT SOCKS5 listener: динамический bind на private IPv4 интерфейса eth1:12500 и loopback listener 127.0.0.1:12500 для sing-box. Оба используют один CSQTT dataplane; исходящие TCP/UDP сокеты помечаются `SO_MARK=0x4d53` и попадают в policy table `202`. Динамический downstream listener перепривязывается при изменении адреса eth1. E2E TCP/UDP проверки выполняются в CI.
 
 ## Текущая сетевая среда и ограничения
 
@@ -122,14 +122,14 @@ TCP и UDP relay проверяются E2E через реальную реал
 ## Исходные проекты и происхождение
 
 - [CSQTT — amurcanov/csqtt](https://github.com/amurcanov/csqtt): исходный Android-проект и CSQTT VPN logic.
-- [LaLune — Endlad2/LaLune](https://github.com/Endlad2/LaLune): кроссплатформенная основа и Auto VK token logic. Закреплённый upstream commit: `e4a6d08b63aef6025bf8ad8f77da660ea552e04b`.
+- [Закреплённый источник компонентов VK-авторизации](https://github.com/Endlad2/LaLune): исходные материалы и логика автоматического получения токена. Закреплённый upstream commit: `e4a6d08b63aef6025bf8ad8f77da660ea552e04b`.
 - [sing-box — SagerNet/sing-box](https://github.com/SagerNet/sing-box): планируемое второе сетевое ядро. [Официальная документация](https://sing-box.sagernet.org/).
 
-Перед распространением производного продукта необходимо проверить актуальные лицензии и условия всех компонентов, сохранить требуемые уведомления и исходные материалы. В частности, нельзя предполагать, что условия лицензирования CSQTT, LaLune и sing-box одинаковы.
+Перед распространением производного продукта необходимо проверить актуальные лицензии и условия всех компонентов, сохранить требуемые уведомления и исходные материалы. В частности, нельзя предполагать, что условия лицензирования CSQTT, использованных исходных компонентов и sing-box одинаковы.
 
 ## Сборка и тестирование
 
-GitHub Actions собирает и проверяет существующую ARM64 адаптацию на основе закреплённого upstream LaLune. Проверки включают исходную адаптацию, панель и API, Chromium smoke test, DeployManager, ARM64 сборку, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с nftables и Linux routes, а также испытания в изолированной Debian ARM64 system VM.
+GitHub Actions собирает и проверяет существующую ARM64 адаптацию на основе закреплённых исходных компонентов. Проверки включают исходную адаптацию, панель и API, Chromium smoke test, DeployManager, ARM64 сборку, SOCKS5 TCP/UDP policy-routing E2E, Direct IPv4/IPv6 с nftables и Linux routes, а также испытания в изолированной Debian ARM64 system VM.
 
 Актуальные проверки ветки fix/direct-dnsmasq-dualstack-production: [verified Rust ARM64 #4](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44181280329) (commit e90b12f), [UDP port isolation #2](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44181280272), [Deploy regression #9](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44350874233) (commit 8ba8001) — SUCCESS. Ранее проведённый [интеграционный CI #1529](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/43284612321) подтверждал реальный CSQTT artifact и Debian ARM64 system VM в пределах своего набора тестов. Зелёные CI не заменяют полный тест обновления/отката новой версии на VM и аппаратную приёмку NanoPi; DNS/sniffing для QUIC/ECH/заранее разрешённых IP требуют отдельного покрытия.
 

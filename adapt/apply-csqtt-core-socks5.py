@@ -137,6 +137,6 @@ s = s.replace(old, new, 1)
 
 src.write_text(s)
 
-helper = ROOT / "Desktop/Linux/lalune_socks5_linux.go"
-helper.write_text(Path("adapt/lalune_socks5_linux.go").read_text())
+helper = ROOT / "Desktop/Linux/csqtt_core_socks5_linux.go"
+helper.write_text(Path("adapt/csqtt_core_socks5_linux.go").read_text())
 print("LaLune SOCKS5 adaptation applied: TUN bridge now starts before SOCKS5 listener")

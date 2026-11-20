@@ -1,4 +1,4 @@
-name: Publish NanoPi LaLune gateway
+name: Publish NanoPi CSQTT Core gateway
 
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nanopi-gateway-build
-          name: LaLune NanoPi Gateway build
+          name: CSQTT Core NanoPi Gateway build
           generate_release_notes: false
           files: lalune-gateway-linux-arm64
           overwrite_files: true

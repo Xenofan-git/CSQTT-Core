@@ -1,6 +1,6 @@
-# CSQTT-LaLune deployment contract
+# CSQTT Core deployment contract
 
-The Deploy button uses the original CSQTT v2.1.9 deployment flow, derived from the pinned upstream `app/src/main/assets/deploy.sh`. The generated script is `server-assets/deploy-csqtt-lalune.sh`; it retains the upstream preflight, uploaded-binary validation, systemd activation, network checks, web-panel health check, and uninstall lifecycle. The raw upstream script is retained separately for provenance and is never run directly by the LaLune Deploy button.
+The Deploy button uses the original CSQTT v2.1.9 deployment flow, derived from the pinned upstream `app/src/main/assets/deploy.sh`. The generated script is `server-assets/deploy-csqtt-lalune.sh`; it retains the upstream preflight, uploaded-binary validation, systemd activation, network checks, web-panel health check, and uninstall lifecycle. The raw upstream script is retained separately for provenance and is never run directly by the CSQTT Core Deploy button.
 
 - Upstream source: [amurcanov/csqtt v2.1.9 deploy.sh](https://github.com/amurcanov/csqtt/blob/v2.1.9/app/src/main/assets/deploy.sh)
 - Server binary: patched from the pinned CSQTT v2.1.9 source; ARM64 and x86_64 assets are bundled for the DeployManager.
@@ -13,13 +13,13 @@ The Deploy button uses the original CSQTT v2.1.9 deployment flow, derived from t
 
 ## Isolation changes to the upstream flow
 
-The adaptation changes only the service-owned resource names, the LaLune ports/subnet, and behavior that could disrupt an unrelated process:
+The adaptation changes only the service-owned resource names, the CSQTT Core ports/subnet, and behavior that could disrupt an unrelated process:
 
 - Namespaces systemd units, executable/library/config/runtime/log/certificate-helper paths, Docker names, sysctl filenames, firewall comments, and legacy helper process names.
 - Injects `CSQTT_SYSTEMD_UNIT=csqtt-lalune.service` so panel-triggered restart actions cannot target `csqtt.service`.
 - Uses a unique SSH staging directory and protected one-shot credentials; the DeployManager selects the server binary for the remote architecture.
 - Checks UDP/47000 and TCP/47002 before cutover. If a listener is unrelated or its owner cannot be identified, deployment fails without terminating it.
-- Leaves generic legacy proxy interfaces alone. Firewall cleanup matches only LaLune-specific markers.
+- Leaves generic legacy proxy interfaces alone. Firewall cleanup matches only CSQTT Core-owned markers.
 - Keeps the upstream server's persistent database/configuration on uninstall, while removing only the namespaced runtime artifacts.
 
 The standalone `install-csqtt-lalune.sh` / `uninstall-csqtt-lalune.sh` files are legacy regression fixtures only; the Deploy button does not invoke them.

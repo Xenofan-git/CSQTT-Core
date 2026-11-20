@@ -115,7 +115,7 @@ func validateTunnelAuth(app *App) error {
         return fmt.Errorf("пароль туннеля не задан")
     }
     if app == nil || csqttDeviceID(app.core) == "" {
-        return fmt.Errorf("ID устройства LaLune не задан")
+        return fmt.Errorf("ID устройства CSQTT Core не задан")
     }
     return nil
 }
@@ -387,7 +387,7 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
 
     mux.HandleFunc("/settings/reset", func(w http.ResponseWriter, r *http.Request) {
         if !method(w, r, http.MethodPost) { return }
-        http.Error(w, "settings reset is not implemented by pinned LaLune", http.StatusNotImplemented)
+        http.Error(w, "settings reset is not implemented by CSQTT Core backend", http.StatusNotImplemented)
     })
 
 
@@ -703,7 +703,7 @@ func panelSecurity(next http.Handler) http.Handler {
         }
         if !ok || subtle.ConstantTimeCompare([]byte(user), []byte(expectedUser)) != 1 ||
             subtle.ConstantTimeCompare([]byte(password), []byte(expected)) != 1 {
-            w.Header().Set("WWW-Authenticate", `Basic realm="LaLune CSQTT", charset="UTF-8"`)
+            w.Header().Set("WWW-Authenticate", `Basic realm="CSQTT Core", charset="UTF-8"`)
             http.Error(w, "authentication required", http.StatusUnauthorized)
             return
         }
@@ -776,7 +776,7 @@ func main() {
 
     errCh := make(chan error, 2)
     go func() { app.core.AddLog(fmt.Sprintf("[INFO] Headless API: http://%s", headlessListen)); errCh <- srv.ListenAndServe() }()
-    go func() { app.core.AddLog(fmt.Sprintf("[INFO] LaLune panel: http://%s", configuredPanelListen)); errCh <- panelSrv.ListenAndServe() }()
+    go func() { app.core.AddLog(fmt.Sprintf("[INFO] CSQTT Core panel: http://%s", configuredPanelListen)); errCh <- panelSrv.ListenAndServe() }()
 
     sigCh := make(chan os.Signal, 1)
     signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

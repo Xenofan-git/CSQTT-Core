@@ -614,7 +614,7 @@ func TestVPNConnectAndReconnectRequireStableDeviceID(t *testing.T) {
         if rec.Code != http.StatusPreconditionRequired {
             t.Errorf("POST %s without device ID status = %d, want 428: %s", path, rec.Code, rec.Body.String())
         }
-        if !strings.Contains(rec.Body.String(), "ID устройства LaLune не задан") {
+        if !strings.Contains(rec.Body.String(), "ID устройства CSQTT Core не задан") {
             t.Errorf("POST %s did not explain missing device ID: %s", path, rec.Body.String())
         }
     }
