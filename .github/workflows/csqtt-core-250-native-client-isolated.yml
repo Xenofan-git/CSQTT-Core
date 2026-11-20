@@ -1,0 +1,83 @@
+name: CSQTT Core 2.5.0 original native ARM64 client (isolated)
+on:
+  push:
+    branches:
+      - test/csqtt-250-native-client-20261121
+    paths:
+      - .github/workflows/csqtt-core-250-native-client-isolated.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-v250-client:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 75
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "8"
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust compiler 1.97.1
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.1"
+      - name: Checkout original CSQTT 2.5.0 exactly
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          git clone --depth 1 --branch v2.5.0 https://github.com/amurcanov/csqtt.git /tmp/original-csqtt-250
+          test "$(git -C /tmp/original-csqtt-250 rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
+          test "$(grep -m1 '^version = "2.5.0"' /tmp/original-csqtt-250/rust-client/Cargo.toml)" = 'version = "2.5.0"'
+          rustc --version
+          cargo --version
+      - name: Compile complete original ARM64 Rust client without patching code
+        shell: bash
+        working-directory: /tmp/original-csqtt-250/rust-client
+        run: |
+          set -euo pipefail
+          df -h .
+          free -h
+          cargo build --release --locked --bin client
+          file target/release/client
+          file target/release/client | grep -Fq 'ARM aarch64'
+          sha256sum target/release/client
+      - name: Inspect original 2.5.0 Linux server from official APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 https://github.com/amurcanov/csqtt/releases/download/v2.5.0/CSQTT-arm64-v8a.apk -o /tmp/original-csqtt-250.apk
+          python3 - <<'PY'
+          import zipfile,pathlib,json
+          z=zipfile.ZipFile('/tmp/original-csqtt-250.apk')
+          path=pathlib.Path('/tmp/original-csqtt-250-server')
+          path.write_bytes(z.read('assets/csqtt-linux-arm64'))
+          path.chmod(0o755)
+          print('Official 2.5.0 provenance:',z.read('assets/csqtt.server-provenance.json').decode()[:1400])
+          PY
+          file /tmp/original-csqtt-250-server | grep -F 'ARM aarch64'
+          test "$(/tmp/original-csqtt-250-server --protocol-revision)" = CSQTT-WIRE-3
+          sha256sum /tmp/original-csqtt-250-server
+      - name: Verify authentic ARM64 client and server provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x /tmp/original-csqtt-250/rust-client/target/release/client
+          test -x /tmp/original-csqtt-250-server
+          readelf -h /tmp/original-csqtt-250/rust-client/target/release/client | grep -F AArch64
+          readelf -h /tmp/original-csqtt-250-server | grep -F AArch64
+          printf 'source_sha=%s\n' "$(git -C /tmp/original-csqtt-250 rev-parse HEAD)" > /tmp/CSQTT-250-ARM64-BUILD.txt
+          printf 'server_revision=%s\n' "$(/tmp/original-csqtt-250-server --protocol-revision)" >> /tmp/CSQTT-250-ARM64-BUILD.txt
+          sha256sum /tmp/original-csqtt-250/rust-client/target/release/client /tmp/original-csqtt-250-server >> /tmp/CSQTT-250-ARM64-BUILD.txt
+          cat /tmp/CSQTT-250-ARM64-BUILD.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csqtt-250-original-arm64-client-and-server
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            /tmp/original-csqtt-250/rust-client/target/release/client
+            /tmp/original-csqtt-250-server
+            /tmp/CSQTT-250-ARM64-BUILD.txt
