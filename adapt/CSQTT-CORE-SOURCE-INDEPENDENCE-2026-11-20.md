@@ -44,6 +44,13 @@ repeat of all VM failure cases. Actual Linux Go workflow edits require one
 integrated ARM64 CI. New Rust binaries require the still-unperformed isolated
 guest binary install/forced rollback test, not replaying mock rollback tests.
 
+## Next migration step completed in this change
+
+Removed unused Flutter/Dart mutations from the Linux Go adapter and deleted
+the obsolete deploy-page patch script. This does NOT remove the external Go
+runner, Go Libs or DeployManager. The new static no-Dart test protects the
+boundary and checks that the real Go Direct features remain.
+
 ## Next work (not yet done)
 
 1. Replace Go Libs and external Linux runner with CSQTT Core-owned module,

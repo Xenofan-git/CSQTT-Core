@@ -30,6 +30,7 @@ on:
       - adapt/test-csqtt-panel-browser.py
       - adapt/test-csqtt-panel-contract.py
       - adapt/test-csqtt-panel-api-method-contract.py
+      - adapt/test-csqtt-core-no-dart-patching.py
       - adapt/test-csqtt-core-branding.py
       - .github/workflows/csqtt-core-app-panel-browser.yml
       - adapt/test-original-server-all-dialogs-browser.py
@@ -62,6 +63,7 @@ jobs:
         run: |
           set -euxo pipefail
           test -f adapt/apply-pinned-original-linux-arm64-policy.py
+          python3 adapt/test-csqtt-core-no-dart-patching.py
           test -s adapt/csqtt_core_socks5_linux.go
           test -s adapt/csqtt_core_socks5_linux_test.go
           ! grep -Fq '192.168.4.26' adapt/csqtt_core_socks5_linux.go
@@ -210,7 +212,6 @@ jobs:
           python3 adapt/apply-csqtt-core-socks5.py
           cp adapt/csqtt_core_socks5_linux.go upstream-lalune/Desktop/Linux/csqtt_core_socks5_linux.go
           cp adapt/csqtt_core_socks5_linux_test.go upstream-lalune/Desktop/Linux/csqtt_core_socks5_linux_test.go
-          python3 adapt/patch-csqtt-deploy-ui.py
       - name: Package standalone CSQTT Core web UI without Flutter
         run: |
           set -euxo pipefail
@@ -284,9 +285,6 @@ jobs:
           grep -Fq 'func validCSQTTSecret' upstream-lalune/Desktop/Libs/deploy.go
           grep -Fq 'DeviceID string `json:"deviceId"`' upstream-lalune/Desktop/Libs/deploy.go
           grep -Fq 'validCSQTTDeviceID(req.DeviceID)' upstream-lalune/Desktop/Libs/deploy.go
-          grep -Fq "'deviceId': deviceId" upstream-lalune/Frontend/Core/lib/pages/deploy_page.dart
-          grep -Fq 'Api.getDeviceId()' upstream-lalune/Frontend/Core/lib/pages/deploy_page.dart
-          grep -Fq "'mainPassword': _mainPassword.text" upstream-lalune/Frontend/Core/lib/pages/deploy_page.dart
           grep -Fq 'VKTokenFetcherARM64Archive' upstream-lalune/Desktop/Libs/vktoken.go
           grep -Fq 'ResolveChromiumExecutable' upstream-lalune/Core/LaLuneTokenFetcher/Playwright/PlaywrightTokenFetcher.cs
           grep -Fq 'SaveVKTokenInput' upstream-lalune/Desktop/Libs/vktoken.go
