@@ -432,8 +432,21 @@ new = '\tif strings.EqualFold(strings.TrimSpace(req.Protocol), "CSQTT") {\n\t\ti
 if old not in s: raise SystemExit("manual ports marker missing")
 DEPLOY_GO.write_text(s.replace(old, new, 1))
 
-# Native CSQTT Core web UI is packaged directly from owned HTML/JS.
-# No Flutter/Dart frontend is patched or built here.
+# NanoPi build version: keep the original InfoPage wording but report this adapted build.
+INFO = UPSTREAM / "Frontend/Core/lib/pages/info_page.dart"
+replace_once(INFO, "static const String _laluneVersion = '0.5.0';", "static const String _laluneVersion = '0.6.0';")
+
+# Restore the original Deploy tab and connect the Flutter Web UI to NanoPi HTTP API.
+MAIN = UPSTREAM / "Frontend/Core/lib/main.dart"
+NAV = UPSTREAM / "Frontend/Core/lib/widgets/navbar.dart"
+INDEX = UPSTREAM / "Frontend/Core/web/index.html"
+API_JS = UPSTREAM / "Frontend/Core/web/api.js"
+NANOPI_JS = Path(__file__).with_name("nanopi.js")
+replace_once(MAIN, "import 'pages/logs_page.dart';", "import 'pages/logs_page.dart';\nimport 'pages/deploy_page.dart';")
+replace_once(MAIN, """      case 3:\n        return const LogsPage();\n      // case 4 (Деплой) убран из UI — вкладка отключена, страница сохранена.\n      default:""", """      case 3:\n        return const LogsPage();\n      case 4:\n        return const DeployPage();\n      default:""")
+replace_once(NAV, """    _NavItem(icon: 'assets/logs.png', label: 'Логи'),\n    // Вкладка \"Деплой\" временно убрана из UI (логика в deploy_page.dart сохранена).""", """    _NavItem(icon: 'assets/logs.png', label: 'Логи'),\n    _NavItem(icon: 'assets/info.png', label: 'Деплой'),""")
+replace_once(INDEX, "    {{flutter_bootstrap_js}}", "    <script src=\"api.js\"></script>\n    {{flutter_bootstrap_js}}")
+API_JS.write_text(NANOPI_JS.read_text())
 
 # ============================================================
 # Direct routing: destination domains/IPs bypass CSQTT.
@@ -442,6 +455,8 @@ DEPLOY_GO.write_text(s.replace(old, new, 1))
 
 COMMON = UPSTREAM / "Desktop/Libs/common.go"
 LINUX = UPSTREAM / "Desktop/Linux/app_linux.go"
+API_DART = UPSTREAM / "Frontend/Core/lib/api.dart"
+SETTINGS_PAGE = UPSTREAM / "Frontend/Core/lib/pages/settings_page.dart"
 
 replace_once(
     COMMON,
@@ -714,8 +729,39 @@ s = s.replace(marker, linux_direct + marker, 1)
 # Legacy text replacements removed: their old markers intentionally no longer exist.
 LINUX.write_text(s)
 
-# Direct settings remain in the Go common model; the CSQTT Core native UI
-# reads/writes them via the headless API (no Dart settings model).
+# Add direct routing preferences to the persisted settings model.
+s = API_DART.read_text()
+replacements = [
+    ('''  final bool validateVkHashes;\n\n  /// Экспериментальные функции.''', '''  final bool validateVkHashes;\n  final String directDomains;\n  final String directIPs;\n\n  /// Экспериментальные функции.'''),
+    ('''    this.validateVkHashes = false,\n    this.enableSmartTunnel = false,''', '''    this.validateVkHashes = false,\n    this.directDomains = '',\n    this.directIPs = '',\n    this.enableSmartTunnel = false,'''),
+    ('''      validateVkHashes: (j['validateVkHashes'] ?? false) as bool,\n      enableSmartTunnel:''', '''      validateVkHashes: (j['validateVkHashes'] ?? false) as bool,\n      directDomains: (j['directDomains'] ?? '') as String,\n      directIPs: (j['directIPs'] ?? '') as String,\n      enableSmartTunnel:'''),
+    ('''    'validateVkHashes': validateVkHashes,\n    'enableSmartTunnel': enableSmartTunnel,''', '''    'validateVkHashes': validateVkHashes,\n    'directDomains': directDomains,\n    'directIPs': directIPs,\n    'enableSmartTunnel': enableSmartTunnel,'''),
+    ('''    String? vkAuthMode, bool? allowHashRedistribution, bool? validateVkHashes,\n    bool? enableSmartTunnel,''', '''    String? vkAuthMode, bool? allowHashRedistribution, bool? validateVkHashes,\n    String? directDomains, String? directIPs,\n    bool? enableSmartTunnel,'''),
+    ('''    validateVkHashes: validateVkHashes ?? this.validateVkHashes,\n    enableSmartTunnel:''', '''    validateVkHashes: validateVkHashes ?? this.validateVkHashes,\n    directDomains: directDomains ?? this.directDomains,\n    directIPs: directIPs ?? this.directIPs,\n    enableSmartTunnel:'''),
+]
+for old, new in replacements:
+    if s.count(old) != 1:
+        raise SystemExit(f'API settings marker missing or ambiguous: {old[:80]!r}')
+    s = s.replace(old, new, 1)
+API_DART.write_text(s)
+
+# Add the Direct-domain-only list to Settings.
+s = SETTINGS_PAGE.read_text()
+replacements = [
+    ('''  final _deviceIdCtl = TextEditingController();''', '''  final _deviceIdCtl = TextEditingController();\n  final _directDomainsCtl = TextEditingController();'''),
+    ('''    _deviceIdCtl.dispose();''', '''    _deviceIdCtl.dispose();\n    _directDomainsCtl.dispose();'''),
+    ('''    _deviceIdCtl.text = s.deviceId;\n    _authMode''', '''    _deviceIdCtl.text = s.deviceId;\n    _directDomainsCtl.text = s.directDomains;\n    _authMode'''),
+    ('''      authMode: _authMode,\n      enableSmartTunnel: _enableSmartTunnel,''', '''      authMode: _authMode,\n      directDomains: _directDomainsCtl.text.trim(),\n      enableSmartTunnel: _enableSmartTunnel,'''),
+]
+for old, new in replacements:
+    if s.count(old) != 1:
+        raise SystemExit(f'Settings marker missing or ambiguous: {old[:80]!r}')
+    s = s.replace(old, new, 1)
+ui_marker = '''              const SizedBox(height: 18),\n\n              _sectionTitle('Device ID'),'''
+ui_insert = '''              const SizedBox(height: 18),\n\n              _sectionTitle('Direct — обход CSQTT'),\n              GlassCard(\n                child: Column(\n                  crossAxisAlignment: CrossAxisAlignment.start,\n                  children: [\n                    Text('Только указанные назначения идут напрямую через LTE. Всё остальное остаётся через CSQTT.',\n                      style: TextStyle(fontSize: 11.5, height: 1.45, color: Colors.white.withOpacity(0.55))),\n                    const SizedBox(height: 12),\n                    Text('Домены', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7))),\n                    const SizedBox(height: 5),\n                    TextField(\n                      controller: _directDomainsCtl,\n                      minLines: 3,\n                      maxLines: 8,\n                      style: const TextStyle(fontSize: 13),\n                      decoration: const InputDecoration(hintText: 'example.com\\ncdn.example.com'),\n                      onChanged: (_) => _markDirty(),\n                    ),\n                    const SizedBox(height: 12),\n                  ],\n                ),\n              ),\n              const SizedBox(height: 18),\n\n              _sectionTitle('Device ID'),'''
+if s.count(ui_marker) != 1:
+    raise SystemExit('Settings UI insertion marker missing or ambiguous')
+SETTINGS_PAGE.write_text(s.replace(ui_marker, ui_insert, 1))
 
 # Make the no-selection state explicit. Without this, deleting the active last
 # profile leaves a stale pointer in AppCore and the UI keeps trying to connect it.

@@ -1,5 +1,12 @@
 # CSQTT Core — source independence migration ledger (2026-11-20)
 
+> **ИСТОРИЧЕСКИЙ АУДИТ, НЕ ТЕКУЩИЙ ПЛАН РАБОТ.** Разделы с
+> описанием миграций 570e690, 1ffe740, 4aeff5c и 3728052 относятся к
+> экспериментальным изменениям, отменённым корректирующим коммитом после
+> уточнения пользователя. Не использовать их как перечень функций
+> текущей сборки. Цель была заменить видимое название на **CSQTT Core**,
+> а не переписывать Go/Linux, Deploy или Flutter. Версия основы — 2.5.0.
+
 **Product name:** CSQTT Core. External repository and compatibility identifiers
 below are quoted only when necessary for reproducible provenance, licensing,
 wire interoperability or existing installations.
