@@ -31,6 +31,7 @@ on:
       - adapt/test-csqtt-panel-contract.py
       - adapt/test-csqtt-panel-api-method-contract.py
       - adapt/test-csqtt-core-no-dart-patching.py
+      - adapt/test-csqtt-core-go-api-boundary.py
       - adapt/test-csqtt-core-branding.py
       - .github/workflows/csqtt-core-app-panel-browser.yml
       - adapt/test-original-server-all-dialogs-browser.py
@@ -64,6 +65,7 @@ jobs:
           set -euxo pipefail
           test -f adapt/apply-pinned-original-linux-arm64-policy.py
           python3 adapt/test-csqtt-core-no-dart-patching.py
+          python3 adapt/test-csqtt-core-go-api-boundary.py
           test -s adapt/csqtt_core_socks5_linux.go
           test -s adapt/csqtt_core_socks5_linux_test.go
           ! grep -Fq '192.168.4.26' adapt/csqtt_core_socks5_linux.go
@@ -303,6 +305,8 @@ jobs:
           cp upstream-lalune/Core/SmartTunnel.lua upstream-lalune/Desktop/Libs/SmartTunnel.lua
           mv upstream-lalune/Desktop/Linux/app.go upstream-lalune/Desktop/Linux/app_gui.go.disabled
           cp adapt/headless_main.go upstream-lalune/Desktop/Linux/headless_main.go
+          cp adapt/csqtt_core_deploy_bridge_linux.go upstream-lalune/Desktop/Linux/csqtt_core_deploy_bridge_linux.go
+          cp adapt/csqtt_core_deploy_bridge_test.go upstream-lalune/Desktop/Linux/csqtt_core_deploy_bridge_test.go
           cp adapt/headless_main_test.go upstream-lalune/Desktop/Linux/headless_main_test.go
           cp adapt/headless_api_contract_test.go upstream-lalune/Desktop/Linux/headless_api_contract_test.go
           cp adapt/vktoken_input_test.go upstream-lalune/Desktop/Libs/vktoken_input_test.go

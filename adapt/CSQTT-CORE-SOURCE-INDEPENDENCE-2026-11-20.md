@@ -51,6 +51,25 @@ the obsolete deploy-page patch script. This does NOT remove the external Go
 runner, Go Libs or DeployManager. The new static no-Dart test protects the
 boundary and checks that the real Go Direct features remain.
 
+## New HTTP/Deploy boundary extracted
+
+The CSQTT Core headless HTTP server now has NO direct Go import from the
+external Libs module. Device-ID parsing accepts a narrow settings reader
+interface (including typed nil fail-closed), and the three Deploy handlers
+call a CSQTT Core-owned Deploy backend interface. A separate temporary
+csqtt_core_deploy_bridge_linux.go is the ONLY Go import of that external
+Libs package for deployment. It currently delegates exactly to the
+previous DeployProtocol, DeployLog and DeployBusy functions; operational
+behavior is intentionally unchanged. New Go tests exercise the three
+HTTP endpoints against a fixture backend and reject requests from public
+IP addresses without invoking deployment. The separate source guard
+enforces that boundary in fast CI; Go unit/race tests still require the
+integrated Go Linux pipeline.
+
+This does NOT remove the compiled Go/Linux runner/Libs nor DeployManager;
+it merely makes the HTTP panel replaceable and confines one category of
+external dependency. Do not describe it as a full independent backend.
+
 ## Next work (not yet done)
 
 1. Replace Go Libs and external Linux runner with CSQTT Core-owned module,

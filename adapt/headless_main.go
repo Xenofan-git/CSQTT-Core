@@ -18,13 +18,12 @@ import (
     "os"
     "path/filepath"
     "regexp"
+    "reflect"
     "os/signal"
     "strconv"
     "strings"
     "syscall"
     "time"
-
-    "lalune-desktop/Libs"
 )
 
 const headlessListen = "127.0.0.1:1062"
@@ -100,8 +99,14 @@ func saveTunnelAuthPassword(password string) error {
     return os.Rename(tmp, path)
 }
 
-func csqttDeviceID(core *libs.AppCore) string {
+// csqttSettingsReader is the HTTP panel's only device-ID requirement.
+// Any owned CSQTT Core settings implementation may satisfy the interface.
+type csqttSettingsReader interface { GetSettingsJson() string }
+
+func csqttDeviceID(core csqttSettingsReader) string {
     if core == nil { return "" }
+    value := reflect.ValueOf(core)
+    if value.Kind() == reflect.Pointer && value.IsNil() { return "" }
     var settings map[string]any
     if err := json.Unmarshal([]byte(core.GetSettingsJson()), &settings); err != nil { return "" }
     id, _ := settings["deviceId"].(string)
@@ -556,7 +561,7 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
         }
         var raw json.RawMessage
         if err := json.NewDecoder(r.Body).Decode(&raw); err != nil { http.Error(w, "bad json", http.StatusBadRequest); return }
-        writeJSON(w, map[string]bool{"ok": libs.DeployProtocol(string(raw))})
+        writeJSON(w, map[string]bool{"ok": csqttDeployService.DeployProtocol(string(raw))})
     })
     mux.HandleFunc("/deploy/log", func(w http.ResponseWriter, r *http.Request) {
         if !method(w, r, http.MethodGet) { return }
@@ -564,7 +569,7 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
             http.Error(w, "deployment status is available only from LAN or Tailscale", http.StatusForbidden)
             return
         }
-        writeRaw(w, mustJSON(libs.DeployLog()))
+        writeRaw(w, mustJSON(csqttDeployService.DeployLog()))
     })
     mux.HandleFunc("/deploy/status", func(w http.ResponseWriter, r *http.Request) {
         if !method(w, r, http.MethodGet) { return }
@@ -572,7 +577,7 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
             http.Error(w, "deployment status is available only from LAN or Tailscale", http.StatusForbidden)
             return
         }
-        writeJSON(w, map[string]bool{"deploying": libs.DeployBusy()})
+        writeJSON(w, map[string]bool{"deploying": csqttDeployService.DeployBusy()})
     })
 
     mux.HandleFunc("/updates/core", func(w http.ResponseWriter, r *http.Request) {
