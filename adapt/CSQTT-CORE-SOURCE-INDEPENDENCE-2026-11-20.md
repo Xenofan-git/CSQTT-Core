@@ -99,3 +99,13 @@ DeployManager have been removed.
    fail-closed rollback in isolated ARM64 guest, then hardware acceptance.
 
 No production NanoPi, Keenetic, HydraRoute Core, DNS or global route changes.
+
+## Tests: no repeated full cycle for every change
+
+See [CSQTT Core test evidence and selective impact ledger](CSQTT-CORE-TEST-EVIDENCE-2026-11-21.md).
+It records exact successful run IDs and commits, marks incomplete real
+guest rollback/live CRUD checks as pending, and defines which changes need
+Go/Rust/Deploy/network re-validation. The focused browser CI reads this
+ledger and self-tests the decision rules. Documentation changes do not
+trigger the full ARM64 build. Full release acceptance remains mandatory
+on the final frozen SHA.
