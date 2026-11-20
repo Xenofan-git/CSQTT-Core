@@ -109,3 +109,15 @@ Go/Rust/Deploy/network re-validation. The focused browser CI reads this
 ledger and self-tests the decision rules. Documentation changes do not
 trigger the full ARM64 build. Full release acceptance remains mandatory
 on the final frozen SHA.
+
+## Зафиксированная основа продукта (21 ноября 2026)
+
+CSQTT Core основан на **оригинальном CSQTT 2.5.0** — это принятое ранее
+решение после первого этапа на 2.1.9. Остаточные зависимости старого
+интегрированного Go/Linux workflow от 2.1.9 — наследие, которое требуется
+перевести на 2.5.0, а не параллельная выбранная версия продукта.
+
+В проекте уже используются исходники оригинального сервера 2.5.0 и
+адаптация его штатного Deploy. Переделка Deploy с нуля не нужна без
+выявленного функционального пробела. Любая замена старых рабочих
+бинарников требует проверки совместимости и обратимого отката.
