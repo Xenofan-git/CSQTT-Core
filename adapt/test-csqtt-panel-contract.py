@@ -19,11 +19,14 @@ class PanelParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.button_ids = []
+        self.element_ids = []
         self.pages = []
         self.tabs = []
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
+        if attrs.get("id"):
+            self.element_ids.append(attrs["id"])
         if tag == "button" and attrs.get("id"):
             self.button_ids.append(attrs["id"])
         if tag == "section" and attrs.get("id", "").startswith("page-"):
@@ -154,9 +157,16 @@ if re.search(r'@media\s*\(min-width:\s*980px\)', html):
     raise SystemExit("panel has a desktop-only layout that diverges from native CSQTT")
 
 
-duplicate_ids = sorted({x for x in parser.button_ids if parser.button_ids.count(x) > 1})
+# Duplicate IDs outside buttons can silently redirect state/error updates
+# to a hidden tab (regression: route and sing-box shared the same status ID).
+duplicate_ids = sorted({x for x in parser.element_ids if parser.element_ids.count(x) > 1})
 if duplicate_ids:
-    raise SystemExit("duplicate button IDs: " + ", ".join(duplicate_ids))
+    raise SystemExit("duplicate HTML element IDs: " + ", ".join(duplicate_ids))
+
+# Negative contract: the parser must detect a duplicate non-button ID too.
+probe = PanelParser()
+probe.feed('<section id="routeStatus"></section><div id="routeStatus"></div>')
+assert len(probe.element_ids) != len(set(probe.element_ids))
 
 # Every statically declared button must have an explicit click handler.
 # Profile-delete buttons are generated dynamically and are checked separately.

@@ -48,6 +48,8 @@ def main():
     socks5_state = {"interface":"eth1","protocol":"SOCKS5","auth":"no-auth","monitoring":True,"listening":True,"address":"192.168.4.26:12500"}
     calls = []
     fail_paths = set()
+    fail_requests = set()  # (verb, path): inject only a readback failure, not a failed save.
+    readback_unconfigured = {"value": False}
 
     server = ThreadingHTTPServer(
         ("127.0.0.1", 0), partial(QuietHandler, directory=str(ROOT))
@@ -64,7 +66,7 @@ def main():
         calls.append((method, path, request.post_data))
         body = {}
         status = 200
-        if path in fail_paths:
+        if path in fail_paths or (method, path) in fail_requests:
             route.fulfill(status=503, content_type="application/json", body=json.dumps({"error": "fixture unavailable"}))
             return
         if path == "/configs" and method == "GET":
@@ -111,6 +113,8 @@ def main():
             body = {"running": False, "pid": 0, "configured": True, "log_path": "/tmp/sing-box.log"}
         elif path == "/singbox/config" and method == "GET":
             body = {"configured": True, "config": singbox_saved or {"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:12500","CSQTTEnabled":False,"FinalOutbound":"socks-hydra","DirectDomains":["example.ru"],"DirectIPCIDRs":[],"SOCKS5":[{"ID":"hydra","Server":"192.0.2.10","ServerPort":1080,"Enabled":True},{"ID":"disabled","Server":"192.0.2.11","ServerPort":1080,"Enabled":False}],"Rules":[]}}
+            if readback_unconfigured["value"]:
+                body = {"configured": False}
         elif path == "/singbox/config" and method == "PUT":
             singbox_saved.update(json.loads(request.post_data or "{}"))
             body = {"ok": True}
@@ -321,6 +325,58 @@ def main():
             assert page.locator("#singboxLogs").inner_text() == "fixture sing-box log"
             page.locator("#singboxStart").click()
             assert any(method == "POST" and path == "/singbox/start" for method, path, _ in calls)
+
+            # Both Route and Sing-Box need their own unique live status node.
+            assert page.locator("#routeConfigMessage").count()==1
+            assert page.locator("#singboxConfigMessage").count()==1
+            assert page.locator("#singboxConfigMessage").is_visible()
+            # PUT may succeed even when the follow-up GET fails. Never report
+            # "verified" without reading the saved config back successfully.
+            fail_requests.add(("GET", "/singbox/config"))
+            prior_put_count = len([1 for method,path,_ in calls
+                                   if method=="PUT" and path=="/singbox/config"])
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function(
+                """() => document.querySelector('#singboxConfigMessage').textContent.includes('повторное чтение')
+                   && document.querySelector('#routeConfigMessage').textContent.includes('повторное чтение')"""
+            )
+            message=page.locator("#singboxConfigMessage").first.inner_text()
+            assert not "проверена sing-box" in message, (
+                "READBACK FAILURE MISREPORTED AS SUCCESS:",message)
+            assert page.locator("#singboxConfigMessage").first.evaluate(
+                "el => el.classList.contains('error')"), message
+            assert page.locator("#routeConfigMessage").inner_text()==message
+            assert page.locator("#routeConfigMessage").evaluate(
+                "el => el.classList.contains('error')")
+            assert len([1 for method,path,_ in calls
+                        if method=="PUT" and path=="/singbox/config"])==prior_put_count+1
+            fail_requests.clear()
+            # HTTP 200 with "configured":false also cannot confirm the saved
+            # data, even though both requests technically succeeded.
+            readback_unconfigured["value"] = True
+            page.locator("#singboxConfigMessage").evaluate(
+                "el => { el.textContent='Ожидание ответа'; el.className='notice' }")
+            page.locator("#routeConfigMessage").evaluate(
+                "el => { el.textContent='Ожидание ответа'; el.className='notice' }")
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function(
+                """() => document.querySelector('#singboxConfigMessage').classList.contains('error')
+                   && document.querySelector('#singboxConfigMessage').textContent.includes('не подтвердило')"""
+            )
+            assert page.locator("#routeConfigMessage").evaluate(
+                "el => el.classList.contains('error')")
+            readback_unconfigured["value"] = False
+            # A retry after transient readback outage must recover.
+            page.locator("#singboxConfigMessage").evaluate(
+                "el => { el.textContent='Ожидание ответа'; el.className='notice' }")
+            page.locator("#routeConfigMessage").evaluate(
+                "el => { el.textContent='Ожидание ответа'; el.className='notice' }")
+            page.locator("#singboxSaveEngine").click()
+            page.wait_for_function(
+                "() => document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')"
+            )
+            assert page.locator("#routeConfigMessage").evaluate(
+                "el => el.classList.contains('success')")
 
             # The agreed design is a fixed 390px native-phone canvas on every
             # device. Desktop must center that same canvas; it must not stretch,
