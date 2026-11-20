@@ -3,7 +3,7 @@
   const base = '/api';
   const cache = {
     configs: '[]', settings: '{}', logs: '[]', status: '{"connected":false}', selected: '{}',
-    coreUpdate: '{"update":false,"version":""}', laluneUpdate: '{"update":false,"version":""}',
+    coreUpdate: '{"update":false,"version":""}',
     vk: '{"hasToken":false,"fetcherOk":false,"fetching":false,"message":"","progress":0}', vkAuto: '{"pending":true}',
     deployLog: '', deploying: false, coreDownloading: false
   };
@@ -18,7 +18,6 @@
     try { cache.deployLog = await json('/deploy/log'); } catch (_) {}
     try { const x = await json('/deploy/status'); cache.deploying = !!x.deploying; } catch (_) {}
     try { const x = await json('/updates/core/check'); cache.coreUpdate = JSON.stringify(x); } catch (_) {}
-    try { const x = await json('/updates/lalune'); cache.laluneUpdate = JSON.stringify({update:!!x.hasUpdate, version:x.remoteTag||'', error:x.error||''}); } catch (_) {}
     try { const x = await json('/updates/core/status'); cache.coreDownloading = !!x.downloading; } catch (_) {}
     try { const x = await json('/vk/state'); cache.vk = JSON.stringify(x); } catch (_) {}
   }
@@ -88,17 +87,6 @@
     },
     UpdateCore: () => !!syncJson("/updates/core", "POST", undefined, {ok:false}).ok,
     UpdateCoreAndWait: () => !!syncJson("/updates/core/wait", "POST", undefined, {ok:false}).ok,
-    CheckLaLuneUpdate: () => {
-      const x = syncJson("/updates/lalune", "GET", undefined, null);
-      if (x) {
-        cache.laluneUpdate = JSON.stringify({
-          update: !!(x.hasUpdate || x.HasUpdate),
-          version: x.remoteTag || x.RemoteTag || ''
-        });
-      }
-      return cache.laluneUpdate;
-    },
-    OpenLaLuneReleases: () => { window.open('https://github.com/Endlad2/LaLune/releases/latest','_blank'); return true; },
     GetVKTokenState: () => {
       const x = syncReq("/vk/state", "GET");
       if (x) cache.vk = x;

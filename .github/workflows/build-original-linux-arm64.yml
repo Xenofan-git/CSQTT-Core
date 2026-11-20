@@ -187,13 +187,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25.0'
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.47.2
-          channel: stable
-          architecture: x64
-          cache: true
       - name: Install ARM64 toolchain
         run: |
           set -euxo pipefail
@@ -218,21 +211,19 @@ jobs:
           cp adapt/csqtt_core_socks5_linux.go upstream-lalune/Desktop/Linux/csqtt_core_socks5_linux.go
           cp adapt/csqtt_core_socks5_linux_test.go upstream-lalune/Desktop/Linux/csqtt_core_socks5_linux_test.go
           python3 adapt/patch-csqtt-deploy-ui.py
-      - name: Build and package CSQTT panel for NanoPi
-        working-directory: upstream-lalune/Frontend/Core
+      - name: Package standalone CSQTT Core web UI without Flutter
         run: |
           set -euxo pipefail
-          cp ../../../adapt/nanopi.js web/api.js
-          # Pinned upstream pubspec declares assets/; ensure the directory exists in the clean checkout.
-          mkdir -p assets
-          flutter pub get
-          flutter build web --release
-          # The CSQTT-native panel is standalone HTML backed by the existing /api contract.
-          # Put it into the actual packaged frontend, not just the preview source file.
-          cp ../../../adapt/csqtt-panel-preview.html build/web/index.html
-          grep -Fq '<title>CSQTT Core · NanoPi</title>' build/web/index.html
-          test "$(grep -o 'data-page="' build/web/index.html | wc -l)" -eq 7
-          node -e "const fs=require('fs');const h=fs.readFileSync('build/web/index.html','utf8');const m=h.match(/<script>([\\s\\S]*?)<\\/script>/);if(!m)process.exit(2);new Function(m[1]);"
+          python3 adapt/test-csqtt-core-web-package.py
+          python3 adapt/package-csqtt-core-web.py --output csqtt-core-web-dist
+          test -s csqtt-core-web-dist/index.html
+          test -s csqtt-core-web-dist/api.js
+          test "$(find csqtt-core-web-dist -maxdepth 1 -type f | wc -l)" = 2
+          ! find csqtt-core-web-dist -iname '*flutter*' | grep -q .
+          grep -Fq '<title>CSQTT Core · NanoPi</title>' csqtt-core-web-dist/index.html
+          test "$(grep -o 'data-page="' csqtt-core-web-dist/index.html | wc -l)" = 7
+          node --check csqtt-core-web-dist/api.js
+          node -e "const fs=require('fs');const h=fs.readFileSync('csqtt-core-web-dist/index.html','utf8');const m=h.match(/<script>([\\s\\S]*?)<\\/script>/);if(!m)process.exit(2);new Function(m[1]);"
       - name: Verify provenance and exact adaptation
         run: |
           set -euxo pipefail
@@ -332,7 +323,7 @@ jobs:
           grep -Fq 'func TestLinuxRunnerStartupTimeoutKillsCoreProcessTree' upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
           grep -Fq 'func TestLinuxRunnerSetupRoutesFailureKillsCoreProcessTree' upstream-lalune/Desktop/Linux/linux_runner_lifecycle_test.go
           mkdir -p upstream-lalune/Desktop/Linux/frontend
-          cp -a upstream-lalune/Frontend/Core/build/web/. upstream-lalune/Desktop/Linux/frontend/
+          cp -a csqtt-core-web-dist/. upstream-lalune/Desktop/Linux/frontend/
           # The binary's embedded fallback UI uses the CSQTT-style panel preview.
           # The normal Nginx document root is not replaced by this build step.
           cp adapt/csqtt-panel-preview.html upstream-lalune/Desktop/Linux/frontend/index.html
