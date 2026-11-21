@@ -63,10 +63,20 @@ jobs:
           python3 adapt/fullchain-fixture/inject-test-turn-only.py /tmp/csqtt-original-250
           cd /tmp/csqtt-original-250/rust-client
           cargo test --quiet --locked --bin client --no-run --message-format=json > /tmp/fullchain-cargo-tests.jsonl 2>/tmp/fullchain-cargo-tests.err || {
-            echo 'ISOLATED_RUST_FIXTURE_COMPILE_ERROR_START'
-            sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' /tmp/fullchain-cargo-tests.err | grep -n -C 8 -E 'error|^ *-->|^help:' | tail -130 || true
-            echo 'ISOLATED_RUST_FIXTURE_COMPILE_ERROR_END'
-            tail -130 /tmp/fullchain-cargo-tests.err
+            echo 'ISOLATED_RUST_COMPILER_DIAGNOSTICS_FROM_JSON_START'
+            python3 - <<'DIAGNOSTICS'
+          import json
+          from pathlib import Path
+          for line in Path('/tmp/fullchain-cargo-tests.jsonl').read_text().splitlines():
+              try: item=json.loads(line)
+              except ValueError: continue
+              if item.get('reason')=='compiler-message':
+                  message=item.get('message',{})
+                  if message.get('level') in ('error','failure-note'):
+                      print((message.get('rendered') or str(message))[:16000])
+          DIAGNOSTICS
+            echo 'ISOLATED_RUST_COMPILER_DIAGNOSTICS_FROM_JSON_END'
+            tail -35 /tmp/fullchain-cargo-tests.err
             exit 1
           }
           python3 - <<'PY'
