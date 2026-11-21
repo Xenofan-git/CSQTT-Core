@@ -1,0 +1,33 @@
+name: CSQTT Core 2.5 unchanged original ELF real VK Calls hash preflight ARM64
+on:
+  push:
+    branches: [test/csqtt-250-original-live-vk-20261121]
+    paths:
+      - adapt/live-vk/**
+      - .github/workflows/csqtt-core-250-original-real-vk-preflight-arm64.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-elf-vk-calls:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44912292825
+          name: csqtt-core-250-raw-tun-go-original-client-core8-singbox-arm64
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Run exact Rust v2.5 original ELF against REAL VK Calls API
+        env:
+          VK_CALL_HACH_1: ${{ secrets.VK_CALL_HACH_1 }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          test "$(uname -m)" = aarch64
+          python3 adapt/live-vk/validate-original-elf.py
