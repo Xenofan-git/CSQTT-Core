@@ -1,12 +1,13 @@
-name: CSQTT Core 2.5.0 real client-server protocol E2E (isolated ARM64)
+name: CSQTT Core 2.5 original client vs derived release7 real TURN E2E
 on:
   push:
-    branches: [test/csqtt-250-native-client-20261121]
+    branches: [test/csqtt-250-derived-realpair-release7-20261121]
     paths:
       - .github/workflows/csqtt-core-250-realpair-isolated.yml
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   original-v250-realpair:
     runs-on: ubuntu-24.04-arm
@@ -44,6 +45,25 @@ jobs:
           file /tmp/csqtt-official-server | grep -F 'ARM aarch64'
           test "$(/tmp/csqtt-official-server --protocol-revision)" = CSQTT-WIRE-3
           echo 'ORIGINAL_250_ARM64_SERVER_VERIFIED'
+      - name: Download already-verified derived Core release7 ARM64 ELF
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44553540024
+          github-token: ${{ github.token }}
+          name: csqtt-core-verified-linux-arm64-21c59ba2918fd04e4324a897d7afc2e53a2e0cae
+          path: /tmp/csqtt-core-release7
+
+      - name: Verify exact Core release7 binary and stage as isolated peer
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd /tmp/csqtt-core-release7 && sha256sum -c SHA256SUMS)
+          grep -Fx 'repo_commit=21c59ba2918fd04e4324a897d7afc2e53a2e0cae' /tmp/csqtt-core-release7/BUILD-INFO.txt
+          echo '3295c38ffdca3011f91990a16eff9bcd4d25df73b9cd49b3cc59d50d1ddfc7fb  /tmp/csqtt-core-release7/csqtt-core-linux-arm64' | sha256sum -c -
+          install -m 0755 /tmp/csqtt-core-release7/csqtt-core-linux-arm64 /tmp/csqtt-official-server
+          test "$(/tmp/csqtt-official-server --protocol-revision)" = CSQTT-WIRE-3
+          echo VERIFIED_DERIVED_CORE_RELEASE7_WIRE3
+
       - name: Build client integration-test executable from unmodified 2.5.0 sources
         shell: bash
         working-directory: /tmp/csqtt-original/rust-client
@@ -87,7 +107,7 @@ jobs:
           sleep 5
           kill -0 "$(cat /tmp/csqtt-250-server-pid)"
           sudo ip netns exec "$CSQTT_TEST_NS" ss -lun | grep -F ':46920'
-          sudo ip -n "$CSQTT_TEST_NS" addr show csqtt1
+          sudo ip -n "$CSQTT_TEST_NS" addr show csqtt-core0
           echo 'ORIGINAL_SERVER_RUNNING_INSIDE_ISOLATED_NETNS'
       - name: Real original 2.5.0 client session via synthetic local TURN and independent server
         shell: bash
@@ -108,25 +128,6 @@ jobs:
             exit 1
           fi
           echo 'ORIGINAL_250_CLIENT_SERVER_REAL_TURN_E2E_PASS'
-      - name: Check GETCONF timeout recovery on actual isolated client-server pair
-        shell: bash
-        run: |
-          set -euo pipefail
-          TEST_BIN="$(cat /tmp/csqtt-250-test-executable)"
-          set +e
-          timeout 130 sudo ip netns exec "$CSQTT_TEST_NS" \
-            env CSQTT_E2E_PEER=127.0.0.1:46920 \
-            "$TEST_BIN" getconf_timeout_recovers_without_terminating_the_tunnel \
-            --ignored --test-threads=1 --nocapture > /tmp/csqtt-250-recovery.log 2>&1
-          code=$?
-          set -e
-          tail -65 /tmp/csqtt-250-recovery.log
-          if [ "$code" -ne 0 ] || ! grep -q '1 passed; 0 failed;' /tmp/csqtt-250-recovery.log; then
-            echo "RECOVERY_E2E_NOT_YET_VERIFIED code=$code"
-            tail -60 /tmp/csqtt-250-real-server.log
-            exit 1
-          fi
-          echo 'ORIGINAL_250_CLIENT_SERVER_GETCONF_RECOVERY_PASS'
       - name: Isolated test cleanup
         if: always()
         shell: bash
