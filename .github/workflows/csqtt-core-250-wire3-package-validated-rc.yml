@@ -1,0 +1,43 @@
+name: CSQTT Core 2.5 validated isolated ARM64 RC package with SHA256
+on:
+  push:
+    branches: [release/csqtt-250-wire3-candidate-20261121]
+    paths:
+      - .github/workflows/csqtt-core-250-wire3-package-validated-rc.yml
+      - adapt/package-csqtt-core-250-validated-rc.py
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package-provenance-only:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44912292825
+          name: csqtt-core-250-raw-tun-go-original-client-core8-singbox-arm64
+          github-token: ${{ github.token }}
+          path: candidate-input
+      - name: Verify four original validated binaries and assemble isolated RC evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ runner.environment }}" = github-hosted
+          test "$(uname -m)" = aarch64
+          RUNNER_ENVIRONMENT=github-hosted python3 adapt/package-csqtt-core-250-validated-rc.py
+          (cd csqtt-core-250-wire3-arm64-validated-rc && sha256sum -c SHA256SUMS)
+          zip -q -r -9 csqtt-core-250-wire3-arm64-validated-rc.zip csqtt-core-250-wire3-arm64-validated-rc
+          unzip -t csqtt-core-250-wire3-arm64-validated-rc.zip | tail -1
+          sha256sum csqtt-core-250-wire3-arm64-validated-rc.zip
+          echo CSQTT_250_RC_PACKAGE_ARCHIVE_HASHES_OK
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csqtt-core-250-wire3-arm64-validated-rc-20261121
+          path: |
+            csqtt-core-250-wire3-arm64-validated-rc.zip
+            csqtt-core-250-wire3-arm64-validated-rc/SHA256SUMS
+          retention-days: 30
+          if-no-files-found: error
