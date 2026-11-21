@@ -1,0 +1,33 @@
+name: CSQTT Core 2.5 offline verify previously validated ARM64 ZIP
+on:
+  push:
+    branches: [release/csqtt-250-wire3-candidate-20261121]
+    paths:
+      - adapt/verify-csqtt-core-250-rc-archive.py
+      - adapt/test-csqtt-core-250-rc-archive.py
+      - .github/workflows/csqtt-core-250-offline-pinned-rc-archive-verify.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  offline-immutable-release-candidate:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test that unsafe ZIP inventory is rejected (no binaries rebuilt)
+        run: python3 -B adapt/test-csqtt-core-250-rc-archive.py
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44913844376
+          name: csqtt-core-250-wire3-arm64-validated-rc-20261121
+          github-token: ${{ github.token }}
+          path: downloaded
+      - name: Verify immutable ZIP SHA-256 and four AArch64 binaries + inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          python3 -B adapt/verify-csqtt-core-250-rc-archive.py \
+            downloaded/csqtt-core-250-wire3-arm64-validated-rc.zip
