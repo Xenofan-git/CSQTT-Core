@@ -59,7 +59,7 @@ jobs:
           set -euo pipefail
           (cd /tmp/csqtt-core-release7 && sha256sum -c SHA256SUMS)
           grep -Fx 'repo_commit=91b154011ca16c219f57eef99462d3408dccfeeb' /tmp/csqtt-core-release7/BUILD-INFO.txt
-          file /tmp/csqtt-core-release7/csqtt-core-linux-arm64 | grep -F AArch64
+          file /tmp/csqtt-core-release7/csqtt-core-linux-arm64 | grep -F 'ARM aarch64'
           install -m 0755 /tmp/csqtt-core-release7/csqtt-core-linux-arm64 /tmp/csqtt-official-server
           test "$(/tmp/csqtt-official-server --protocol-revision)" = CSQTT-WIRE-3
           echo VERIFIED_DERIVED_CORE_FIXED_DOWNLINK_WIRE3
