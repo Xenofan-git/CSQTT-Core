@@ -207,6 +207,8 @@ try:
         log=json.dumps(curl_api("GET","/logs"),ensure_ascii=False)
         if "[SOCKS5] Downstream eth1 and loopback CSQTT SOCKS5 listeners started" in log:
             return True
+        if "Подключение отменено:" in log or "Таймаут ожидания TUNCONF/traffic" in log:
+            raise RuntimeError("Go TUN/SOCKS startup rejected: "+log[-1400:])
         if app.poll() is not None or core.poll() is not None or fixture.poll() is not None:
             raise RuntimeError("a critical real child process exited before SOCKS readiness")
         return False

@@ -37,6 +37,14 @@ s=runner.read_text()
 old='''if len(dnsServers) > 0 {'''
 assert s.count(old)==1
 s=s.replace(old,'''if len(dnsServers) > 0 && os.Getenv("CSQTT_TEST_TURN_RELAY_PORT")=="" {''',1)
+# The isolated GitHub runner does not have dnsmasq installed. Direct
+# integration is already independently verified; this one-chain fixture
+# explicitly checks a no-default-route negative control and never enables
+# Direct domains. Skip only dnsmasq state management in THIS test binary.
+old='if err := t.applyDirectRoutingLocked(); err != nil {\n\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Ошибка применения: %v; откат TUN", err))\n        rollback()\n        return fmt.Errorf("apply Direct routing: %w", err)\n\t}'
+assert s.count(old)==1, "upstream Go TUN Direct setup changed"
+s=s.replace(old,'if os.Getenv("CSQTT_TEST_TURN_RELAY_PORT") == "" {\n        if err := t.applyDirectRoutingLocked(); err != nil {\n            t.app.core.AddLog(fmt.Sprintf("[DIRECT] Ошибка применения: %v; откат TUN", err))\n            rollback()\n            return fmt.Errorf("apply Direct routing: %w", err)\n        }\n    }',1)
 runner.write_text(s)
+print('TEST_ONLY_DIRECT_DNSMASQ_SKIPPED_ON_DISPOSABLE_ARM64_WITHOUT_DNSMASQ')
 print('TEST_ONLY_NO_RESOLVED_DBUS_SIDE_EFFECT_IN_ISOLATED_NETNS')
 print('TEST_ONLY_GO_SHA256_PINNED_TO_SYNTHETIC_TURN_FIXTURE',sha)
