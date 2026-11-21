@@ -1,0 +1,22 @@
+name: CSQTT Core 2.5 isolated ARM64 Linux TUN SO_MARK kernel control
+on:
+  push:
+    branches: [test/csqtt-250-fullchain-arm64-20261121]
+    paths:
+      - adapt/fullchain-fixture/kernel-marked-tun-preflight.py
+      - .github/workflows/csqtt-core-250-arm64-kernel-marked-tun-preflight.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-kernel-control:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test real ARM64 kernel ip policy and TUN without CSQTT or sing-box
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" python3 adapt/fullchain-fixture/kernel-marked-tun-preflight.py
