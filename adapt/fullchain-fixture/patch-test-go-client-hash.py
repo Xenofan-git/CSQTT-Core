@@ -44,7 +44,20 @@ s=s.replace(old,'''if len(dnsServers) > 0 && os.Getenv("CSQTT_TEST_TURN_RELAY_PO
 old='if err := t.applyDirectRoutingLocked(); err != nil {\n\t\tt.app.core.AddLog(fmt.Sprintf("[DIRECT] Ошибка применения: %v; откат TUN", err))\n        rollback()\n        return fmt.Errorf("apply Direct routing: %w", err)\n\t}'
 assert s.count(old)==1, "upstream Go TUN Direct setup changed"
 s=s.replace(old,'if os.Getenv("CSQTT_TEST_TURN_RELAY_PORT") == "" {\n        if err := t.applyDirectRoutingLocked(); err != nil {\n            t.app.core.AddLog(fmt.Sprintf("[DIRECT] Ошибка применения: %v; откат TUN", err))\n            rollback()\n            return fmt.Errorf("apply Direct routing: %w", err)\n        }\n    }',1)
+# Enable the existing Go SOCKS5 diagnostic hook only inside the
+# disposable ARM64 test fixture. No product changes.
+needle = 'app.socksLocal = NewSocks5Server("127.0.0.1:12500")'
+assert s.count(needle) == 1, "upstream Go NewApp loopback listener changed"
+addition = '''
+    if os.Getenv("CSQTT_TEST_TURN_RELAY_PORT") != "" {
+        app.socksLocal.tracef = func(format string, args ...any) {
+            app.core.AddLog("[TEST CSQTT SOCKS5] " + fmt.Sprintf(format,args...))
+        }
+    }
+'''
+s=s.replace(needle,needle+addition,1)
 runner.write_text(s)
+print('TEST_ONLY_GO_SOCKS5_TRACE_ENABLED')
 print('TEST_ONLY_DIRECT_DNSMASQ_SKIPPED_ON_DISPOSABLE_ARM64_WITHOUT_DNSMASQ')
 print('TEST_ONLY_NO_RESOLVED_DBUS_SIDE_EFFECT_IN_ISOLATED_NETNS')
 print('TEST_ONLY_GO_SHA256_PINNED_TO_SYNTHETIC_TURN_FIXTURE',sha)

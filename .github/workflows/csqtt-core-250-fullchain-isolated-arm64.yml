@@ -54,7 +54,7 @@ jobs:
           assert m['files']['csqtt-core-original-client-250-arm64']['sha256']=='3c76a4323ef784568a38a82e206cecfa7657d93c01b6a69033a2f7a2f44760fa'
           assert m['files']['csqtt-core-derived-server-250-arm64']['sha256']=='a131751f29a5373d3ebf08bc0d3bfe59988a8badaf2854f01eb5561fc903a706'
           PY
-      - name: Verify original Rust 2.5.0 source and compile test-only local TURN fixture
+      - name: Stage pinned original Rust 2.5 source and synthetic TURN fixture
         shell: bash
         run: |
           set -euo pipefail
@@ -63,6 +63,16 @@ jobs:
           cp /tmp/csqtt-original-250/app/src/main/assets/domains.txt /tmp/csqtt-original-250/domains.txt
           echo '3783f488db5378a9d91120c43f874bf70cab62bd0a799b6951f7859a492cecd1  /tmp/csqtt-original-250/domains.txt' | sha256sum -c -
           python3 adapt/fullchain-fixture/inject-test-turn-only.py /tmp/csqtt-original-250
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            /tmp/csqtt-original-250/rust-client/target
+            ~/.cargo/registry
+          key: csqtt-core250-arm64-pinned-v2-synthetic-turn-${{ hashFiles('adapt/fullchain-fixture/inject-test-turn-only.py') }}
+      - name: Compile original-source Rust 2.5 test-only TURN binaries
+        shell: bash
+        run: |
+          set -euo pipefail
           cd /tmp/csqtt-original-250/rust-client
           cargo test --quiet --locked --bin client --no-run --message-format=json > /tmp/fullchain-cargo-tests.jsonl 2>/tmp/fullchain-cargo-tests.err || {
             echo 'ISOLATED_RUST_COMPILER_DIAGNOSTICS_FROM_JSON_START'
@@ -101,6 +111,12 @@ jobs:
           echo "CSQTT_E2E_RUST_CLIENT=$(realpath target/release/client)" >> "$GITHUB_ENV"
           echo "CSQTT_E2E_TURN_TEST=$(cat /tmp/csqtt-250-fixture-test-bin.txt)" >> "$GITHUB_ENV"
           echo 'TEST_ONLY_RUST250_SYNTHETIC_TURN_SOURCE_BUILT'
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            /tmp/csqtt-original-250/rust-client/target
+            ~/.cargo/registry
+          key: csqtt-core250-arm64-pinned-v2-synthetic-turn-${{ hashFiles('adapt/fullchain-fixture/inject-test-turn-only.py') }}
       - name: Reconstruct pinned Go LinuxRunner with unchanged runtime except isolated fixture gates
         shell: bash
         run: |

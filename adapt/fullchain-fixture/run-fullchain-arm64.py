@@ -219,6 +219,20 @@ try:
     rules=ns(client_ns,"ip","rule","show").stdout
     assert "22015" in rules and "22020" in rules
     print("FULLCHAIN_ISOLATED_GO_TUN_POLICY_202_AND_FWMARK_PASS",flush=True)
+    lookup=ns(client_ns,"ip","route","get","10.67.69.1","mark","0x4d53",check=False,timeout=6)
+    print("FULLCHAIN_SO_MARK_ROUTE_LOOKUP",lookup.returncode,lookup.stdout.strip(),lookup.stderr.strip(),flush=True)
+    assert lookup.returncode==0 and "dev csqtt0" in lookup.stdout, "marked SOCKS5 traffic must route into TUN"
+    print("FULLCHAIN_MARKED_ROUTE_TARGETS_REAL_GO_TUN_PASS",flush=True)
+
+    client_tun_before=ns(client_ns,"ip","-s","link","show","dev","csqtt0",timeout=8).stdout
+    server_tun_before=ns(server_ns,"ip","-s","link","show","dev","csqtt-core0",timeout=8).stdout
+    print("FULLCHAIN_BEFORE_TUN_COUNTERS_CLIENT",client_tun_before.strip()[-600:],flush=True)
+    print("FULLCHAIN_BEFORE_TUN_COUNTERS_SERVER",server_tun_before.strip()[-600:],flush=True)
+
+    # ICMP over the marked route probes WIRE-3 independently of TCP.
+    icmp=ns(client_ns,"ping","-n","-m","0x4d53","-c","1","-W","2","10.67.69.1",
+            check=False,timeout=5)
+    print("FULLCHAIN_REAL_MARKED_ICMP_PROBE",icmp.returncode,icmp.stdout.strip()[-470:],icmp.stderr.strip()[-220:],flush=True)
 
     # Negative control was unreachable directly. Positive request must
     # complete via sing-box SOCKS inbound -> CSQTT SOCKS outbound -> Go
@@ -227,7 +241,16 @@ try:
     req=ns(client_ns,"curl","--noproxy","","-fsS","--max-time","23",
            "--socks5-hostname","127.0.0.1:19180","http://10.67.69.1:47093/marker.txt",
            check=False,timeout=26)
-    print("FULLCHAIN_CURL_EXIT",req.returncode,req.stderr[-350:],flush=True)
+    print("FULLCHAIN_CURL_EXIT",req.returncode,req.stderr[-1500:],flush=True)
+    print("FULLCHAIN_AFTER_TUN_COUNTERS_CLIENT",
+          ns(client_ns,"ip","-s","link","show","dev","csqtt0",check=False).stdout.strip()[-700:],flush=True)
+    print("FULLCHAIN_AFTER_TUN_COUNTERS_SERVER",
+          ns(server_ns,"ip","-s","link","show","dev","csqtt-core0",check=False).stdout.strip()[-700:],flush=True)
+    current_go_logs=json.dumps(curl_api("GET","/logs"),ensure_ascii=False)
+    print("FULLCHAIN_GO_SOCKS5_TRACE",current_go_logs[-1800:],flush=True)
+    singbox_log=root/"singbox-state"/"sing-box.log"
+    if singbox_log.exists():
+        print("FULLCHAIN_SINGBOX_LOG",singbox_log.read_text(errors="replace")[-1400:],flush=True)
     assert req.returncode==0 and req.stdout.strip()==marker,(
         "unified test did not carry traffic over real 2.5 WIRE-3 session; "+req.stderr[-500:])
     assert marker in http_log.read_text(errors="replace") or "GET /marker.txt" in http_log.read_text(errors="replace")
