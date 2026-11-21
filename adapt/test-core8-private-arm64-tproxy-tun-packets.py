@@ -245,8 +245,10 @@ def await_packet(sniffer,predicate,timeout=18,tunfd=None):
     return None
 
 
-def inner(expected):
+def inner(expected, test_case="normal"):
     policy.preflight(expected,inside=True)
+    check(test_case in ("normal", "open-tcp"), "unknown test case")
+    print("TUN_DATAPLANE_TEST_CASE="+test_case,flush=True)
     OUT=policy.OUT
     before=json.loads((OUT/"sysctl-baseline.json").read_text())
     policy_before=json.loads((OUT/"policy-baseline.json").read_text())
@@ -353,7 +355,9 @@ def inner(expected):
                         echoed=await_packet(sniffer,lambda p:
                             p[2]==6 and TCP_PROBE in p[3],timeout=16,tunfd=tun_fd)
                         print("TUN_DATAPLANE_TCP_ECHO_REPLY_SEEN="+str(echoed is not None),flush=True)
-                        if echoed:
+                        if echoed and test_case=="open-tcp":
+                            print("TUN_DATAPLANE_TCP_INTENTIONALLY_LEFT_OPEN=True",flush=True)
+                        if echoed and test_case=="normal":
                             # Properly finish the synthetic TCP session so
                             # Core8's shutdown need not time out waiting for
                             # an unacknowledged fake client.
@@ -412,13 +416,18 @@ def inner(expected):
     print("TUN_DATAPLANE_RUST_SYSCTL_RESTORED="+str(not diff),flush=True)
     print("TUN_DATAPLANE_RUST_SYSCTL_DIFF="+repr(diff),flush=True)
     check(policy.policy_snapshot()==policy_before,"route remains after normal cleanup")
-    check(not diff,"sysctl not restored before guard")
+    if test_case=="normal":
+        check(not diff,"sysctl not restored before guard")
+    else:
+        print("TUN_DATAPLANE_OPEN_TCP_RUST_ONLY_RESTORE_STATUS="+
+              ("RESTORED" if not diff else "NEEDS_EXTERNAL_GUARD"),flush=True)
     check(outcome is not None,"UDP test incomplete")
     return 0 if all(outcome) else 3  # no false success for partial packet delivery
 
 
-def outer(expected):
+def outer(expected, test_case="normal"):
     policy.preflight(expected)
+    check(test_case in ("normal", "open-tcp"), "unknown test case")
     OUT=policy.OUT
     check(not OUT.exists(),"previous acceptance dir exists; inspect it")
     OUT.mkdir(mode=0o700,parents=True)
@@ -428,7 +437,7 @@ def outer(expected):
     (OUT/"policy-baseline.json").write_text(json.dumps(route_baseline,sort_keys=True))
     args=[sys.executable,"-B",str(policy.GUARD),"--state-dir",str(policy.STATE),
           "--sysctl-root","/proc/sys","--boot-id-file","/proc/sys/kernel/random/boot_id",
-          "--private-guest","run","--",sys.executable,"-B",str(Path(__file__).resolve()),"inner",expected]
+          "--private-guest","run","--",sys.executable,"-B",str(Path(__file__).resolve()),"inner",expected,test_case]
     result=subprocess.run(args,capture_output=True,text=True,timeout=225)
     print("TUN_DATAPLANE_GUARD_EXIT="+str(result.returncode),flush=True)
     print(result.stdout,flush=True)
@@ -446,8 +455,12 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("mode",choices=("outer","inner"))
     parser.add_argument("expected_sha")
+    parser.add_argument("test_case",nargs="?",choices=("normal","open-tcp"),default="normal")
     opts=parser.parse_args()
-    try:sys.exit(outer(opts.expected_sha) if opts.mode=="outer" else inner(opts.expected_sha))
+    if opts.test_case=="open-tcp":
+        # Separate trial state. Do not alter existing proven normal-path artifacts.
+        policy.OUT=Path("/var/lib/csqtt-core-private/tproxy-stalled-tcp-acceptance")
+    try:sys.exit(outer(opts.expected_sha,opts.test_case) if opts.mode=="outer" else inner(opts.expected_sha,opts.test_case))
     except Exception as error:
         print("TUN_DATAPLANE_ACCEPTANCE_FAILED="+str(error),file=sys.stderr)
         sys.exit(75)
