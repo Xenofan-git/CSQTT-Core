@@ -1,0 +1,43 @@
+name: CSQTT Core 2.5 unified candidate bundle systemd rollback (ephemeral ARM64)
+on:
+  push:
+    branches: [test/csqtt-250-unified-bundle-rollback-20261121]
+    paths:
+      - adapt/test-csqtt-core-250-bundle-rollback-hosted.sh
+      - .github/workflows/csqtt-core-250-unified-bundle-rollback-hosted.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  actual-bundle-rollback:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44894005565
+          name: csqtt-core-250-experimental-go-client-server-singbox-arm64
+          github-token: ${{ github.token }}
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44553540024
+          name: csqtt-core-verified-linux-arm64-21c59ba2918fd04e4324a897d7afc2e53a2e0cae
+          github-token: ${{ github.token }}
+          path: old-core7
+      - name: Verify hosted native ARM64 systemd acceptance prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n adapt/test-csqtt-core-250-bundle-rollback-hosted.sh
+          test "${{ runner.environment }}" = github-hosted
+          test "$(uname -m)" = aarch64
+          test -s candidate/manifest.json
+          test -s old-core7/csqtt-core-linux-arm64
+      - name: Test actual four-component bundle upgrade rejection and rollback
+        shell: bash
+        run: |
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \\
+            GITHUB_WORKSPACE="$GITHUB_WORKSPACE" bash adapt/test-csqtt-core-250-bundle-rollback-hosted.sh
