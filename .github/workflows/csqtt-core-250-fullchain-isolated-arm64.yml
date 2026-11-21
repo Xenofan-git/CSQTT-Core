@@ -1,9 +1,10 @@
 name: CSQTT Core 2.5 authenticated WIRE-3 full-chain ARM64 isolated experiment
 on:
   push:
-    branches: [test/csqtt-250-fullchain-arm64-20261121]
+    branches: [test/csqtt-250-go-release-parity-20261121]
     paths:
       - adapt/fullchain-fixture/**
+      - adapt/apply-csqtt-core-linux-tun-rawfd.py
       - .github/workflows/csqtt-core-250-fullchain-isolated-arm64.yml
   workflow_dispatch:
 permissions:
@@ -125,6 +126,7 @@ jobs:
           git -C upstream-lalune checkout -q --detach e4a6d08b63aef6025bf8ad8f77da660ea552e04b
           test "$(git -C upstream-lalune rev-parse HEAD)" = e4a6d08b63aef6025bf8ad8f77da660ea552e04b
           python3 adapt/apply-pinned-original-linux-arm64-policy.py
+          python3 adapt/apply-csqtt-core-linux-tun-rawfd.py
           python3 adapt/apply-csqtt-core-socks5.py
           python3 adapt/apply-csqtt-core-250-supervisor-gate.py
           python3 adapt/patch-csqtt-deploy-ui.py
@@ -141,6 +143,8 @@ jobs:
           cp adapt/csqtt-panel-preview.html upstream-lalune/Desktop/Linux/frontend/index.html
           cp adapt/nanopi.js upstream-lalune/Desktop/Linux/frontend/api.js
           python3 adapt/fullchain-fixture/patch-test-go-client-hash.py upstream-lalune/Desktop/Linux "$CSQTT_E2E_RUST_CLIENT"
+          grep -Fq "unix.Read(tunFD, buf)" upstream-lalune/Desktop/Linux/app_linux.go
+          grep -Fq "unix.Write(tunFD, buf[:n])" upstream-lalune/Desktop/Linux/app_linux.go
           grep -Fq 'os.Getenv("CSQTT_TEST_TURN_RELAY_PORT")==""' upstream-lalune/Desktop/Linux/app_linux.go
           grep -Fq 'result = append(result, "--exact-workers")' upstream-lalune/Desktop/Linux/csqtt_core_250_supervisor_gate_linux.go
           (cd upstream-lalune/Desktop/Linux && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /tmp/csqtt-fullchain-go-supervisor ./)
