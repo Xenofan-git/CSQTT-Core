@@ -1,0 +1,24 @@
+name: Core8 derived kernel sysctl restore (offline lab)
+on:
+  push:
+    branches:
+      - test/core8-kernel-sysctl-restore-lab-20261121
+    paths:
+      - adapt/patch-core8-kernel-sysctl-restore.py
+      - adapt/test-core8-kernel-sysctl-restore-offline.py
+      - .github/workflows/csqtt-core8-kernel-sysctl-restore-lab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-local-sysctl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm host Rust toolchain
+        run: rustc --version
+      - name: Strict source-anchor and compiled fake-file kernel restore tests
+        run: python3 -B adapt/test-core8-kernel-sysctl-restore-offline.py
