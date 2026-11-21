@@ -76,6 +76,8 @@ Environment=XDG_CONFIG_HOME=$stage/config
 Environment=TMPDIR=$stage/state
 Environment=CSQTT_CORE_250_EXPERIMENT=isolated-only
 Environment=CSQTT_250_ORIGINAL_CLIENT_BINARY=$stage/current/bin/csqtt-core-original-client-250-arm64
+Environment=CSQTT_SING_BOX_BINARY=$stage/current/bin/csqtt-core-sing-box-arm64
+Environment=CSQTT_SING_BOX_DATA_DIR=$stage/config/sing-box
 Environment=CSQTT_WEB_USER=ci
 Environment=CSQTT_WEB_PASS=synthetic-web-ci
 Environment=CSQTT_LALUNE_WEB_PORT=47092
@@ -123,6 +125,45 @@ ready
 systemctl is-enabled --quiet "$unit"
 test "$(sha256sum "$stage/current/bin/csqtt-core-derived-server-250-arm64" | cut -d' ' -f1)" = 3295c38ffdca3011f91990a16eff9bcd4d25df73b9cd49b3cc59d50d1ddfc7fb
 echo REAL_FOUR_COMPONENT_BASELINE_SYSTEMD_AND_PRIVATE_GO_HTTP_PASS
+# Verify that this package's pinned sing-box actually runs through the
+# existing Go panel API. DIRECT-only localhost traffic does not need a VPN
+# and does not contact any external network.
+test_singbox_via_go() {
+  local p http_pid result
+  p="$(systemctl show -p MainPID --value "$unit")"
+  test "$p" -gt 0
+  local api=http://127.0.0.1:1062
+  local credentials=ci:synthetic-web-ci
+  local config
+  config='{"listenAddress":"127.0.0.1:19180","csqttAddress":"127.0.0.1:12500","csqttEnabled":false}'
+  result="$(nsenter --target "$p" --net curl --noproxy '*' -fSs --max-time 5 \
+    -u "$credentials" -H 'Origin: http://127.0.0.1:1062' \
+    -H 'Content-Type: application/json' -X PUT -d "$config" "$api/singbox/config")"
+  python3 -c 'import json,sys; assert json.loads(sys.argv[1])["ok"]' "$result"
+  result="$(nsenter --target "$p" --net curl --noproxy '*' -fSs --max-time 5 \
+    -u "$credentials" -H 'Origin: http://127.0.0.1:1062' -X POST "$api/singbox/start")"
+  python3 -c 'import json,sys; assert json.loads(sys.argv[1])["ok"]' "$result"
+  result="$(nsenter --target "$p" --net curl --noproxy '*' -fSs --max-time 5 \
+    -u "$credentials" "$api/singbox/status")"
+  python3 -c 'import json,sys; assert json.loads(sys.argv[1])["running"]' "$result"
+  nsenter --target "$p" --net python3 -m http.server 47093 --bind 127.0.0.1 --directory "$stage/state" > "$stage/state/loopback-http.log" 2>&1 &
+  http_pid=$!
+  for i in $(seq 1 45); do
+    if nsenter --target "$p" --net curl -fsS --noproxy '' --max-time 2 \
+         --socks5-hostname 127.0.0.1:19180 http://127.0.0.1:47093/owned-ci-data \
+         -o "$stage/state/socks-result"; then break; fi
+    sleep .2
+  done
+  test "$(cat "$stage/state/socks-result")" = CI_PERSISTENT_MARKER
+  kill "$http_pid" >/dev/null 2>&1 || :
+  wait "$http_pid" 2>/dev/null || :
+  result="$(nsenter --target "$p" --net curl --noproxy '*' -fSs --max-time 5 \
+    -u "$credentials" -H 'Origin: http://127.0.0.1:1062' -X POST "$api/singbox/stop")"
+  python3 -c 'import json,sys; assert json.loads(sys.argv[1])["ok"]' "$result"
+  echo REAL_GO_PANEL_PINNED_SINGBOX_DIRECT_SOCKS5_LOOPBACK_PASS
+}
+test_singbox_via_go
+
 
 systemctl stop "$unit"
 ln -s "$stage/releases/new" "$stage/current.candidate"
@@ -148,4 +189,5 @@ sha256sum -c "$stage/unit.sha256"
 test "$(cat "$stage/state/owned-ci-data")" = CI_PERSISTENT_MARKER
 test "$(sha256sum "$stage/current/bin/csqtt-core-derived-server-250-arm64" | cut -d' ' -f1)" = 3295c38ffdca3011f91990a16eff9bcd4d25df73b9cd49b3cc59d50d1ddfc7fb
 test "$(ip -4 route show default)" = "$host_route_before"
+test_singbox_via_go
 echo REAL_NATIVE_ARM64_FOUR_COMPONENT_BUNDLE_ATOMIC_ROLLBACK_AND_GO_HTTP_PASS
