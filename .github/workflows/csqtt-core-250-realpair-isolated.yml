@@ -64,6 +64,21 @@ jobs:
           test "$(/tmp/csqtt-official-server --protocol-revision)" = CSQTT-WIRE-3
           echo VERIFIED_DERIVED_CORE_RELEASE7_WIRE3
 
+      - name: Align original client ICMP test destination with Core private TUN subnet
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'TEST_FIXTURE'
+          from pathlib import Path
+          p=Path('/tmp/csqtt-original/rust-client/turn_integration_tests.rs')
+          old=p.read_text()
+          before="        client_ip.octets()[3],\n        10,\n        66,\n        67,\n        1,"
+          after="        client_ip.octets()[3],\n        10,\n        67,\n        69,\n        1,"
+          assert old.count(before)==1, 'expected one original 2.5 test-only ICMP destination'
+          p.write_text(old.replace(before, after))
+          print('ISOLATED_FIXTURE_CORE_TUN_10_67_69_1_PASS')
+          TEST_FIXTURE
+
       - name: Build client integration-test executable from unmodified 2.5.0 sources
         shell: bash
         working-directory: /tmp/csqtt-original/rust-client
