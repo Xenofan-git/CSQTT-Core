@@ -6,6 +6,7 @@ on:
     paths:
       - adapt/patch-core8-kernel-sysctl-restore.py
       - adapt/test-core8-kernel-sysctl-restore-offline.py
+      - adapt/test-core8-guest-sysctl-restore-offline.py
       - adapt/patch-core8-tproxy-sysctl-ownership.py
       - adapt/test-core8-tproxy-sysctl-ownership-offline.py
       - adapt/test-core8-tproxy-kernel-owner-integration-offline.py
@@ -26,5 +27,6 @@ jobs:
       - name: Strict source-anchor and compiled fake-file kernel restore tests
         run: |
           python3 -B adapt/test-core8-kernel-sysctl-restore-offline.py
+          python3 -B adapt/test-core8-guest-sysctl-restore-offline.py
           python3 -B adapt/test-core8-tproxy-sysctl-ownership-offline.py
           python3 -B adapt/test-core8-tproxy-kernel-owner-integration-offline.py

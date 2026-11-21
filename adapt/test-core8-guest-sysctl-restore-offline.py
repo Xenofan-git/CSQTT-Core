@@ -90,6 +90,28 @@ class GuestSysctlMockTests(unittest.TestCase):
         self.assertIsNone(final["net/ipv4/ip_forward"])
         self.assertIn("GUEST_SYSCTL_SNAPSHOT_RESTORE_FAIL", out)
 
+    def test_child_sigkill_preserves_parent_exit_trap_restoration(self):
+        # A child process dying with SIGKILL is not the same as killing
+        # the supervisor/wrapper process: parent must still restore.
+        code, out, final, initial = self.run_fixture(
+            "python3 -c 'import os,signal;from pathlib import Path;"
+            "Path(\"@ROOT@/net/ipv4/ip_forward\").write_text(\"1\\n\");"
+            "os.kill(os.getpid(),signal.SIGKILL)'"
+        )
+        self.assertNotEqual(code, 0)
+        self.assertEqual(final, initial)
+        self.assertIn("GUEST_SYSCTL_SNAPSHOT_RESTORE_PASS", out)
+
+    def test_partial_startup_failure_still_restores(self):
+        code, out, final, initial = self.run_fixture(
+            "printf '1\\n' > '@ROOT@/net/ipv4/ip_forward'\n"
+            "printf '1\\n' > '@ROOT@/net/ipv6/conf/all/forwarding'\n"
+            "false"
+        )
+        self.assertNotEqual(code, 0)
+        self.assertEqual(final, initial)
+        self.assertIn("GUEST_SYSCTL_SNAPSHOT_RESTORE_PASS", out)
+
     def test_empty_snapshot_has_no_false_failure(self):
         code, out, _, _ = self.run_fixture("true")
         self.assertEqual(code, 0)

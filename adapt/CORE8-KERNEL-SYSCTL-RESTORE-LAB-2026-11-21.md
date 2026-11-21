@@ -105,3 +105,14 @@ same machine-wide sysctls lack a cross-process coordination lock;
 external edits matching expected values cannot be distinguished;
 real VM sysctl restore and actual VK TURN remain unverified. No public
 test UDP socket was opened, and no production service was altered.
+
+## Offline child-crash guard regression — 2026-11-21
+
+Extended the existing *unchanged production-script* offline guest wrapper mock
+suite from six to eight tests **on this experiment branch only**.
+The two new cases prove the parent EXIT trap restores fake sysctls after
+a synthetic child process SIGKILL and after a partial startup command failure.
+This simulates loss of the Core8 child but NOT loss of the supervisor itself.
+A supervisor SIGKILL/power loss needs separate persistent recovery orchestration
+and is still unverified. No real process was launched except a temporary
+Python child that only changed test files and killed itself.
