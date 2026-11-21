@@ -147,6 +147,22 @@ try:
     ns(server_ns,"ip","addr","show","csqtt-core0")
     http=spawn(server_ns,["python3","-m","http.server","47093","--bind","10.67.69.1","--directory",root],http_log)
     wait_until(lambda:http.poll() is None and ":47093" in ns(server_ns,"ss","-ltn",check=False).stdout,20)
+    # A separate real UDP echo endpoint bound only to the server-side
+    # Core8 TUN IP. Never exposed outside the disposable network namespace.
+    udp_service_code=r"""
+import socket
+s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+s.bind(("10.67.69.1",47094))
+print("WIRE3_UDP_ECHO_READY",flush=True)
+while True:
+    data,peer=s.recvfrom(2048)
+    if data.startswith(b"csqtt-core250-udp-"):
+        s.sendto(b"WIRE3-UDP-ECHO:"+data,peer)
+"""
+    udp_server=spawn(server_ns,["python3","-u","-c",udp_service_code],root/"udp-echo.log")
+    wait_until(lambda:udp_server.poll() is None and ":47094" in
+               ns(server_ns,"ss","-lun",check=False).stdout,20)
+    print("FULLCHAIN_CORE8_TUN_LOCAL_UDP_ECHO_READY",flush=True)
     direct=ns(client_ns,"curl","--noproxy","*","-fsS","--max-time","2",
                 "http://10.67.69.1:47093/marker.txt",check=False,timeout=4)
     assert direct.returncode!=0, "direct bypass reachable: test network isolation broken"
@@ -447,6 +463,49 @@ finally:
         "unified test did not carry traffic over real 2.5 WIRE-3 session; "+req.stderr[-500:])
     assert marker in http_log.read_text(errors="replace") or "GET /marker.txt" in http_log.read_text(errors="replace")
     print("FULLCHAIN_END_TO_END_GO_RUST250_CORE8_TUN_SOCKS_SINGBOX_TCP_PASS",flush=True)
+
+    # RFC1928 SOCKS5 UDP ASSOCIATE over the same WIRE-3 client/session.
+    # First exercise Go CSQTT SOCKS directly; then through pinned sing-box
+    # which must route UDP over its CSQTT SOCKS outbound.
+    udp_client_code=r"""
+import socket,struct,sys
+socks_port=int(sys.argv[1])
+ctrl=socket.create_connection(("127.0.0.1",socks_port),timeout=5)
+ctrl.settimeout(10)
+ctrl.sendall(b"\x05\x01\x00")
+assert ctrl.recv(2)==b"\x05\x00","SOCKS5 greeting rejected"
+ctrl.sendall(b"\x05\x03\x00\x01\x00\x00\x00\x00\x00\x00")
+reply=b""
+while len(reply)<10:
+    item=ctrl.recv(10-len(reply))
+    if not item:raise AssertionError("SOCKS UDP ASSOCIATE closed")
+    reply+=item
+assert reply[:4]==b"\x05\x00\x00\x01",f"UDP ASSOCIATE unexpected reply {reply.hex()}"
+host=socket.inet_ntoa(reply[4:8])
+if host=="0.0.0.0":host="127.0.0.1"
+port=struct.unpack("!H",reply[8:10])[0]
+assert port>0
+sock=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+sock.settimeout(10)
+payload=("csqtt-core250-udp-"+str(socks_port)).encode()
+frame=b"\x00\x00\x00\x01"+socket.inet_aton("10.67.69.1")+struct.pack("!H",47094)+payload
+sock.sendto(frame,(host,port))
+answer,peer=sock.recvfrom(2048)
+assert answer[:4]==b"\x00\x00\x00\x01",f"SOCKS UDP packet head wrong {answer[:12].hex()}"
+assert answer[10:]==b"WIRE3-UDP-ECHO:"+payload,repr(answer)
+print(f"WIRE3_UDP_SOCKS_RFC1928_REPLY_PASS socks_port={socks_port} bytes={len(answer)}",flush=True)
+ctrl.close()
+sock.close()
+"""
+    direct_udp=ns(client_ns,"python3","-c",udp_client_code,"12500",check=False,timeout=16)
+    print("FULLCHAIN_GO_SOCKS5_UDP_WIRE3_RESULT",
+          direct_udp.returncode,direct_udp.stdout[-700:],direct_udp.stderr[-1000:],flush=True)
+    through_singbox=ns(client_ns,"python3","-c",udp_client_code,"19180",check=False,timeout=16)
+    print("FULLCHAIN_SINGBOX_GO_SOCKS5_UDP_WIRE3_RESULT",
+          through_singbox.returncode,through_singbox.stdout[-700:],through_singbox.stderr[-1000:],flush=True)
+    assert direct_udp.returncode==0, "Go CSQTT SOCKS5 UDP WIRE-3 relay failed"
+    assert through_singbox.returncode==0, "sing-box via Go CSQTT SOCKS5 UDP WIRE-3 relay failed"
+    print("FULLCHAIN_END_TO_END_GO_RUST250_CORE8_TUN_SOCKS_SINGBOX_UDP_PASS",flush=True)
 
     dis=curl_api("POST","/vpn/disconnect")
     assert dis.get("ok")
