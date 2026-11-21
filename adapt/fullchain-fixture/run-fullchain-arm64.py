@@ -277,6 +277,44 @@ finally:
     after_app_probe=ns(client_ns,"python3","-c",kernel_control,check=False,timeout=8)
     print("FULLCHAIN_INDEPENDENT_TUN_AFTER_GO_KERNEL_CONTROL",
           after_app_probe.returncode,after_app_probe.stdout[-1700:],after_app_probe.stderr[-450:],flush=True)
+    assert after_app_probe.returncode==0, "disposable ARM64 kernel TUN failed inside Go runtime namespace"
+    # Strict A/B: replace only mark selector, retain Go's exact csqtt0+table202
+    # interface, existing Go SOCKS rule 22015 and original application runtime.
+    crossmark=r"""
+import os,socket,subprocess,fcntl,struct,select,time
+def ip(*args,check=True):
+    r=subprocess.run(["ip",*args],capture_output=True,text=True,timeout=4)
+    if check and r.returncode:raise RuntimeError("ip error: "+r.stderr)
+    return r
+try:
+    ip("rule","add","pref","22013","fwmark","0x4d54/0xffff","lookup","202")
+    a=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    a.setsockopt(socket.SOL_SOCKET,socket.SO_MARK,0x4d54)
+    a.setblocking(False)
+    print("CROSSMARK_ROUTE",ip("route","get","10.67.69.1","mark","0x4d54").stdout.strip())
+    print("CROSSMARK_CONNECT_ERRNO",a.connect_ex(("10.67.69.1",47093)))
+    b=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    b.setsockopt(socket.SOL_SOCKET,socket.SO_BINDTODEVICE,b"csqtt0\x00")
+    b.setblocking(False)
+    print("BINDTODEVICE_CONNECT_ERRNO",b.connect_ex(("10.67.69.1",47093)))
+    time.sleep(1.2)
+    print("CSQTT0_AFTER_CROSSMARK_BIND_STATS",ip("-s","link","show","dev","csqtt0").stdout[-440:])
+    print("CSQTT0_QDISC",subprocess.run(["tc","-s","qdisc","show","dev","csqtt0"],capture_output=True,text=True,timeout=4).stdout[-540:])
+finally:
+    ip("rule","del","pref","22013","fwmark","0x4d54/0xffff","lookup","202",check=False)
+"""
+    cross=ns(client_ns,"python3","-c",crossmark,check=False,timeout=7)
+    print("FULLCHAIN_CSQTT0_CROSSMARK_AND_BINDTODEVICE_DIAGNOSTIC",
+          cross.returncode,cross.stdout[-2100:],cross.stderr[-400:],flush=True)
+    for label,cmdline in [
+        ("TUN_FLAGS",["ip","-d","link","show","dev","csqtt0"]),
+        ("TUN_ATTACHED",["ip","tuntap","show"]),
+        ("IPTABLES",["iptables-save"]),
+        ("TC_FILTER",["tc","-s","filter","show","dev","csqtt0","egress"]),
+        ("CSQTT_ROUTE_CACHE",["ip","-4","route","get","10.67.69.1","mark","0x4d53","ipproto","tcp","dport","47093"])
+    ]:
+        res=ns(client_ns,*cmdline,check=False,timeout=5)
+        print("FULLCHAIN_TUN_INTERFACE_"+label,res.returncode,res.stdout.strip()[-1400:],res.stderr.strip()[-220:],flush=True)
 
     client_tun_before=ns(client_ns,"ip","-s","link","show","dev","csqtt0",timeout=8).stdout
     server_tun_before=ns(server_ns,"ip","-s","link","show","dev","csqtt-core0",timeout=8).stdout
