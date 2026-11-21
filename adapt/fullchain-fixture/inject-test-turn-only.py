@@ -33,6 +33,26 @@ cargo.write_text(s.replace(needle,'''[features]
 isolated_turn_fixture = []
 
 '''+needle))
+main=base/'rust-client/main.rs'
+s=main.read_text()
+needle='arguments.workers.clamp(3, MAX_WORKERS)'
+assert s.count(needle)==1, 'original 2.5 exact worker count changed upstream'
+s=s.replace(needle,'''{
+            #[cfg(feature = "isolated_turn_fixture")]
+            {
+                if std::env::var_os("CSQTT_TEST_TURN_RELAY_PORT").is_some() {
+                    1
+                } else {
+                    arguments.workers.clamp(3, MAX_WORKERS)
+                }
+            }
+            #[cfg(not(feature = "isolated_turn_fixture"))]
+            {
+                arguments.workers.clamp(3, MAX_WORKERS)
+            }
+        }''',1)
+main.write_text(s)
+print('SYNTHETIC_TURN_SINGLE_WORKER_CLAMP_ONLY_IN_TEST_ELF')
 tests=base/'rust-client/turn_integration_tests.rs'
 s=tests.read_text()
 addon=r'''
@@ -47,7 +67,9 @@ async fn csqtt_core_fullchain_synthetic_turn_fixture() {
     let stop_file = std::env::var("CSQTT_E2E_RELAY_STOP_FILE")
         .expect("CSQTT_E2E_RELAY_STOP_FILE required");
     assert!(!Path::new(&port_file).exists());
-    let relay = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+    // Listen on all guest-local interfaces so replies to the separate
+    // server namespace arrive over veth; client still contacts 127.0.0.1.
+    let relay = Arc::new(UdpSocket::bind("0.0.0.0:0").await.unwrap());
     let port = relay.local_addr().unwrap().port();
     std::fs::write(&port_file,port.to_string()).unwrap();
     println!("ISOLATED_TURN_FIXTURE_READY_PORT_{port}");
