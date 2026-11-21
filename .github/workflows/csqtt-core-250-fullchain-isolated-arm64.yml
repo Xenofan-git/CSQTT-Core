@@ -60,6 +60,8 @@ jobs:
           set -euo pipefail
           git clone -q --depth 1 --branch v2.5.0 https://github.com/amurcanov/csqtt.git /tmp/csqtt-original-250
           test "$(git -C /tmp/csqtt-original-250 rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
+          cp /tmp/csqtt-original-250/app/src/main/assets/domains.txt /tmp/csqtt-original-250/domains.txt
+          echo '3783f488db5378a9d91120c43f874bf70cab62bd0a799b6951f7859a492cecd1  /tmp/csqtt-original-250/domains.txt' | sha256sum -c -
           python3 adapt/fullchain-fixture/inject-test-turn-only.py /tmp/csqtt-original-250
           cd /tmp/csqtt-original-250/rust-client
           cargo test --quiet --locked --bin client --no-run --message-format=json > /tmp/fullchain-cargo-tests.jsonl 2>/tmp/fullchain-cargo-tests.err || {
