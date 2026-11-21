@@ -35,6 +35,7 @@
 | Rust 2.5.0 клиент ↔ сервер | [E2E #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344) | Отдельный обмен GETCONF/TUNCONF и ICMP PASS, но общий workflow FAILURE: тест 10 сек не успел |
 | Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
 | Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
+| Четыре ARM64 ELF: systemd stop/failed upgrade/rollback | [GitHub Actions 44894840740](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44894840740) | PASS: real native ARM64 systemd, Core7→Core8 forced failure, atomic old bundle restore, running private Go HTTP, config marker/unit/route preserved. Not full VPN/SOCKS/sing-box dataplane |
 | Физический NanoPi: Go HTTP API → оригинальный Rust client 2.5 | Локальный RK3566, CI кандидата 44894005565 | PASS: реальный /vpn/connect → Rust ELF → /vpn/disconnect; no secret in logs; host default route unchanged. Full VPN/TUN/SOCKS/sing-box dataplane NOT tested |
 | Реальный клиент v2.5.0 запускается из Go адаптера | [Native ARM64 #2](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44892486891) | SUCCESS на a56e96b: проверенный оригинальный ELF 2.5.0, пароль только env, не argv; тестовый процесс завершён до TUN. Не объединён с production Go |
 | Физический NanoPi R3S LTS — нативный ARM64 Core №7 | Физический RK3566, 21.11.2026 | PASS: два нативных запуска, 64/64 real API, TUN/iptables, SIGKILL/restart, штатная очистка; маршруты и службы хоста неизменны |
@@ -313,6 +314,15 @@
       "commit": "ed7516a82c909e2f405a2e655c0f849c1ed08964",
       "run_id": 44894005565,
       "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44894005565"
+    },
+    {
+      "id": "go-v250-four-component-bundle-native-arm64-rollback",
+      "component": "Four-component ARM64 candidate Go supervisor, original Rust client, Core server and sing-box real systemd failed upgrade and atomic rollback",
+      "status": "passed",
+      "scope": "2026-11-21 GitHub native disposable ARM64 run44894840740 SUCCESS: verified four ELF hashes; Core7 active+enabled baseline Go HTTP in PrivateNetwork; atomic switch to Core8, injected real ExecStartPre failure, atomic rollback to original four-file directory, real Go private HTTP restored, unit hash/data marker and outer default route unchanged. Test-only, not production updater or authenticated Go->Rust->TUN->SOCKS5->sing-box dataplane. Report adapt/CSQTT-CORE-250-UNIFIED-BUNDLE-ROLLBACK-2026-11-21.md.",
+      "commit": "f30c740f99f007e9c7fea7fc0252a90714e9bdc5",
+      "run_id": 44894840740,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44894840740"
     }
   ],
   "impact_rules": [
