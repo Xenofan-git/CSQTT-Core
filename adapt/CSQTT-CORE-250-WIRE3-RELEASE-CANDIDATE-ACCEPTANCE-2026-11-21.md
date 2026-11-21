@@ -59,3 +59,12 @@ All evidence is from isolated ARM64 CI; never infer real-world availability or p
 - A temporary x86_64-hosted ARM64 QEMU guest was created on the Moscow development VPS to provide a separate native Core8 WIRE-3 test server. The Core8 ELF SHA-256 and protocol revision were verified in the guest. Public UDP test service launch was blocked by available access restrictions, so no remote Core8 WIRE-3 handshake was performed. Guest `csqtt-250-live-vk-lab.service` was explicitly stopped and UDP test port 48779 confirmed closed.
 - A subsequent standalone original-client live TURN-credential acquisition experiment was also blocked by available execution restrictions. No workaround that exposes or exports tokens was used. **Real TURN credentials, real VK TURN relay, real Core8 TUNCONF, and a joined VK-authenticated end-to-end TCP/UDP session remain NOT VERIFIED.**
 - Existing isolated synthetic-TURN TCP+UDP E2E, corrected Go TUN lifecycle/race and atomic rollback remain green and unchanged; the original ELF real VK hash validation is a new, narrower successful test. Do not promote this release candidate to production on the basis of hash validation alone.
+
+
+## Byte-identical final ZIP verification via direct Desktop Commander — 2026-11-21
+
+- After Desktop Commander connected directly to Moscow VPS msk-1-vm-vw4n, release branch and historical green tests were read back without modifying the running NanoPi.
+- New independent offline-only verification (commit 430fabe1b0e78c0d808a2f5291742fda3e969a1b) reads the EXISTING validated ARM64 ZIP from GitHub Actions 44913844376 without rebuilding or repackaging any ELF: adapt/verify-csqtt-core-250-rc-archive.py.
+- GitHub Actions 44918351752 SUCCESS; ZIP original SHA-256 49b780ca5bba99ed9641c5bfe1650a23600922b5f341d705c0375bf1cbbf9906 exactly matches, four pinned AArch64 ELF digests, role/size/manifest, SHA256SUMS, exact file inventory and non-production status all verified. No new candidate binary was produced.
+- Six negative inventory tests pass: traversal, absolute names, unrecognized payload, ZIP symlink, duplicate names, and incomplete inventory.
+- This is a supply-chain/release-archive integrity gate, NOT proof of live VK TURN authentication, external relay access, WIRE-3 TUNCONF, or TCP/UDP via real VK. Last real VK Calls hash preflight 44914600867 remains the only demonstrated external VK result. No migration/promotion.
