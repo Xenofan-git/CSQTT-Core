@@ -35,6 +35,8 @@
 | Rust 2.5.0 клиент ↔ сервер | [E2E #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344) | Отдельный обмен GETCONF/TUNCONF и ICMP PASS, но общий workflow FAILURE: тест 10 сек не успел |
 | Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
 | Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
+| Физический NanoPi R3S LTS — нативный ARM64 Core №7 | Физический RK3566, 21.11.2026 | PASS: два нативных запуска, 64/64 real API, TUN/iptables, SIGKILL/restart, штатная очистка; маршруты и службы хоста неизменны |
+| Реальный native ARM64 systemd install и forced rollback | GitHub Actions run 44890007663 | SUCCESS: verified старый 10aa3f1 → новый 21c59ba, сбой активации вызван намеренно; прежний бинарник/unit/env/state, active/boot-enabled и HTTPS восстановлены, default route не изменён |
 | Новый Rust Core ARM64 №7: живой HTTPS/API, 3 старта | Локальный тест 21.11.2026, ELF 21c59ba | PASS: 96/96 API; аварийное завершение SIGKILL, следующий старт и HTTPS, 0 тайм-аутов startup cleanup. Изолированный QEMU, не Native ARM64 VM |
 | Новый Rust Core ARM64 №7: реальный Linux TUN/NAT | Локальный тест 21.11.2026, ELF 21c59ba | PASS: TUN 10.67.69.1/24, 3 правила iptables, SIGKILL/restart без дублей, SIGTERM полностью удаляет правила, 3 запуска, host default unchanged |
 | Новый Rust Core ARM64 №7: аутентифицированный legacy UDP GETCONF | Локальный тест 21.11.2026, ELF 21c59ba | PASS: upstream WIRE-2 fixture, действительный UDP, HMAC-SHA1/AES128-CTR, TUNCONF 10.67.69.2. Не полноценный WIRE-3/DTLS data E2E |
@@ -243,6 +245,24 @@
       "commit": "21c59ba2918fd04e4324a897d7afc2e53a2e0cae",
       "run_id": null,
       "url": null
+    },
+    {
+      "id": "physical-nanopi-r3s-native-arm64-release7",
+      "component": "Actual physical NanoPi R3S RK3566 native ARM64 Core release7 isolated acceptance",
+      "status": "passed",
+      "scope": "Native ELF 21c59ba SHA256 3295c38f, outer UID nobody, isolated user+network namespaces; real HTTPS/API 32+32 PASS, real TUN 10.67.69.1/24, iptables 3 rules, SIGKILL/restart without duplicates, clean SIGTERM, host route and M-UI/HRCore/Tailscale unchanged; no production systemd install.",
+      "commit": "21c59ba2918fd04e4324a897d7afc2e53a2e0cae",
+      "run_id": null,
+      "url": null
+    },
+    {
+      "id": "real-arm64-systemd-release7-fault-rollback",
+      "component": "Actual native ARM64 systemd baseline install and forced release7 candidate activation failure with rollback",
+      "status": "passed",
+      "scope": "GitHub hosted ephemeral ubuntu-24.04-arm; old verified 10aa3f1 ELF distinct from new verified release7 ELF; real unmodified installer; injected systemctl start failure at candidate activation, previous binary/unit/env and preserved state restored, systemd active+enabled, previous HTTPS verified, default route unchanged. Production NanoPi/VPS not touched.",
+      "commit": "9e80feaa2699fe800e43ae06efc182c10e7f0421",
+      "run_id": 44890007663,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44890007663"
     }
   ],
   "impact_rules": [
