@@ -35,6 +35,7 @@
 | Rust 2.5.0 клиент ↔ сервер | [E2E #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344) | Отдельный обмен GETCONF/TUNCONF и ICMP PASS, но общий workflow FAILURE: тест 10 сек не успел |
 | Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
 | Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
+| Go supervisor → sing-box 1.14.4 → настоящий SOCKS5 → DIRECT | [GitHub Actions 44895178052](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44895178052) | PASS: native ARM64 private net, Go API save/start/status/stop sing-box, SOCKS5 forwarded local HTTP, before and after real package rollback. CSQTT WIRE-3 tunnel deliberately inactive |
 | Четыре ARM64 ELF: systemd stop/failed upgrade/rollback | [GitHub Actions 44894840740](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44894840740) | PASS: real native ARM64 systemd, Core7→Core8 forced failure, atomic old bundle restore, running private Go HTTP, config marker/unit/route preserved. Not full VPN/SOCKS/sing-box dataplane |
 | Физический NanoPi: Go HTTP API → оригинальный Rust client 2.5 | Локальный RK3566, CI кандидата 44894005565 | PASS: реальный /vpn/connect → Rust ELF → /vpn/disconnect; no secret in logs; host default route unchanged. Full VPN/TUN/SOCKS/sing-box dataplane NOT tested |
 | Реальный клиент v2.5.0 запускается из Go адаптера | [Native ARM64 #2](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44892486891) | SUCCESS на a56e96b: проверенный оригинальный ELF 2.5.0, пароль только env, не argv; тестовый процесс завершён до TUN. Не объединён с production Go |
@@ -323,6 +324,15 @@
       "commit": "f30c740f99f007e9c7fea7fc0252a90714e9bdc5",
       "run_id": 44894840740,
       "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44894840740"
+    },
+    {
+      "id": "go-native-arm64-singbox-socks-direct-bundle-rollback",
+      "component": "Real Go HTTP API launches pinned ARM64 sing-box and relays local HTTP through SOCKS5 DIRECT, before and after unified bundle rollback",
+      "status": "passed",
+      "scope": "2026-11-21 native disposable github hosted ARM64 runner, run44895178052 SUCCESS. Go supervisor service private systemd netns no default route, pinned sing-box ELF via CSQTT_SING_BOX_BINARY, Go API save config/start/status/stop. curl through SOCKS5 inbound 127.0.0.1:19180 fetched actual local HTTP marker from server 127.0.0.1:47093. Same test passed before and after failed Core8 activation and atomic Core7 bundle rollback. NOT authenticated original Rust client/Core8 WIRE-3 VPN/TUN/CSQTT SOCKS5 path; that remains open. Full report adapt/CSQTT-CORE-250-NATIVE-GO-SINGBOX-SOCKS-2026-11-21.md.",
+      "commit": "419e3bfc29194802a50f7d9f9216872aa0ed4356",
+      "run_id": 44895178052,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44895178052"
     }
   ],
   "impact_rules": [
