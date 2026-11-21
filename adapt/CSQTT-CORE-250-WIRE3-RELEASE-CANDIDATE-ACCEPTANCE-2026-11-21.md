@@ -68,3 +68,12 @@ All evidence is from isolated ARM64 CI; never infer real-world availability or p
 - GitHub Actions 44918351752 SUCCESS; ZIP original SHA-256 49b780ca5bba99ed9641c5bfe1650a23600922b5f341d705c0375bf1cbbf9906 exactly matches, four pinned AArch64 ELF digests, role/size/manifest, SHA256SUMS, exact file inventory and non-production status all verified. No new candidate binary was produced.
 - Six negative inventory tests pass: traversal, absolute names, unrecognized payload, ZIP symlink, duplicate names, and incomplete inventory.
 - This is a supply-chain/release-archive integrity gate, NOT proof of live VK TURN authentication, external relay access, WIRE-3 TUNCONF, or TCP/UDP via real VK. Last real VK Calls hash preflight 44914600867 remains the only demonstrated external VK result. No migration/promotion.
+
+
+## Дополнение: подготовлена безопасная проверка логов VK Calls
+
+- Появился анализатор строго приватного Rust-журнала (adapt/csqtt_core_vkcalls_proof.py), который принимает только регулярный файл с правами 0600, ограничивает размер 2 МиБ, отвергает symlink и не печатает его исходные строки.
+- Выводятся только заранее разрешённые диагностические маркеры последовательности VK Calls step1–step4 и наличие ненулевого количества TURN URL в том же stream. Это свидетельствует только о стадии получения TURN credentials; не доказывает установление TURN Allocate/DTLS/WIRE-3 и передачу TCP/UDP.
+- Фиктивные, не содержащие настоящих секретов восемь тестов подтверждают, что токены/URL не раскрываются, порядок этапов не подменяется, события разных потоков не смешиваются, ошибки и небезопасные файлы отклоняются.
+- GitHub Actions 44919137670 SUCCESS (commit c611834869350f6911c974aa4d0b23d3dc07c857). Тест был строго offline: реальную авторизацию, сетевой сервис и выпускной архив не запускали, существующий Rust 2.5 ELF не изменяли.
+- Публично доступного, отдельно разрешённого UDP Core №8 на московском VPS сейчас нет; тестовый unit csqtt-250-live-vk-lab.service inactive, порт 48779 closed. Реальный сквозной VK/TURN всё ещё NOT VERIFIED.
