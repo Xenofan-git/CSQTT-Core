@@ -230,17 +230,50 @@ try:
     print("FULLCHAIN_BEFORE_TUN_COUNTERS_SERVER",server_tun_before.strip()[-600:],flush=True)
 
     # ICMP over the marked route probes WIRE-3 independently of TCP.
-    icmp=ns(client_ns,"ping","-n","-m","0x4d53","-c","1","-W","2","10.67.69.1",
+    icmp=ns(client_ns,"ping","-n","-m","19795","-c","1","-W","2","10.67.69.1",
             check=False,timeout=5)
     print("FULLCHAIN_REAL_MARKED_ICMP_PROBE",icmp.returncode,icmp.stdout.strip()[-470:],icmp.stderr.strip()[-220:],flush=True)
+    raw_probe = r"""
+import socket
+s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET,socket.SO_MARK,0x4d53)
+s.settimeout(4)
+try:
+    s.connect(("10.67.69.1",47093))
+    s.sendall(b"GET /marker.txt HTTP/1.0\r\nHost: 10.67.69.1\r\nConnection: close\r\n\r\n")
+    data=s.recv(300)
+    print("REAL_WIRE3_MARKED_TCP_RESPONSE",data[:200].decode(errors="replace"),flush=True)
+except Exception as error:
+    print("REAL_WIRE3_MARKED_TCP_ERROR",str(error),flush=True)
+finally: s.close()
+"""
+    raw_tcp=ns(client_ns,"python3","-c",raw_probe,check=False,timeout=7)
+    print("FULLCHAIN_MARKED_RAW_TCP_CONTROL",raw_tcp.returncode,raw_tcp.stdout[-850:],raw_tcp.stderr[-280:],flush=True)
+    print("FULLCHAIN_TUN_COUNTERS_AFTER_RAW_PROBE_CLIENT",
+          ns(client_ns,"ip","-s","link","show","dev","csqtt0",check=False).stdout.strip()[-410:],flush=True)
+    print("FULLCHAIN_TUN_COUNTERS_AFTER_RAW_PROBE_SERVER",
+          ns(server_ns,"ip","-s","link","show","dev","csqtt-core0",check=False).stdout.strip()[-410:],flush=True)
 
     # Negative control was unreachable directly. Positive request must
     # complete via sing-box SOCKS inbound -> CSQTT SOCKS outbound -> Go
     # marked TCP -> csqtt0 packet bridge -> Rust original client -> local
     # synthetic TURN -> Core8 WIRE-3 -> server csqtt-core0 HTTP.
-    req=ns(client_ns,"curl","--noproxy","","-fsS","--max-time","23",
-           "--socks5-hostname","127.0.0.1:19180","http://10.67.69.1:47093/marker.txt",
-           check=False,timeout=26)
+    curl_cmd=["ip","netns","exec",client_ns,"curl","--noproxy","","-fsS","--max-time","23",
+              "--socks5-hostname","127.0.0.1:19180","http://10.67.69.1:47093/marker.txt"]
+    curl_child=subprocess.Popen(curl_cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    try:
+        time.sleep(1.5)
+        sock_diag=ns(client_ns,"ss","-tanop",check=False,timeout=5)
+        print("FULLCHAIN_KERNEL_TCP_SOCKET_STATE_DURING_SOCKS",
+              sock_diag.stdout[-2600:],sock_diag.stderr[-240:],flush=True)
+        curl_stdout,curl_stderr=curl_child.communicate(timeout=26)
+    except Exception:
+        if curl_child.poll() is None:
+            curl_child.terminate()
+            try:curl_child.wait(timeout=2)
+            except subprocess.TimeoutExpired:curl_child.kill();curl_child.wait()
+        raise
+    req=type("RequestResult",(),{"returncode":curl_child.returncode,"stdout":curl_stdout,"stderr":curl_stderr})()
     print("FULLCHAIN_CURL_EXIT",req.returncode,req.stderr[-1500:],flush=True)
     print("FULLCHAIN_AFTER_TUN_COUNTERS_CLIENT",
           ns(client_ns,"ip","-s","link","show","dev","csqtt0",check=False).stdout.strip()[-700:],flush=True)
