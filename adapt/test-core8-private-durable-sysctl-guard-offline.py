@@ -307,6 +307,64 @@ class DurableGuardTests(unittest.TestCase):
         self.assertFalse(ready.exists())
         self.assertFalse((self.state/guard.JOURNAL).exists())
 
+    def test_child_descendant_still_holds_lock_no_premature_restore(self):
+        # The immediate child exits but a benign subchild keeps the inherited
+        # lock FD open. The guard must retain the journal until *all* lock
+        # holders have exited; no real sysctls or host services are used.
+        cfg = self.root/"descendant-config.json"
+        marker = self.root/"descendant-pid"
+        cfg.write_text(json.dumps({
+            "root": str(self.sysroot), "parameters": guard.PARAMETERS,
+            "marker": str(marker)
+        }))
+        code = r"""
+import json, os, pathlib, subprocess, sys
+cfg=json.loads(pathlib.Path(sys.argv[1]).read_text())
+for key, value in cfg["parameters"].items():
+    (pathlib.Path(cfg["root"])/key).write_text(value+"\n")
+fds=[]
+for part in pathlib.Path("/proc/self/fd").iterdir():
+    try:
+        if os.readlink(part).endswith("/kernel-owner.lock"):
+            fds.append(int(part.name))
+    except (FileNotFoundError, OSError):
+        continue
+if len(fds)!=1:
+    raise SystemExit("expected one inherited lock fd")
+grand=subprocess.Popen(
+    [sys.executable, "-c", "import time;time.sleep(45)"],
+    pass_fds=tuple(fds), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+pathlib.Path(cfg["marker"]).write_text(str(grand.pid))
+"""
+        child = [sys.executable, "-c", code, str(cfg)]
+        grandpid = None
+        try:
+            result = self.run_guard("run", child)
+            self.assertTrue(marker.is_file(), result.stdout + result.stderr)
+            grandpid = int(marker.read_text())
+            self.assertNotEqual(result.returncode, 0, "premature success with live inherited lock")
+            self.assertTrue((self.state/guard.JOURNAL).exists(), "journal prematurely deleted")
+            self.assertEqual(self.values(), guard.PARAMETERS,
+                             "unowned recovery while descendant remains active")
+            blocked = self.run_guard()
+            self.assertEqual(blocked.returncode, 75)
+            self.assertIn("CORE8_OWNER_BUSY", blocked.stderr)
+        finally:
+            if grandpid is not None:
+                try:
+                    os.kill(grandpid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+        for i in range(50):
+            r = self.run_guard()
+            if r.returncode == 0:
+                break
+            self.assertIn("CORE8_OWNER_BUSY", r.stderr)
+            time.sleep(0.04)
+        else:
+            self.fail("recovery remained blocked after synthetic descendant exit")
+        self.assertEqual(self.values(), self.previous)
+
     def test_parent_sigterm_propagates_child_stop_then_restores(self):
         parent, childpid = self.spawn_guard()
         os.kill(parent.pid, signal.SIGTERM)

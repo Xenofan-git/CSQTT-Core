@@ -34,3 +34,9 @@ jobs:
           python3 -B adapt/test-core8-tproxy-sysctl-ownership-offline.py
           python3 -B adapt/test-core8-tproxy-kernel-owner-integration-offline.py
           python3 -B adapt/test-core8-private-durable-sysctl-guard-offline.py
+      - name: Validate private guest systemd template without installation
+        run: |
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          cp adapt/csqtt-core8-private-durable-guard.service.example "$scratch/csqtt-core8-private-durable-guard.service"
+          systemd-analyze verify "$scratch/csqtt-core8-private-durable-guard.service"

@@ -170,3 +170,30 @@ service (the unit has NOT been enabled or exercised). Fail-closed if an
 external component changed a parameter. A different component writing the
 same expected value cannot be distinguished. Real ARM64 VM and live VK TURN
 acceptance remain UNTESTED and may require separate authorization.
+
+## 2026-11-21: inherited-lock descendant race found and fixed (offline)
+
+A new local fake-file regression spawned a child which passed the inherited
+flock descriptor to a surviving descendant, then exited. Against the old
+durable supervisor, the test **failed**: parent restored sysctls and reported
+success while the descendant was still live, because it still owned the same
+open-file-description lock and did not first test whether other holders
+remained. This is a genuine logical race affecting long-lived descendants.
+
+Changed the wrapper finalization order: after the direct Core8 child exits,
+close the parent's original lock fd, then acquire a NEW independent lock
+open-file-description before restoring. If a child/grandchild still holds the
+original descriptor, the reacquire fails with CORE8_OWNER_BUSY, the durable
+journal remains intact, and no sysctl is restored prematurely. After the
+synthetic descendant exits, explicit same-boot RECOVER succeeds. All 18/18
+durable guard unittest cases now PASS, including original scenarios.
+
+Also strengthened inert systemd unit example with StartLimitIntervalSec=60 and
+StartLimitBurst=3 to prevent an unlimited privileged restart loop. The
+sample .service copy passed host systemd-analyze verify with exit code 0,
+without installing or starting the unit. No active VM, current Core8 ELF,
+host routes/sysctls/firewall, or release candidate were modified. The
+PRIVATE guest real normal-stop PASS on the older guard commit remains valid
+for that exact tested version; this new guard delta has **only offline**
+tests until a later authorized guest acceptance. Forced live SIGKILL test
+and real VK TURN fullchain remain outside current verified scope.

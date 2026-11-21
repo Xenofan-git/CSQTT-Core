@@ -322,11 +322,22 @@ def main() -> int:
         try:
             code = run_child(cmd, fd)
         finally:
+            # flock() is attached to an open-file description, not a PID.
+            # The child can pass the lock FD to one of its descendants.
+            # Closing this parent's copy keeps the lock HELD for as long
+            # as any descendant copy survives. A new independent open
+            # description MUST obtain the lock before sysctl recovery.
+            # This avoids restoring while a still-running descendant
+            # can continue to change global network sysctls.
+            os.close(fd)
+            fd = -1
+            fd = locked_fd(state)
             result = recover(state, a.sysctl_root, boot)
             print("CORE8_STOP_RECOVERY=" + result, flush=True)
         return code
     finally:
-        os.close(fd)
+        if fd >= 0:
+            os.close(fd)
 
 
 if __name__ == "__main__":

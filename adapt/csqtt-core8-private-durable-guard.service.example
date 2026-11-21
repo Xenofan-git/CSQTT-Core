@@ -7,6 +7,9 @@ Description=Private isolated Core8 sysctl recovery lab (unapproved template)
 ConditionHost=csqtt-core8-isolated
 ConditionPathExists=/home/csqttlab/core8-arm64
 After=local-fs.target
+# Avoid repeated privileged start/restore loops after persistent failures.
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
