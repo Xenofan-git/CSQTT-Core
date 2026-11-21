@@ -44,7 +44,7 @@ m=json.loads((new/'manifest.json').read_text())
 assert m['wireProtocol']=='CSQTT-WIRE-3'
 assert m['status']=='experimental-not-approved-for-production'
 assert len(m['files'])==4
-expected={'original-client':'3c76a4323ef784568a38a82e206cecfa7657d93c01b6a69033a2f44760fa',
+expected={'original-client':'3c76a4323ef784568a38a82e206cecfa7657d93c01b6a69033a2f7a2f44760fa',
 'derived-server':'a131751f29a5373d3ebf08bc0d3bfe59988a8badaf2854f01eb5561fc903a706'}
 for dirname in ('old','new'):
  root=stage/'releases'/dirname
