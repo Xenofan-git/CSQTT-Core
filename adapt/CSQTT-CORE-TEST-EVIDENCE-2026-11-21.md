@@ -35,6 +35,9 @@
 | Rust 2.5.0 клиент ↔ сервер | [E2E #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344) | Отдельный обмен GETCONF/TUNCONF и ICMP PASS, но общий workflow FAILURE: тест 10 сек не успел |
 | Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
 | Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
+| Новый Rust Core ARM64 №7: живой HTTPS/API, 3 старта | Локальный тест 21.11.2026, ELF 21c59ba | PASS: 96/96 API; аварийное завершение SIGKILL, следующий старт и HTTPS, 0 тайм-аутов startup cleanup. Изолированный QEMU, не Native ARM64 VM |
+| Новый Rust Core ARM64 №7: реальный Linux TUN/NAT | Локальный тест 21.11.2026, ELF 21c59ba | PASS: TUN 10.67.69.1/24, 3 правила iptables, SIGKILL/restart без дублей, SIGTERM полностью удаляет правила, 3 запуска, host default unchanged |
+| Новый Rust Core ARM64 №7: аутентифицированный legacy UDP GETCONF | Локальный тест 21.11.2026, ELF 21c59ba | PASS: upstream WIRE-2 fixture, действительный UDP, HMAC-SHA1/AES128-CTR, TUNCONF 10.67.69.2. Не полноценный WIRE-3/DTLS data E2E |
 | Адаптированный Rust Core ARM64: реальный HTTPS CRUD | Локальный live-test 21.11.2026, артефакт 10aa3f1 | PASS: 2 запуска одной базы, 32+32 проверки, авторизованные клиенты и группы, очистка, HTTPS 200, изолированная сеть. Не новейший выпуск №7 |
 | Сохранность API адаптированного Rust Core (статический код) | Локальная проверка b7cb832 | PASS: оригинальный v2.5.0 и производный web_panel.rs имеют 91 одинаковый маршрут; только семь разрешённых замен адреса подсети. Это не live CRUD адаптированного ELF |
 | Оригинальный CSQTT 2.5.0: реальный авторизованный CRUD ARM64 | [Original CRUD #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44887573311) | SUCCESS: настоящий ARM64 Rust-сервер из официального APK, изолированная сеть, HTTPS secret path, группа+клиент create/read/update/delete, cleanup, перезапуск HTTPS, маршрут по умолчанию неизменен |
@@ -211,6 +214,33 @@
       "status": "passed",
       "scope": "2026-11-21 Moscow VPS, verified ARM64 ELF SHA256 771453b7efc155ffc60cbecdf03581a957e6b292c7d5fb63435ec4a482a570ad built at 10aa3f1, QEMU user mode, outer UID nobody, separate user+network namespaces loopback only, network command stubs. Existing real E2E Python run twice on same temporary config: 32/32 + 32/32 PASS, real login and Secure/HttpOnly cookie, client/group CRUD and baseline unchanged, host default route unchanged. Test temp deleted. NOT newest release #7, host network TUN nor Deploy/rollback. Report adapt/CSQTT-CORE-DERIVED-API-LIVE-2026-11-21.md.",
       "commit": "10aa3f1e4344d317bf5c2f638da80e4d065401fc",
+      "run_id": null,
+      "url": null
+    },
+    {
+      "id": "derived-core-21c59ba-real-api-local",
+      "component": "New verified Rust Core #7 ARM64 actual HTTPS API 3-start E2E",
+      "status": "passed",
+      "scope": "Three restarts on one disposable SQLite; actual live client/group CRUD 32/32 each, 96/96 total; one SIGKILL; 3 successful cleanup stage logs, 0 startup cleanup timeouts; no real network commands in this API-focused leg. Local Moscow VPS 2026-11-21, verified ELF sha256 3295c38ffdca3011f91990a16eff9bcd4d25df73b9cd49b3cc59d50d1ddfc7fb. QEMU user-mode aarch64; outer nobody, isolated unprivileged user/net namespace; no host default route modifications. Report adapt/CSQTT-CORE-ARM64-LIVE-RELEASE7-NETWORK-2026-11-21.md. No new GitHub workflow run.",
+      "commit": "21c59ba2918fd04e4324a897d7afc2e53a2e0cae",
+      "run_id": null,
+      "url": null
+    },
+    {
+      "id": "derived-core-21c59ba-real-net-tun-local",
+      "component": "New verified Rust Core #7 ARM64 actual Linux TUN and firewall in separate netns",
+      "status": "passed",
+      "scope": "Actual Linux TUN 10.67.69.1/24, subnet route, three managed real iptables rules. Three boots with SIGKILL/SIGTERM; no duplicate rules after crash, no remaining rules after clean stops; no default route. Local Moscow VPS 2026-11-21, verified ELF sha256 3295c38ffdca3011f91990a16eff9bcd4d25df73b9cd49b3cc59d50d1ddfc7fb. QEMU user-mode aarch64; outer nobody, isolated unprivileged user/net namespace; no host default route modifications. Report adapt/CSQTT-CORE-ARM64-LIVE-RELEASE7-NETWORK-2026-11-21.md. No new GitHub workflow run.",
+      "commit": "21c59ba2918fd04e4324a897d7afc2e53a2e0cae",
+      "run_id": null,
+      "url": null
+    },
+    {
+      "id": "derived-core-21c59ba-legacy-getconf-live",
+      "component": "New verified Rust Core #7 ARM64 real encrypted UDP legacy GETCONF",
+      "status": "passed",
+      "scope": "Pinned upstream legacy WIRE-2 ciphertext sent to Rust Core, actual UDP SRTP session and reply, HMAC-SHA1 verified and AES128-CTR decrypted to TUNCONF with assigned 10.67.69.2 and DNS. Does not prove full modern WIRE-3 DTLS client session or bidirectional ICMP. Local Moscow VPS 2026-11-21, verified ELF sha256 3295c38ffdca3011f91990a16eff9bcd4d25df73b9cd49b3cc59d50d1ddfc7fb. QEMU user-mode aarch64; outer nobody, isolated unprivileged user/net namespace; no host default route modifications. Report adapt/CSQTT-CORE-ARM64-LIVE-RELEASE7-NETWORK-2026-11-21.md. No new GitHub workflow run.",
+      "commit": "21c59ba2918fd04e4324a897d7afc2e53a2e0cae",
       "run_id": null,
       "url": null
     }
