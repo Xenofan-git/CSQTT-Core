@@ -29,12 +29,13 @@
 | Go Linux VM | [Go #1651](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44797656023) | Предыдущая версия: реальная сеть и recovery; не покрывает последние Go Deploy изменения |
 | Go Deploy, отменённый эксперимент | [Go #1656](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44818444566) | SUCCESS исторически, но изменения затем отменены: не принимать как проверку текущего Go-кода |
 | Возврат к рабочей Go/ARM64 сборке | [Go #1657](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44826258557) | SUCCESS на коммите e1cf635; без новых изменений в сетевой логике |
-| Go/ARM64 после изменения карточек правил | [Go #1658](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886141340) | В процессе на коммите 2902431; итог пока не подтверждён |
+| Go/ARM64 после изменения карточек правил | [Go #1658](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886141340) | FULL SUCCESS: Go build и отдельный ARM64 system VM; коммит 2902431, не заменяет более поздние VM запуски |
 | Семь вкладок, карточки маршрутов | [UI #11](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886141341) | SUCCESS на 2902431; не проверяет новое мобильное исправление |
 | Оригинальный Rust клиент 2.5.0 | [ARM64 client #2](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833128457) | SUCCESS: оригинальный ARM64 ELF; не полноценный VK/TURN релиз |
 | Rust 2.5.0 клиент ↔ сервер | [E2E #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344) | Отдельный обмен GETCONF/TUNCONF и ICMP PASS, но общий workflow FAILURE: тест 10 сек не успел |
 | Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
 | Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
+| Реальный клиент v2.5.0 запускается из Go адаптера | [Native ARM64 #2](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44892486891) | SUCCESS на a56e96b: проверенный оригинальный ELF 2.5.0, пароль только env, не argv; тестовый процесс завершён до TUN. Не объединён с production Go |
 | Физический NanoPi R3S LTS — нативный ARM64 Core №7 | Физический RK3566, 21.11.2026 | PASS: два нативных запуска, 64/64 real API, TUN/iptables, SIGKILL/restart, штатная очистка; маршруты и службы хоста неизменны |
 | Реальный клиент 2.5.0 / Core №8: современный TURN/DTLS/SRTP/ICMP | GitHub 44891239516 | SUCCESS: исходный Rust-клиент 2.5.0, синтетический local TURN, DTLS, SRTP, GETCONF/TUNCONF, двусторонний ICMP в диспетчере, 1 passed; 0 failed |
 | Реальный клиент 2.5.0 / Core №7: двусторонний ICMP | GitHub 44890243962 | FAIL: DTLS/SRTP/GETCONF/TUNCONF PASS, но обратный ICMP отсутствует; route_index() оставался на 10.66.67/24 при Core 10.67.69/24 |
@@ -293,6 +294,15 @@
       "commit": "642eee277408d0b30ad40bc580643bae1e5ab404",
       "run_id": 44891239516,
       "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44891239516"
+    },
+    {
+      "id": "original-v250-real-go-client-launch",
+      "component": "Go exec.Cmd launches the actual official CSQTT v2.5.0 ARM64 client with env-only password",
+      "status": "passed",
+      "scope": "Native ARM64 GitHub run44892486891 SUCCESS, test branch a56e96ba2f775d72195ceb6d9884334e829356fa; authentic pinned upstream v2.5.0 client ELF sha256 3c76a4323ef784568a38a82e206cecfa7657d93c01b6a69033a2f7a2f44760fa. Go helper launches real client with CSQTT_PASSWORD only in environment; absent password rejected; intentional invalid obfs exits before TUN/VK/network. Not integrated production Go supervisor and not VPN/Direct/sing-box E2E.",
+      "commit": "a56e96ba2f775d72195ceb6d9884334e829356fa",
+      "run_id": 44892486891,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44892486891"
     }
   ],
   "impact_rules": [
