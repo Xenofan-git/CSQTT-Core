@@ -316,6 +316,24 @@ finally:
         res=ns(client_ns,*cmdline,check=False,timeout=5)
         print("FULLCHAIN_TUN_INTERFACE_"+label,res.returncode,res.stdout.strip()[-1400:],res.stderr.strip()[-220:],flush=True)
 
+    # Actual Go process FD ownership and kernel TUN attachment state:
+    # this only inspects /proc on a disposable runner, no intervention.
+    try:
+        tun_fds=[]
+        for f in Path(f"/proc/{app.pid}/fd").iterdir():
+            try:
+                target=os.readlink(f)
+                if "tun" in target or "tuntap" in target:
+                    info=(Path(f"/proc/{app.pid}/fdinfo")/f.name).read_text()
+                    tun_fds.append((f.name,target,info[:750]))
+            except (OSError,PermissionError):
+                continue
+        print("FULLCHAIN_GO_PROCESS_TUN_FDINFO",tun_fds,flush=True)
+    except Exception as exc:
+        print("FULLCHAIN_GO_PROCESS_TUN_FDINFO_UNAVAILABLE",type(exc).__name__,flush=True)
+    print("FULLCHAIN_GO_INTERFACE_QUEUE_INITIAL",
+          ns(client_ns,"tc","-s","qdisc","show","dev","csqtt0",check=False).stdout[-700:],flush=True)
+
     client_tun_before=ns(client_ns,"ip","-s","link","show","dev","csqtt0",timeout=8).stdout
     server_tun_before=ns(server_ns,"ip","-s","link","show","dev","csqtt-core0",timeout=8).stdout
     print("FULLCHAIN_BEFORE_TUN_COUNTERS_CLIENT",client_tun_before.strip()[-600:],flush=True)
@@ -345,6 +363,20 @@ finally: s.close()
           ns(client_ns,"ip","-s","link","show","dev","csqtt0",check=False).stdout.strip()[-410:],flush=True)
     print("FULLCHAIN_TUN_COUNTERS_AFTER_RAW_PROBE_SERVER",
           ns(server_ns,"ip","-s","link","show","dev","csqtt-core0",check=False).stdout.strip()[-410:],flush=True)
+    # One-variable A/B on disposable csqtt0: switch qdisc from fq_codel
+    # to noqueue, leave WIRE-3/Go bridge/route/SO_MARK/client unchanged.
+    print("FULLCHAIN_QUEUE_AB_PRE",
+          ns(client_ns,"tc","-s","qdisc","show","dev","csqtt0",check=False).stdout[-750:],flush=True)
+    zero_queue=ns(client_ns,"ip","link","set","dev","csqtt0","txqueuelen","0",check=False)
+    print("FULLCHAIN_QUEUE_AB_TXQLEN_ZERO",zero_queue.returncode,zero_queue.stderr[-450:],flush=True)
+    print("FULLCHAIN_QUEUE_AB_POST",
+          ns(client_ns,"tc","-s","qdisc","show","dev","csqtt0",check=False).stdout[-750:],flush=True)
+    qprobe=ns(client_ns,"python3","-c",raw_probe,check=False,timeout=7)
+    print("FULLCHAIN_QUEUE_AB_MARKED_TCP_PROBE",qprobe.returncode,qprobe.stdout[-800:],qprobe.stderr[-280:],flush=True)
+    print("FULLCHAIN_QUEUE_AB_TUN_COUNTERS",
+          ns(client_ns,"ip","-s","link","show","dev","csqtt0",check=False).stdout.strip()[-490:],flush=True)
+    print("FULLCHAIN_QUEUE_AB_GOBRIDGE_READS",json.dumps(curl_api("GET","/logs"),ensure_ascii=False)[-2200:],flush=True)
+
 
     # Negative control was unreachable directly. Positive request must
     # complete via sing-box SOCKS inbound -> CSQTT SOCKS outbound -> Go
@@ -378,6 +410,25 @@ finally: s.close()
     singbox_log=root/"singbox-state"/"sing-box.log"
     if singbox_log.exists():
         print("FULLCHAIN_SINGBOX_LOG",singbox_log.read_text(errors="replace")[-1400:],flush=True)
+    # TUNSETIFF attach is read-only in the normal EBUSY case. Only perform
+    # this final diagnostic AFTER the SOCKS request, not before. A successful
+    # unexpected second attachment will be closed immediately.
+    attachment_check=r"""
+import os,fcntl,struct
+path="/dev/net/tun"
+fd=os.open(path,os.O_RDWR|os.O_NONBLOCK)
+try:
+    ifreq=struct.pack("16sH",b"csqtt0",0x1001)
+    try:
+        ret=fcntl.ioctl(fd,0x400454ca,ifreq)
+        print("EXTRA_TUN_ATTACHMENT_WAS_ACCEPTED",ret[:16],flush=True)
+    except OSError as exc:
+        print("EXTRA_TUN_ATTACHMENT_REJECTED",exc.errno,exc.strerror,flush=True)
+finally:
+    os.close(fd)
+"""
+    attached=ns(client_ns,"python3","-c",attachment_check,check=False,timeout=5)
+    print("FULLCHAIN_POST_REQUEST_TUN_ATTACHMENT_CHECK",attached.returncode,attached.stdout[-700:],attached.stderr[-350:],flush=True)
     assert req.returncode==0 and req.stdout.strip()==marker,(
         "unified test did not carry traffic over real 2.5 WIRE-3 session; "+req.stderr[-500:])
     assert marker in http_log.read_text(errors="replace") or "GET /marker.txt" in http_log.read_text(errors="replace")
