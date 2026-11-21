@@ -114,6 +114,14 @@ func validateTunnelAuth(app *App) error {
     if _, err := loadTunnelAuthPassword(); err != nil {
         return fmt.Errorf("пароль туннеля не задан")
     }
+    candidate, modeErr := csqtt250CandidateMode()
+    if modeErr != nil { return fmt.Errorf("недопустимый режим клиента CSQTT Core") }
+    if candidate {
+        // The original CSQTT 2.5.0 client authenticates with the tunnel
+        // password only. The old device-id flag is removed in 2.5.0.
+        if app == nil || app.core == nil { return fmt.Errorf("ядро не готово") }
+        return nil
+    }
     if app == nil || csqttDeviceID(app.core) == "" {
         return fmt.Errorf("ID устройства CSQTT Core не задан")
     }

@@ -12,6 +12,7 @@ on:
       - adapt/apply-csqtt-core-250-supervisor-gate.py
       - adapt/assemble-csqtt-core-250-candidate.py
       - adapt/headless_main.go
+      - adapt/csqtt_core_250_auth_api_linux_test.go
       - .github/workflows/csqtt-core-250-go-supervisor-gated-isolated.yml
   workflow_dispatch:
 permissions:
@@ -65,6 +66,7 @@ jobs:
           cp adapt/singbox_config_linux.go adapt/singbox_config_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/singbox_manager_linux.go adapt/singbox_manager_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/headless_main.go adapt/headless_main_test.go adapt/headless_api_contract_test.go upstream-lalune/Desktop/Linux/
+          cp adapt/csqtt_core_250_auth_api_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/vktoken_input_test.go upstream-lalune/Desktop/Libs/
           cp upstream-lalune/Desktop/Windows/go.mod upstream-lalune/Desktop/Linux/go.mod
           cp upstream-lalune/Desktop/Windows/go.sum upstream-lalune/Desktop/Linux/go.sum
