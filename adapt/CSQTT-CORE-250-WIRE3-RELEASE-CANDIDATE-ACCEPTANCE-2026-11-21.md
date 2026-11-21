@@ -34,8 +34,9 @@ The experimental bundle contains exactly four ARM64 binaries and a JSON manifest
 
 ## Remaining release gate
 
-- Verify joined ARM64 full-chain data-plane using the **same generated Go TUN fix** in the release-candidate source, with only the synthetic TURN Rust fixture and narrow test auth adaptations. Dedicated CI 44912824079 started; result must be checked before a PASS is claimed.
+- **DONE — CI 44912824079 SUCCESS.** A joined native ARM64 Go→Rust 2.5→Core8 WIRE-3→TUN→Go SOCKS5→sing-box TCP/UDP test used the **exact candidate Go TUN source fix generator**, with only synthetic Rust TURN credentials and isolated test-only Go auth/Direct/DNS adaptations. The test fixture explicitly left the production TUN read/write source unchanged. Direct bypass negative check, HTTP marker, UDP echo via both SOCKS5 endpoints, component shutdown and unchanged host route all PASSED. See https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44912824079.
 - If needed, make a narrow, fully owned, rollback-safe, host-independent reverse-path policy feature; do not add global route changes or disable rp_filter by default.
-- Finish release packaging metadata and operator instructions only after last checks. Do not install on a working NanoPi before explicit promotion.
+- Package the four **already validated binaries** with complete evidence manifest and hashes; do not recompile unchanged source or rerun already-green tests just for metadata. Deploy only after a separate explicit promotion decision.
+- **Not yet tested:** production VK/TURN authentication using byte-identical original Rust release ELF and real user credentials as ONE full-chain live session. Its exact ELF startup/RTT pair and the original-source synthetic TURN fullchain have been tested separately. Do not describe test fixture traffic as a production-authentication acceptance.
 
 All evidence is from isolated ARM64 CI; never infer real-world availability or production readiness from a single control-plane PASS.
