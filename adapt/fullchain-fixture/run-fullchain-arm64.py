@@ -223,6 +223,60 @@ try:
     print("FULLCHAIN_SO_MARK_ROUTE_LOOKUP",lookup.returncode,lookup.stdout.strip(),lookup.stderr.strip(),flush=True)
     assert lookup.returncode==0 and "dev csqtt0" in lookup.stdout, "marked SOCKS5 traffic must route into TUN"
     print("FULLCHAIN_MARKED_ROUTE_TARGETS_REAL_GO_TUN_PASS",flush=True)
+    for label,argv in (
+        ("RULES",["ip","-4","rule","show"]),
+        ("ROUTE_TABLE202",["ip","-4","route","show","table","202"]),
+        ("ROUTE_MAIN",["ip","-4","route","show","table","main"]),
+        ("RP_FILTER",["sysctl","net.ipv4.conf.all.rp_filter","net.ipv4.conf.csqtt0.rp_filter"]),
+        ("NFT_RULESET",["nft","list","ruleset"]),
+        ("MARKED_ROUTE_SOURCE",["ip","route","get","10.67.69.1","from","10.67.69.2","mark","0x4d53"])
+    ):
+        result=ns(client_ns,*argv,check=False,timeout=6)
+        print("FULLCHAIN_LINUX_ENV_"+label,result.returncode,result.stdout.strip()[-2200:],result.stderr.strip()[-250:],flush=True)
+
+    # Independent native Linux kernel control *inside the exact same client
+    # netns after the Go/Rust app has started*. It uses a separate temporary
+    # TUN/table/mark, never redirects any CSQTT SOCKS traffic.
+    kernel_control=r"""
+import os,fcntl,struct,socket,select,subprocess,time
+def ip(*args):
+    p=subprocess.run(["ip",*args],capture_output=True,text=True,timeout=4)
+    if p.returncode:raise RuntimeError("ip failed: "+p.stderr[-200:])
+fd=None
+try:
+    ip("tuntap","add","dev","csqprobe0","mode","tun")
+    ip("addr","add","10.89.90.2/32","dev","csqprobe0")
+    ip("link","set","csqprobe0","up")
+    ip("route","add","default","dev","csqprobe0","table","203")
+    ip("rule","add","pref","22014","fwmark","0x4d54/0xffff","lookup","203")
+    fd=os.open("/dev/net/tun",os.O_RDWR|os.O_NONBLOCK)
+    fcntl.ioctl(fd,0x400454ca,struct.pack("16sH",b"csqprobe0",0x1001))
+    sock=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET,socket.SO_MARK,0x4d54)
+    sock.setblocking(False)
+    print("KERNEL_SOCK_MARKED_CONNECT_ERRNO",sock.connect_ex(("10.89.90.1",47093)))
+    end=time.monotonic()+2
+    packets=[]
+    while time.monotonic()<end:
+        r,_,_=select.select([fd],[],[],0.25)
+        if r:
+            try:packet=os.read(fd,65535)
+            except BlockingIOError:continue
+            packets.append((len(packet),packet[0]>>4,
+                            ".".join(str(c) for c in packet[16:20]) if len(packet)>=20 else "?"))
+    print("ISOLATED_KERNEL_CONTROL_TUN_PACKETS",packets[:10])
+    assert any(ver==4 and dst=="10.89.90.1" for _,ver,dst in packets), "kernel did not deliver marked IPv4 to independent probe TUN"
+    print("ISOLATED_KERNEL_CONTROL_TCP_IPV4_SYN_AFTER_GO_PASS")
+finally:
+    if fd is not None:os.close(fd)
+    for args in (("rule","del","pref","22014","fwmark","0x4d54/0xffff","lookup","203"),
+                 ("route","flush","table","203"),
+                 ("tuntap","del","dev","csqprobe0","mode","tun")):
+        subprocess.run(["ip",*args],capture_output=True,timeout=4)
+"""
+    after_app_probe=ns(client_ns,"python3","-c",kernel_control,check=False,timeout=8)
+    print("FULLCHAIN_INDEPENDENT_TUN_AFTER_GO_KERNEL_CONTROL",
+          after_app_probe.returncode,after_app_probe.stdout[-1700:],after_app_probe.stderr[-450:],flush=True)
 
     client_tun_before=ns(client_ns,"ip","-s","link","show","dev","csqtt0",timeout=8).stdout
     server_tun_before=ns(server_ns,"ip","-s","link","show","dev","csqtt-core0",timeout=8).stdout
@@ -264,8 +318,10 @@ finally: s.close()
     try:
         time.sleep(1.5)
         sock_diag=ns(client_ns,"ss","-tanop",check=False,timeout=5)
+        tcp_lines=[x for x in sock_diag.stdout.splitlines()
+                   if "10.67.69.1:47093" in x or "State" in x or "SYN-SENT" in x]
         print("FULLCHAIN_KERNEL_TCP_SOCKET_STATE_DURING_SOCKS",
-              sock_diag.stdout[-2600:],sock_diag.stderr[-240:],flush=True)
+              "\n".join(tcp_lines)[-3600:],sock_diag.stderr[-240:],flush=True)
         curl_stdout,curl_stderr=curl_child.communicate(timeout=26)
     except Exception:
         if curl_child.poll() is None:
