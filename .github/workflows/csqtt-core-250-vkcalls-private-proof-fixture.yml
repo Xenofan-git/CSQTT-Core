@@ -1,0 +1,24 @@
+name: CSQTT Core 2.5 private VK Calls evidence parser — offline safety tests
+on:
+  push:
+    branches: [release/csqtt-250-wire3-candidate-20261121]
+    paths:
+      - adapt/csqtt_core_vkcalls_proof.py
+      - adapt/test-csqtt-core-vkcalls-proof.py
+      - .github/workflows/csqtt-core-250-vkcalls-private-proof-fixture.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  no-network-private-log-proof:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run synthetic offline privacy and missing-stage checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          python3 -B adapt/test-csqtt-core-vkcalls-proof.py
+          echo CSQTT_250_VKCALLS_SECRET_SAFETY_EIGHT_OFFLINE_NEGATIVE_AND_POSITIVE_TESTS_PASS
