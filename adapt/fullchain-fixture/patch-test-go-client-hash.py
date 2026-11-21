@@ -32,4 +32,11 @@ s=s.replace(needle,'''    if os.Getenv("CSQTT_TEST_TURN_RELAY_PORT") != "" {
 	return result,nil
 }''',1)
 gate.write_text(s)
+runner=base/'app_linux.go'
+s=runner.read_text()
+old='''if len(dnsServers) > 0 {'''
+assert s.count(old)==1
+s=s.replace(old,'''if len(dnsServers) > 0 && os.Getenv("CSQTT_TEST_TURN_RELAY_PORT")=="" {''',1)
+runner.write_text(s)
+print('TEST_ONLY_NO_RESOLVED_DBUS_SIDE_EFFECT_IN_ISOLATED_NETNS')
 print('TEST_ONLY_GO_SHA256_PINNED_TO_SYNTHETIC_TURN_FIXTURE',sha)
