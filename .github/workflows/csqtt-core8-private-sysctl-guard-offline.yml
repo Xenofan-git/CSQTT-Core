@@ -1,0 +1,24 @@
+name: CSQTT Core 2.5 Core8 private sysctl guard — offline mock checks
+on:
+  push:
+    branches: [release/csqtt-250-wire3-candidate-20261121]
+    paths:
+      - adapt/verify-core8-private-guest-sysctl-restore.sh
+      - adapt/test-core8-guest-sysctl-restore-offline.py
+      - .github/workflows/csqtt-core8-private-sysctl-guard-offline.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fake-proc-sys-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check lab guard without running Core8
+        run: bash -n adapt/verify-core8-private-guest-sysctl-restore.sh
+      - name: Exercise original trap logic against disposable mock sysctls only
+        run: |
+          set -euo pipefail
+          python3 -B adapt/test-core8-guest-sysctl-restore-offline.py
+          echo CSQTT_CORE8_PRIVATE_SYSCTL_SNAPSHOT_MOCK_SIX_TESTS_PASS

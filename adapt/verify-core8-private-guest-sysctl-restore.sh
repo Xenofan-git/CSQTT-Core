@@ -8,8 +8,12 @@ umask 077
 [ -z "$(ip -4 route show default)" ] || { echo GUEST_HAS_DEFAULT_ROUTE; exit 2; }
 [ "$(sha256sum /home/csqttlab/core8-arm64 | awk '{print $1}')" = a131751f29a5373d3ebf08bc0d3bfe59988a8badaf2854f01eb5561fc903a706 ] || { echo WRONG_CORE8_HASH; exit 2; }
 [ "$(/home/csqttlab/core8-arm64 --protocol-revision)" = CSQTT-WIRE-3 ] || { echo WRONG_WIRE_REVISION; exit 2; }
+# Before launching, reject existing sockets rather than claiming another daemon as ours.
+if ss -H -lun | grep -Fq "127.0.0.1:46871"; then echo GUEST_UDP_PORT_BUSY; exit 2; fi
+if ss -H -ltn | grep -Fq ":46872"; then echo GUEST_WEB_PORT_BUSY; exit 2; fi
 tmp="$(mktemp -d /tmp/core8-guest-private.XXXXXXXX)"
 paths="$tmp/original-sysctls"
+: > "$paths"
 for p in /proc/sys/net/ipv4/ip_forward /proc/sys/net/ipv6/conf/all/forwarding \
  /proc/sys/net/ipv4/conf/all/rp_filter /proc/sys/net/ipv4/conf/default/rp_filter \
  /proc/sys/net/core/default_qdisc /proc/sys/net/ipv4/tcp_congestion_control \
@@ -17,23 +21,31 @@ for p in /proc/sys/net/ipv4/ip_forward /proc/sys/net/ipv6/conf/all/forwarding \
  /proc/sys/net/ipv4/tcp_reordering /proc/sys/net/ipv4/tcp_window_scaling \
  /proc/sys/net/ipv4/tcp_fastopen /proc/sys/net/ipv4/tcp_slow_start_after_idle
 do
- if [ -r "$p" ] && [ -w "$p" ]; then printf '%s|%s\n' "$p" "$(cat "$p")" >> "$paths"; fi
+ if [ -r "$p" ] && [ -w "$p" ] && [ ! -L "$p" ]; then printf '%s|%s\n' "$p" "$(cat "$p")" >> "$paths"; fi
 done
+if [ ! -s "$paths" ]; then rm -rf "$tmp";echo GUEST_SYSCTL_SNAPSHOT_EMPTY;exit 2;fi
 pid=''
 cleanup() {
- local err=0
+ local initial_status=$? err=0
  trap - EXIT
  if [ -n "$pid" ]; then kill -INT "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi
  while IFS='|' read -r path original; do
-  if [ -e "$path" ]; then
+  if [ -e "$path" ] && [ ! -L "$path" ]; then
    printf '%s\n' "$original" >"$path" 2>/dev/null || err=1
+  else
+   err=1
   fi
  done < "$paths"
  while IFS='|' read -r path original; do
-  if [ -e "$path" ] && [ "$(cat "$path")" != "$original" ]; then err=1; fi
+  if [ ! -e "$path" ] || [ -L "$path" ]; then
+   err=1
+  elif [ "$(cat "$path")" != "$original" ]; then
+   err=1
+  fi
  done < "$paths"
  rm -rf "$tmp"
- if [ "$err" -eq 0 ]; then echo GUEST_SYSCTL_SNAPSHOT_RESTORE_PASS;else echo GUEST_SYSCTL_SNAPSHOT_RESTORE_FAIL;return 1;fi
+ if [ "$err" -eq 0 ]; then echo GUEST_SYSCTL_SNAPSHOT_RESTORE_PASS;else echo GUEST_SYSCTL_SNAPSHOT_RESTORE_FAIL;initial_status=1;fi
+ exit "$initial_status"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -55,7 +67,7 @@ for _ in $(seq 1 35); do
 done
 echo "GUEST_CORE8_PRIVATE_UDP_BIND=$udp"
 echo "GUEST_CORE8_PRIVATE_WEB_BIND=$web"
-[ "$udp" = 1 ] && [ "$web" = 1 ] || { echo GUEST_CORE8_SMOKE_FAILED; exit 1; }
+[ "$udp" = 1 ] && [ "$web" = 1 ] && kill -0 "$pid" 2>/dev/null || { echo GUEST_CORE8_SMOKE_FAILED; exit 1; }
 [ -z "$(ip -4 route show default)" ] || { echo GUEST_DEFAULT_ROUTE_UNEXPECTED;exit 1; }
 kill -INT "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
