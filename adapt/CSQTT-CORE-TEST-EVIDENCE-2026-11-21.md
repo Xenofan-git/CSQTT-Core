@@ -35,8 +35,9 @@
 | Rust 2.5.0 клиент ↔ сервер | [E2E #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344) | Отдельный обмен GETCONF/TUNCONF и ICMP PASS, но общий workflow FAILURE: тест 10 сек не успел |
 | Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
 | Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
+| Оригинальный CSQTT 2.5.0: реальный авторизованный CRUD ARM64 | [Original CRUD #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44887573311) | SUCCESS: настоящий ARM64 Rust-сервер из официального APK, изолированная сеть, HTTPS secret path, группа+клиент create/read/update/delete, cleanup, перезапуск HTTPS, маршрут по умолчанию неизменен |
 | Реальный Rust ELF upgrade/forced rollback | Нет подтверждения | Pending |
-| Реальный авторизованный CRUD клиентов и групп | Только mock E2E | Pending |
+| Реальный авторизованный CRUD клиентов и групп в адаптированном Rust Core | Оригинальный сервер уже проверен; Core-адаптация отдельно | Pending для адаптированного Core и целевой VM |
 
 ## Машиночитаемый реестр
 
@@ -116,7 +117,7 @@
       "id": "real-api-crud",
       "component": "authorized real client/group mutation lifecycle",
       "status": "pending",
-      "scope": "mock E2E present; live isolated server create/edit/delete/persistence not proven",
+      "scope": "Official original 2.5.0 server CRUD passed separately in GitHub run 44887573311; current derived Core server and user VM live CRUD remain unverified; mock E2E tested before.",
       "commit": "unverified",
       "run_id": null,
       "url": null
@@ -183,6 +184,15 @@
       "commit": "bf4ba8c4f14c2a9c3ab69c4220e406867a801cf9",
       "run_id": 44886448519,
       "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519"
+    },
+    {
+      "id": "original-v250-real-arm64-crud",
+      "component": "Unmodified original CSQTT v2.5.0 ARM64 real HTTPS API: authorized client and group CRUD, cleanup, restart",
+      "status": "passed",
+      "scope": "Native ubuntu-24.04-arm disposable GitHub-hosted runner, official APK server binary SHA256 d8930e19d628dec7715def67c6cc7a9a2d66120bbb7559b2db403763fa6fc73e, WIRE-3; network namespace without default route; real HTTPS auth, group and client create/edit/delete, login cookie, retained global settings and baseline, HTTPS relaunch, host default route unchanged and namespace cleaned. Does NOT prove derived Core server variant, user VPS guest, actual Deploy/rollback or VK traffic.",
+      "commit": "74e3345bf2b0ce471539c05f12214c678670d137",
+      "run_id": 44887573311,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44887573311"
     }
   ],
   "impact_rules": [
