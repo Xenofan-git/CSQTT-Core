@@ -7,11 +7,13 @@ on:
     paths:
       - adapt/csqtt_core_250_client_launch_linux.go
       - adapt/csqtt_core_250_client_launch_linux_test.go
+      - adapt/csqtt_core_250_client_launch_real_elf_linux_test.go
       - .github/workflows/csqtt-core-250-go-launch-isolated.yml
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   go-launch-contract:
@@ -31,9 +33,28 @@ jobs:
           grep -Fq 'std::env::var("CSQTT_PASSWORD")' /tmp/csqtt-250-original/rust-client/main.rs
           grep -Fq 'fn removed_identity_flags_are_not_normalized_or_accepted()' /tmp/csqtt-250-original/rust-client/main.rs
           echo ORIGINAL_250_AUTH_CONTRACT_PASS
+      - name: Reuse independently verified original 2.5.0 ARM64 client
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44833128457
+          name: csqtt-250-original-arm64-client-and-server
+          github-token: ${{ github.token }}
+          path: original-250
+
+      - name: Verify pinned original ELF and source tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="$GITHUB_WORKSPACE/original-250/original-csqtt-250/rust-client/target/release/client"
+          file "$binary" | grep -F 'ARM aarch64'
+          echo "3c76a4323ef784568a38a82e206cecfa7657d93c01b6a69033a2f7a2f44760fa  $binary" | sha256sum -c -
+          grep -Fx 'source_sha=fd936ef087c34cc46f26111dc2361f43b8b03c07' original-250/CSQTT-250-ARM64-BUILD.txt
+          chmod 0755 "$binary"
+          echo "CSQTT_250_ORIGINAL_CLIENT_BINARY=$binary" >> "$GITHUB_ENV"
+
       - name: Test isolated Go-to-client launch on native ARM64
         shell: bash
         run: |
           set -euo pipefail
           cd adapt
-          GO111MODULE=off go test -count=1 -v csqtt_core_250_client_launch_linux.go csqtt_core_250_client_launch_linux_test.go
+          GO111MODULE=off go test -count=1 -v csqtt_core_250_client_launch_linux.go csqtt_core_250_client_launch_linux_test.go csqtt_core_250_client_launch_real_elf_linux_test.go
