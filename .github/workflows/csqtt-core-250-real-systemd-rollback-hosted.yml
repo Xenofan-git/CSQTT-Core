@@ -15,9 +15,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          run-id: 44535829277
+          run-id: 44060318174
           github-token: ${{ github.token }}
-          name: csqtt-core-verified-linux-arm64-7402d52fe0319c75c85f80f902cd39e42527e7f4
+          name: csqtt-core-verified-linux-arm64-10aa3f1e4344d317bf5c2f638da80e4d065401fc
           path: old
       - uses: actions/download-artifact@v4
         with:

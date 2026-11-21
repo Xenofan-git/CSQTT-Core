@@ -17,6 +17,8 @@ new="$src/new/csqtt-core-linux-arm64"
 (cd "$src/new" && sha256sum -c SHA256SUMS)
 sha_old="$(sha256sum "$old" | cut -d' ' -f1)"
 sha_new="$(sha256sum "$new" | cut -d' ' -f1)"
+test "$sha_old" = 771453b7efc155ffc60cbecdf03581a957e6b292c7d5fb63435ec4a482a570ad
+test "$sha_new" = 3295c38ffdca3011f91990a16eff9bcd4d25df73b9cd49b3cc59d50d1ddfc7fb
 test "$sha_old" != "$sha_new"
 ip route show default > /tmp/ci-default-before
 echo RELEASE_PAIR_VERIFIED
