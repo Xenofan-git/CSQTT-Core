@@ -1,0 +1,39 @@
+name: CSQTT Core 2.5.0 Go launch contract (isolated ARM64)
+
+on:
+  push:
+    branches:
+      - test/csqtt-250-go-launch-20261121
+    paths:
+      - adapt/csqtt_core_250_client_launch_linux.go
+      - adapt/csqtt_core_250_client_launch_linux_test.go
+      - .github/workflows/csqtt-core-250-go-launch-isolated.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go-launch-contract:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.9'
+      - name: Verify original 2.5.0 Rust CLI contract without modifying upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v2.5.0 https://github.com/amurcanov/csqtt.git /tmp/csqtt-250-original
+          test "$(git -C /tmp/csqtt-250-original rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
+          grep -Fq 'std::env::var("CSQTT_PASSWORD")' /tmp/csqtt-250-original/rust-client/main.rs
+          grep -Fq 'fn removed_identity_flags_are_not_normalized_or_accepted()' /tmp/csqtt-250-original/rust-client/main.rs
+          echo ORIGINAL_250_AUTH_CONTRACT_PASS
+      - name: Test isolated Go-to-client launch on native ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd adapt
+          GO111MODULE=off go test -count=1 -v csqtt_core_250_client_launch_linux.go csqtt_core_250_client_launch_linux_test.go
