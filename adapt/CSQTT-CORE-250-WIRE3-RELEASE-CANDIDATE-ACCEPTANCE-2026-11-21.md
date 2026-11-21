@@ -40,3 +40,14 @@ The experimental bundle contains exactly four ARM64 binaries and a JSON manifest
 - **Not yet tested:** production VK/TURN authentication using byte-identical original Rust release ELF and real user credentials as ONE full-chain live session. Its exact ELF startup/RTT pair and the original-source synthetic TURN fullchain have been tested separately. Do not describe test fixture traffic as a production-authentication acceptance.
 
 All evidence is from isolated ARM64 CI; never infer real-world availability or production readiness from a single control-plane PASS.
+
+## Final validated release-candidate archive (no production rollout)
+
+- Packaging-only native ARM64 CI **44913844376 SUCCESS** on commit 1288b98c8b671332d8bd2bebb6f2bdc7a8e884fb.
+- Input was the same already verified four-component bundle from Go release-candidate run44912292825; archive packaging did **not** recompile source or mutate executable bytes. ELF64 AArch64 metadata and per-file manifest SHA-256 were checked again; +x executable permission was restored after GitHub artifact extraction.
+- Artifact name: csqtt-core-250-wire3-arm64-validated-rc-20261121, artifact ID 14710648589, 43,643,570 bytes, retention until 2026-12-21 14:25 UTC.
+- ZIP file: csqtt-core-250-wire3-arm64-validated-rc.zip.
+- Final ZIP SHA-256: 49b780ca5bba99ed9641c5bfe1650a23600922b5f341d705c0375bf1cbbf9906.
+- Each binary remains byte-identical to the verified Go, original-client, Core8 and sing-box ELF used as input; bundled manifest, source/CI evidence and per-file SHA256SUMS were added. The output explicitly remains a validated **isolated candidate**, not a production-authorized upgrade.
+- Release-candidate tests across 44912292825, 44912627426, 44912824079 and 44912386606 are all green. The original source-built TURN fixture E2E does not replace the still-unperformed production VK-authenticated byte-identical-client fullchain smoke.
+- No active NanoPi service, route, DNS, firewall, packet-mark policy or sysctl was modified. Manual promotion decision remains separate from the completed artifact construction.
