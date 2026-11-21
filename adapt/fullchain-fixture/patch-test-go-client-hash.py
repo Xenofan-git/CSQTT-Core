@@ -154,6 +154,38 @@ s=s.replace(needle, """\t\t\tn, readErr := unix.Read(tunFD, buf)
 \t\t\t}
 \t\t\tif readErr == unix.EINTR { continue }
 """, 1)
+# Header-only packet evidence; no raw payload and no user credentials.
+for old,new in (
+    ('if count <= 12 {','if count <= 48 {'),
+    ('fmt.Sprintf("[TEST TUN->UDP] count=%d bytes=%d ipv=%d", count,n,buf[0]>>4)',
+     'fmt.Sprintf("[TEST TUN->UDP] count=%d bytes=%d header=%s", count,n,csqttCoreTestPacketHeader(buf[:n]))'),
+    ('fmt.Sprintf("[TEST UDP->TUN] count=%d bytes=%d ipv=%d", count,n,buf[0]>>4)',
+     'fmt.Sprintf("[TEST UDP->TUN] count=%d bytes=%d header=%s", count,n,csqttCoreTestPacketHeader(buf[:n]))')
+):
+    required = 2 if old=='if count <= 12 {' else 1
+    assert s.count(old)==required, "test-only header trace marker changed"
+    s=s.replace(old,new,required)
+s += """
+// Test-only packet-header metadata. Never prints TCP/UDP content.
+func csqttCoreTestPacketHeader(p []byte) string {
+    if len(p)<20 { return fmt.Sprintf("short=%d",len(p)) }
+    if p[0]>>4 != 4 { return fmt.Sprintf("ipver=%d",p[0]>>4) }
+    ihl:=int(p[0]&0x0f)*4
+    if ihl<20 || len(p)<ihl { return "invalid-ipv4-header" }
+    proto:=p[9]
+    src:=net.IP(p[12:16]).String()
+    dst:=net.IP(p[16:20]).String()
+    if proto==6 && len(p)>=ihl+14 {
+        sp:=int(p[ihl])<<8|int(p[ihl+1])
+        dp:=int(p[ihl+2])<<8|int(p[ihl+3])
+        return fmt.Sprintf("tcp %s:%d>%s:%d flags=0x%02x",src,sp,dst,dp,p[ihl+13])
+    }
+    if proto==1 && len(p)>=ihl+1 {
+        return fmt.Sprintf("icmp %s>%s type=%d",src,dst,p[ihl])
+    }
+    return fmt.Sprintf("v4 proto=%d %s>%s",proto,src,dst)
+}
+"""
 runner.write_text(s)
 print('TEST_ONLY_RAW_TUN_READ_NONBLOCKING_POLL_ENABLED')
 print('TEST_ONLY_GO_TUN_UDP_BIDIRECTIONAL_METADATA_TRACE_ENABLED')

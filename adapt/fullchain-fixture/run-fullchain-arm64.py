@@ -363,20 +363,12 @@ finally: s.close()
           ns(client_ns,"ip","-s","link","show","dev","csqtt0",check=False).stdout.strip()[-410:],flush=True)
     print("FULLCHAIN_TUN_COUNTERS_AFTER_RAW_PROBE_SERVER",
           ns(server_ns,"ip","-s","link","show","dev","csqtt-core0",check=False).stdout.strip()[-410:],flush=True)
-    # One-variable A/B on disposable csqtt0: switch qdisc from fq_codel
-    # to noqueue, leave WIRE-3/Go bridge/route/SO_MARK/client unchanged.
-    print("FULLCHAIN_QUEUE_AB_PRE",
-          ns(client_ns,"tc","-s","qdisc","show","dev","csqtt0",check=False).stdout[-750:],flush=True)
-    zero_queue=ns(client_ns,"ip","link","set","dev","csqtt0","txqueuelen","0",check=False)
-    print("FULLCHAIN_QUEUE_AB_TXQLEN_ZERO",zero_queue.returncode,zero_queue.stderr[-450:],flush=True)
-    print("FULLCHAIN_QUEUE_AB_POST",
-          ns(client_ns,"tc","-s","qdisc","show","dev","csqtt0",check=False).stdout[-750:],flush=True)
-    qprobe=ns(client_ns,"python3","-c",raw_probe,check=False,timeout=7)
-    print("FULLCHAIN_QUEUE_AB_MARKED_TCP_PROBE",qprobe.returncode,qprobe.stdout[-800:],qprobe.stderr[-280:],flush=True)
-    print("FULLCHAIN_QUEUE_AB_TUN_COUNTERS",
-          ns(client_ns,"ip","-s","link","show","dev","csqtt0",check=False).stdout.strip()[-490:],flush=True)
-    print("FULLCHAIN_QUEUE_AB_GOBRIDGE_READS",json.dumps(curl_api("GET","/logs"),ensure_ascii=False)[-2200:],flush=True)
-
+    # Prior diagnostics showed that txqueuelen=0 made the TUN drop
+    # packets. Do NOT apply that destructive A/B condition during the
+    # actual WIRE-3 positive HTTP acceptance test.
+    ns(client_ns,"ip","link","set","dev","csqtt0","txqueuelen","500")
+    print("FULLCHAIN_TUN_QUEUE_RESTORED_BEFORE_REAL_HTTP",
+          ns(client_ns,"ip","-s","link","show","dev","csqtt0").stdout[-550:],flush=True)
 
     # Negative control was unreachable directly. Positive request must
     # complete via sing-box SOCKS inbound -> CSQTT SOCKS outbound -> Go
