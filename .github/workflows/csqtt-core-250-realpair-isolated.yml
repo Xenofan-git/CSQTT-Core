@@ -74,8 +74,11 @@ jobs:
           old=p.read_text()
           before="        client_ip.octets()[3],\n        10,\n        66,\n        67,\n        1,"
           after="        client_ip.octets()[3],\n        10,\n        67,\n        69,\n        1,"
-          assert old.count(before)==1, 'expected one original 2.5 test-only ICMP destination'
-          p.write_text(old.replace(before, after))
+          start=old.index('async fn windows_client_reaches_wsl_server_through_a_real_turn_channel_and_dispatcher()')
+          end=old.index('\n#[tokio::test(', start)
+          section=old[start:end]
+          assert section.count(before)==1, 'expected one ICMP destination within the intended E2E test'
+          p.write_text(old[:start]+section.replace(before,after)+old[end:])
           print('ISOLATED_FIXTURE_CORE_TUN_10_67_69_1_PASS')
           TEST_FIXTURE
 
