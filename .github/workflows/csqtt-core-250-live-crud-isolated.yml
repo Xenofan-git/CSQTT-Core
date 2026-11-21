@@ -1,0 +1,118 @@
+name: CSQTT Core 2.5.0 native ARM64 real API CRUD (isolated)
+
+on:
+  push:
+    branches: [test/csqtt-250-real-crud-20261121]
+    paths:
+      - .github/workflows/csqtt-core-250-live-crud-isolated.yml
+      - adapt/test-csqtt-original-server-e2e.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-server-crud:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    env:
+      CSQTT_TEST_NS: csqttcrud250
+      CSQTT_TEST_SECRET: ci-crud-secret
+      CSQTT_E2E_WEB_USER: csqtt-ci
+      CSQTT_E2E_WEB_PASS: ci-only-password
+      CSQTT_E2E_ALLOW_MUTATIONS: isolated-only
+      CSQTT_E2E_BASE_URL: https://127.0.0.1:46941/ci-crud-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify destructive tests refuse non-lab targets
+        run: python3 adapt/test-csqtt-original-server-e2e-safety.py
+
+      - name: Download original v2.5.0 ARM64 server from official APK, verify hash and revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          curl -fL --retry 3 --retry-delay 2 https://github.com/amurcanov/csqtt/releases/download/v2.5.0/CSQTT-arm64-v8a.apk -o /tmp/csqtt-250-original.apk
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('/tmp/csqtt-250-original.apk') as apk:
+              binary=apk.read('assets/csqtt-linux-arm64')
+          target=Path('/tmp/csqtt-250-crud-original-server')
+          target.write_bytes(binary)
+          target.chmod(0o755)
+          PY
+          printf '%s  %s\n' d8930e19d628dec7715def67c6cc7a9a2d66120bbb7559b2db403763fa6fc73e /tmp/csqtt-250-crud-original-server | sha256sum -c -
+          file /tmp/csqtt-250-crud-original-server | grep -F 'ARM aarch64'
+          test "$(/tmp/csqtt-250-crud-original-server --protocol-revision)" = CSQTT-WIRE-3
+          echo ORIGINAL_SERVER_ELF_250_VERIFIED
+
+      - name: Start original server only inside disposable no-default-route network namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo test -c /dev/net/tun
+          ip -4 route show default > /tmp/csqtt-crud-host-default.before
+          sudo ip netns add "$CSQTT_TEST_NS"
+          sudo ip -n "$CSQTT_TEST_NS" link set lo up
+          test -z "$(sudo ip -n "$CSQTT_TEST_NS" -4 route show default)"
+          sudo ip netns exec "$CSQTT_TEST_NS"             env CSQTT_MAIN_PASSWORD=ci-only-tunnel-password CSQTT_WEB_USER="$CSQTT_E2E_WEB_USER" CSQTT_WEB_PASS="$CSQTT_E2E_WEB_PASS"             /tmp/csqtt-250-crud-original-server             --listen 127.0.0.1:46940 --web-port 46941             --web-secret-path "$CSQTT_TEST_SECRET" --secure-cookie             --config-dir /tmp/csqtt-250-crud-state             > /tmp/csqtt-250-crud-server.log 2>&1 &
+          echo "$!" > /tmp/csqtt-250-crud-server.pid
+          for i in $(seq 1 16); do
+            if sudo ip netns exec "$CSQTT_TEST_NS" curl --noproxy '*' --insecure --silent --fail --max-time 2               "https://127.0.0.1:46941/$CSQTT_TEST_SECRET/" -o /tmp/csqtt-250-crud-panel.html; then
+              echo ORIGINAL_250_HTTPS_SECRET_PANEL_READY
+              exit 0
+            fi
+            sleep 1
+          done
+          tail -70 /tmp/csqtt-250-crud-server.log
+          exit 1
+
+      - name: Run authenticated real create/read/update/delete clients and groups with baseline restoration
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo ip netns exec "$CSQTT_TEST_NS"             env CSQTT_E2E_BASE_URL="$CSQTT_E2E_BASE_URL" CSQTT_E2E_WEB_USER="$CSQTT_E2E_WEB_USER" CSQTT_E2E_WEB_PASS="$CSQTT_E2E_WEB_PASS" CSQTT_E2E_ALLOW_MUTATIONS=isolated-only             python3 adapt/test-csqtt-original-server-e2e.py
+          echo ORIGINAL_250_REAL_ARM64_CLIENT_GROUP_CRUD_PASS
+
+      - name: Verify persistent state and HTTPS available after server restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only the disposable lab server process is stopped; do not touch host services.
+          sudo ip netns pids "$CSQTT_TEST_NS" | xargs -r sudo kill
+          for i in $(seq 1 20); do
+            test -z "$(sudo ip netns pids "$CSQTT_TEST_NS")" && break
+            sleep 1
+          done
+          sudo ip netns exec "$CSQTT_TEST_NS"             env CSQTT_MAIN_PASSWORD=ci-only-tunnel-password CSQTT_WEB_USER="$CSQTT_E2E_WEB_USER" CSQTT_WEB_PASS="$CSQTT_E2E_WEB_PASS"             /tmp/csqtt-250-crud-original-server             --listen 127.0.0.1:46940 --web-port 46941             --web-secret-path "$CSQTT_TEST_SECRET" --secure-cookie             --config-dir /tmp/csqtt-250-crud-state             > /tmp/csqtt-250-crud-server-restart.log 2>&1 &
+          echo "$!" > /tmp/csqtt-250-crud-server-restart.pid
+          for i in $(seq 1 20); do
+            if sudo ip netns exec "$CSQTT_TEST_NS" curl --noproxy '*' --insecure --silent --fail --max-time 2               "https://127.0.0.1:46941/$CSQTT_TEST_SECRET/" -o /dev/null; then
+              echo ORIGINAL_250_HTTPS_PANEL_RESTART_PASS
+              exit 0
+            fi
+            sleep 1
+          done
+          tail -70 /tmp/csqtt-250-crud-server-restart.log
+          exit 1
+
+      - name: Always release test network namespace and verify host default route unchanged
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if sudo ip netns list | grep -q "^$CSQTT_TEST_NS"; then
+            sudo ip netns pids "$CSQTT_TEST_NS" | xargs -r sudo kill
+            sudo ip netns del "$CSQTT_TEST_NS"
+          fi
+          if [ -f /tmp/csqtt-crud-host-default.before ]; then
+            ip -4 route show default > /tmp/csqtt-crud-host-default.after
+            cmp /tmp/csqtt-crud-host-default.before /tmp/csqtt-crud-host-default.after
+            code=$?
+            test "$code" = 0 || exit "$code"
+            echo HOST_DEFAULT_ROUTE_UNCHANGED
+          fi
+          ! sudo ip netns list | grep -q "^$CSQTT_TEST_NS"
+          echo ISOLATED_250_CRUD_LAB_CLEANED
