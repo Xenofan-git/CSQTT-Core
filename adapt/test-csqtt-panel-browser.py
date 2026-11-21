@@ -228,6 +228,15 @@ def main():
             assert route_cards.nth(1).get_attribute("data-system-rule") == "csqtt"
             assert route_cards.nth(0).locator("[data-move-route-rule]").count() == 0
             assert route_cards.nth(0).locator("[data-remove-route-rule]").count() == 0
+            # System rule toggles belong on their cards, not only in the editor.
+            direct_card_toggle = route_cards.nth(0).locator('[data-toggle-route-rule="system-direct"]')
+            csqtt_card_toggle = route_cards.nth(1).locator('[data-toggle-route-rule="system-csqtt"]')
+            assert direct_card_toggle.count() == 1 and csqtt_card_toggle.count() == 1
+            direct_card_toggle.check()
+            assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").is_checked()
+            direct_card_toggle = page.locator('[data-toggle-route-rule="system-direct"]')
+            direct_card_toggle.uncheck()
+            assert not page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").is_checked()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").check()
             assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").input_value() == "example.ru", (
                 "legacy DirectDomains must migrate into the fixed DIRECT rule editor"
@@ -242,6 +251,8 @@ def main():
             route_cards.nth(1).locator('[data-select-route-rule]').click()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").check()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("csqtt-route.example")
+            assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Outbound\"]").count() == 0, "CSQTT outbound must be fixed"
+            assert page.locator('#singboxRouteRuleEditor .route-rule-editor').get_by_text("Outbound: CSQTT (фиксированный)").is_visible()
             # CSQTT starts immediately after DIRECT; priority controls can move it below user rules and restore it.
             route_cards.nth(1).locator("[data-move-route-rule]").last.click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
