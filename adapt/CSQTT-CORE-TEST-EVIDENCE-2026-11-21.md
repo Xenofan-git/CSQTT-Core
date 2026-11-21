@@ -35,6 +35,7 @@
 | Rust 2.5.0 клиент ↔ сервер | [E2E #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344) | Отдельный обмен GETCONF/TUNCONF и ICMP PASS, но общий workflow FAILURE: тест 10 сек не успел |
 | Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
 | Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
+| Адаптированный Rust Core ARM64: реальный HTTPS CRUD | Локальный live-test 21.11.2026, артефакт 10aa3f1 | PASS: 2 запуска одной базы, 32+32 проверки, авторизованные клиенты и группы, очистка, HTTPS 200, изолированная сеть. Не новейший выпуск №7 |
 | Сохранность API адаптированного Rust Core (статический код) | Локальная проверка b7cb832 | PASS: оригинальный v2.5.0 и производный web_panel.rs имеют 91 одинаковый маршрут; только семь разрешённых замен адреса подсети. Это не live CRUD адаптированного ELF |
 | Оригинальный CSQTT 2.5.0: реальный авторизованный CRUD ARM64 | [Original CRUD #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44887573311) | SUCCESS: настоящий ARM64 Rust-сервер из официального APK, изолированная сеть, HTTPS secret path, группа+клиент create/read/update/delete, cleanup, перезапуск HTTPS, маршрут по умолчанию неизменен |
 | Реальный Rust ELF upgrade/forced rollback | Нет подтверждения | Pending |
@@ -201,6 +202,15 @@
       "status": "passed",
       "scope": "Executed locally on Moscow VPS from clean pinned official git archive fd936ef with isolated generated source. 91 route paths identical; 9 critical API paths present; exact panel source parity with only 7 allowed subnet replacements. SHA original 6bf445acb280e3506ef3f0ec494488307836f16d4eedb61fb4ada35121bc81ea; derived 07a73dfb378fb7ffe40410778f9ec721e5ace9f1abbada3b6e84fe35b8e86ef2. NOT native ARM64 live CRUD, installer rollback or runtime Go/sing-box.",
       "commit": "b7cb8329648b62aee8acec8611b5a39800fd4ee1",
+      "run_id": null,
+      "url": null
+    },
+    {
+      "id": "derived-core-10aa3f1-real-api-local",
+      "component": "ARM64 derived CSQTT Core 2.5.0 real HTTPS auth and client/group CRUD in QEMU",
+      "status": "passed",
+      "scope": "2026-11-21 Moscow VPS, verified ARM64 ELF SHA256 771453b7efc155ffc60cbecdf03581a957e6b292c7d5fb63435ec4a482a570ad built at 10aa3f1, QEMU user mode, outer UID nobody, separate user+network namespaces loopback only, network command stubs. Existing real E2E Python run twice on same temporary config: 32/32 + 32/32 PASS, real login and Secure/HttpOnly cookie, client/group CRUD and baseline unchanged, host default route unchanged. Test temp deleted. NOT newest release #7, host network TUN nor Deploy/rollback. Report adapt/CSQTT-CORE-DERIVED-API-LIVE-2026-11-21.md.",
+      "commit": "10aa3f1e4344d317bf5c2f638da80e4d065401fc",
       "run_id": null,
       "url": null
     }
