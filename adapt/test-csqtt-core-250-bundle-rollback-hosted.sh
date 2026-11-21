@@ -52,8 +52,8 @@ for dirname in ('old','new'):
   p=root/'bin'/name
   digest=hashlib.sha256(p.read_bytes()).hexdigest()
   if dirname=='old' and meta['role']=='derived-server':continue
-  assert digest==meta['sha256']
-  if meta['role'] in expected:assert digest==expected[meta['role']]
+  assert digest==meta['sha256'],f'{dirname}/{name} digest={digest} expected={meta["sha256"]}'
+  if meta['role'] in expected:assert digest==expected[meta['role']],f'{dirname}/{name} role={meta["role"]} digest={digest} expected={expected[meta["role"]]}'
   p.chmod(0o755)
 old_manifest=json.loads((old/'manifest.json').read_text())
 old_manifest['derivedCoreCommit']='21c59ba2918fd04e4324a897d7afc2e53a2e0cae'
