@@ -56,7 +56,81 @@ addition = '''
     }
 '''
 s=s.replace(needle,needle+addition,1)
+# Add bounded, metadata-only trace to the ACTUAL Go TUN<->UDP bridge.
+# This is inserted only when compiling the disposable ARM64 lab binary.
+# Never log raw packet payload or production credentials.
+needle = """	go func() {
+		defer t.workers.Done()
+		buf := make([]byte, 65535)
+		for {
+			n, readErr := f.Read(buf)
+			if readErr != nil { return }
+			if n > 0 {
+				if _, writeErr := udpConn.Write(buf[:n]); writeErr != nil { return }
+			}
+		}
+	}()"""
+assert s.count(needle)==1, "Go TUN outbound bridge changed"
+new = """	go func() {
+		defer t.workers.Done()
+		buf := make([]byte, 65535)
+		count := 0
+		for {
+			n, readErr := f.Read(buf)
+			if readErr != nil {
+				t.app.core.AddLog(fmt.Sprintf("[TEST TUN->UDP] read exited: %v",readErr))
+				return
+			}
+			if n > 0 {
+				count++
+				if count <= 12 {
+					t.app.core.AddLog(fmt.Sprintf("[TEST TUN->UDP] count=%d bytes=%d ipv=%d", count,n,buf[0]>>4))
+				}
+				if _, writeErr := udpConn.Write(buf[:n]); writeErr != nil {
+					t.app.core.AddLog(fmt.Sprintf("[TEST TUN->UDP] udp send failed: %v",writeErr))
+					return
+				}
+			}
+		}
+	}()"""
+s=s.replace(needle,new,1)
+needle="""	go func() {
+		defer t.workers.Done()
+		buf := make([]byte, 65535)
+		for {
+			n, readErr := udpConn.Read(buf)
+			if readErr != nil { return }
+			if n > 0 {
+				if _, writeErr := f.Write(buf[:n]); writeErr != nil { return }
+			}
+		}
+	}()"""
+assert s.count(needle)==1, "Go TUN inbound bridge changed"
+new="""	go func() {
+		defer t.workers.Done()
+		buf := make([]byte, 65535)
+		count := 0
+		for {
+			n, readErr := udpConn.Read(buf)
+			if readErr != nil {
+				t.app.core.AddLog(fmt.Sprintf("[TEST UDP->TUN] udp read exited: %v",readErr))
+				return
+			}
+			if n > 0 {
+				count++
+				if count <= 12 {
+					t.app.core.AddLog(fmt.Sprintf("[TEST UDP->TUN] count=%d bytes=%d ipv=%d", count,n,buf[0]>>4))
+				}
+				if _, writeErr := f.Write(buf[:n]); writeErr != nil {
+					t.app.core.AddLog(fmt.Sprintf("[TEST UDP->TUN] write failed: %v",writeErr))
+					return
+				}
+			}
+		}
+	}()"""
+s=s.replace(needle,new,1)
 runner.write_text(s)
+print('TEST_ONLY_GO_TUN_UDP_BIDIRECTIONAL_METADATA_TRACE_ENABLED')
 print('TEST_ONLY_GO_SOCKS5_TRACE_ENABLED')
 print('TEST_ONLY_DIRECT_DNSMASQ_SKIPPED_ON_DISPOSABLE_ARM64_WITHOUT_DNSMASQ')
 print('TEST_ONLY_NO_RESOLVED_DBUS_SIDE_EFFECT_IN_ISOLATED_NETNS')
