@@ -18,6 +18,16 @@ for file in sorted(dest.rglob('*.rs')):
  s=file.read_text(); old=s
  # Apply only to CSQTT's own IPv4 tunnel address literals, never external networks.
  s=s.replace('10.66.67.', '10.67.69.').replace('Ipv4Addr::from([10, 66, 67,', 'Ipv4Addr::from([10, 67, 69,').replace('csqtt1','csqtt-core0')
+ # RouteTable::route_index uses a byte-array prefix, not an address string.
+ # Keep the derived Core downlink and its local test vectors in the same /24.
+ if file.name == 'tun_device.rs':
+  assert s.count('SUBNET_PREFIX: [u8; 3] = [10, 66, 67]') == 1
+  s=s.replace('SUBNET_PREFIX: [u8; 3] = [10, 66, 67]', 'SUBNET_PREFIX: [u8; 3] = [10, 67, 69]')
+  s=s.replace('[10, 66, 67,', '[10, 67, 69,')
+  assert 'SUBNET_PREFIX: [u8; 3] = [10, 67, 69]' in s
+ if file.name == 'protocol.rs':
+  assert s.count('let ip = [10, 66, 67, 10];') == 1
+  s=s.replace('let ip = [10, 66, 67, 10];', 'let ip = [10, 67, 69, 10];')
  # Distinct TUN firewall comment for independent cleanup; avoid matching legacy rules.
  s=s.replace('CSQTT_TPROXY', 'CSQTT_CORE_TPROXY')
  if s!=old:
