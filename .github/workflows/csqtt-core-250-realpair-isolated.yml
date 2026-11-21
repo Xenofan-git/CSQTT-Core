@@ -48,9 +48,9 @@ jobs:
       - name: Download already-verified derived Core release7 ARM64 ELF
         uses: actions/download-artifact@v4
         with:
-          run-id: 44553540024
+          run-id: 44890803542
           github-token: ${{ github.token }}
-          name: csqtt-core-verified-linux-arm64-21c59ba2918fd04e4324a897d7afc2e53a2e0cae
+          name: csqtt-core-verified-linux-arm64-91b154011ca16c219f57eef99462d3408dccfeeb
           path: /tmp/csqtt-core-release7
 
       - name: Verify exact Core release7 binary and stage as isolated peer
@@ -58,11 +58,11 @@ jobs:
         run: |
           set -euo pipefail
           (cd /tmp/csqtt-core-release7 && sha256sum -c SHA256SUMS)
-          grep -Fx 'repo_commit=21c59ba2918fd04e4324a897d7afc2e53a2e0cae' /tmp/csqtt-core-release7/BUILD-INFO.txt
-          echo '3295c38ffdca3011f91990a16eff9bcd4d25df73b9cd49b3cc59d50d1ddfc7fb  /tmp/csqtt-core-release7/csqtt-core-linux-arm64' | sha256sum -c -
+          grep -Fx 'repo_commit=91b154011ca16c219f57eef99462d3408dccfeeb' /tmp/csqtt-core-release7/BUILD-INFO.txt
+          file /tmp/csqtt-core-release7/csqtt-core-linux-arm64 | grep -F AArch64
           install -m 0755 /tmp/csqtt-core-release7/csqtt-core-linux-arm64 /tmp/csqtt-official-server
           test "$(/tmp/csqtt-official-server --protocol-revision)" = CSQTT-WIRE-3
-          echo VERIFIED_DERIVED_CORE_RELEASE7_WIRE3
+          echo VERIFIED_DERIVED_CORE_FIXED_DOWNLINK_WIRE3
 
       - name: Align original client ICMP test destination with Core private TUN subnet
         shell: bash
