@@ -245,6 +245,18 @@ def main():
             page.locator("#singboxAddRouteRule").click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
             assert route_cards.count() == 3
+            # Mobile regression: Route must not inflate the approved 390px phone canvas.
+            original_viewport = page.viewport_size
+            page.set_viewport_size({"width": 390, "height": 844})
+            width_state = page.evaluate("""() => ({
+                viewport: window.innerWidth,
+                doc: document.documentElement.scrollWidth,
+                queue: document.querySelector('#singboxRouteRuleEditor .route-rule-list').getBoundingClientRect().width,
+                cardOverflows: [...document.querySelectorAll('#singboxRouteRuleEditor .route-rule')].some(card => card.scrollWidth > card.clientWidth + 1)
+            })""")
+            assert width_state["doc"] <= width_state["viewport"], f"Route document overflow on mobile: {width_state}"
+            assert width_state["queue"] <= width_state["viewport"] and not width_state["cardOverflows"], width_state
+            page.set_viewport_size(original_viewport)
             route_cards.nth(2).locator('[data-select-route-rule]').click()
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("user-route.example")
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Outbound\"]").select_option("socks-hydra")

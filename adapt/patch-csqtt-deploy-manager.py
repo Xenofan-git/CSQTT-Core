@@ -335,7 +335,7 @@ replace_once(
 \t\t\t\tdeployAppend("[deploy] CSQTT: задайте пароль туннеля, логин и пароль WEB только латиницей и цифрами")
 \t\t\t\treturn false
 \t\t\t}
-\t\t\tif !validCSQTTDeviceID(req.DeviceID) { deployAppend("[deploy] не удалось получить ID устройства LaLune"); return false }
+\t\t\tif !validCSQTTDeviceID(req.DeviceID) { deployAppend("[deploy] не удалось получить ID устройства CSQTT Core"); return false }
 \t\t}
 \t}
 \tif strings.TrimSpace(req.Host) == "" {''',

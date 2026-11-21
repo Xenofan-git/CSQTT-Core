@@ -1003,7 +1003,7 @@ linux_auth_replacement = """func (r *LinuxRunner) StartCore(cmdArgs []string, li
 	}
 	deviceID := csqttDeviceID(bridge.Core)
 	if deviceID == "" {
-		bridge.Core.AddLog("[AUTH] ID устройства LaLune не задан; запуск отменён")
+		bridge.Core.AddLog("[AUTH] ID устройства CSQTT Core не задан; запуск отменён")
 		bridge.Core.SetConnected(false)
 		return
 	}
@@ -1093,7 +1093,7 @@ old_start = """func (r *LinuxRunner) StartCore(cmdArgs []string, listenPort int,
 	}
 	deviceID := csqttDeviceID(bridge.Core)
 	if deviceID == "" {
-		bridge.Core.AddLog("[AUTH] ID устройства LaLune не задан; запуск отменён")
+		bridge.Core.AddLog("[AUTH] ID устройства CSQTT Core не задан; запуск отменён")
 		bridge.Core.SetConnected(false)
 		return
 	}
@@ -1114,7 +1114,7 @@ new_start = """func (r *LinuxRunner) StartCore(cmdArgs []string, listenPort int,
 	}
 	deviceID := csqttDeviceID(bridge.Core)
 	if deviceID == "" {
-		bridge.Core.AddLog("[AUTH] ID устройства LaLune не задан; запуск отменён")
+		bridge.Core.AddLog("[AUTH] ID устройства CSQTT Core не задан; запуск отменён")
 		bridge.Core.SetConnected(false)
 		return
 	}

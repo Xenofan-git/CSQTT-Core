@@ -27,7 +27,14 @@
 | Серверная панель | [Browser #2](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44605678231) | Offline browser; авторизованное чтение отдельно проверено на лабораторном стенде |
 | Rust ARM64 | [Rust #7](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44553540024) | ARM64 ELF + одноразовый smoke; не upgrade/forced rollback |
 | Go Linux VM | [Go #1651](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44797656023) | Предыдущая версия: реальная сеть и recovery; не покрывает последние Go Deploy изменения |
-| Новые Go Deploy изменения | [Go #1656](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44818444566) | Pending: компиляция Go успешна, весь цикл и новые тесты пока не подтверждены |
+| Go Deploy, отменённый эксперимент | [Go #1656](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44818444566) | SUCCESS исторически, но изменения затем отменены: не принимать как проверку текущего Go-кода |
+| Возврат к рабочей Go/ARM64 сборке | [Go #1657](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44826258557) | SUCCESS на коммите e1cf635; без новых изменений в сетевой логике |
+| Go/ARM64 после изменения карточек правил | [Go #1658](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886141340) | В процессе на коммите 2902431; итог пока не подтверждён |
+| Семь вкладок, карточки маршрутов | [UI #11](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886141341) | SUCCESS на 2902431; не проверяет новое мобильное исправление |
+| Оригинальный Rust клиент 2.5.0 | [ARM64 client #2](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833128457) | SUCCESS: оригинальный ARM64 ELF; не полноценный VK/TURN релиз |
+| Rust 2.5.0 клиент ↔ сервер | [E2E #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344) | Отдельный обмен GETCONF/TUNCONF и ICMP PASS, но общий workflow FAILURE: тест 10 сек не успел |
+| Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
+| Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
 | Реальный Rust ELF upgrade/forced rollback | Нет подтверждения | Pending |
 | Реальный авторизованный CRUD клиентов и групп | Только mock E2E | Pending |
 
@@ -89,9 +96,9 @@
     },
     {
       "id": "go-arm64-1656",
-      "component": "latest Go Linux ARM64 build with owned Deploy preflight",
-      "status": "pending",
-      "scope": "Go build stage observed successful, entire pipeline and new Go unit/race tests not yet confirmed",
+      "component": "Go Deploy preflight experiment (later reverted)",
+      "status": "historical",
+      "scope": "workflow completed SUCCESS for SHA 3728052, but experiment was reverted in e1cf635; not evidence for current main integrated implementation",
       "commit": "3728052fb8526a71b68e2c374ac0c12959a4f83b",
       "run_id": 44818444566,
       "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44818444566"
@@ -113,6 +120,69 @@
       "commit": "unverified",
       "run_id": null,
       "url": null
+    },
+    {
+      "id": "go-arm64-1657",
+      "component": "Go ARM64 integrated after restored functional sources",
+      "status": "passed",
+      "scope": "CI SUCCESS on correction commit e1cf635; restored prior behavior, not final original 2.5.0 full integration",
+      "commit": "e1cf635fe414650c419dc9b994a76122848671db",
+      "run_id": 44826258557,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44826258557"
+    },
+    {
+      "id": "go-arm64-1658",
+      "component": "Go ARM64 integrated after Route card UI-only patch",
+      "status": "pending",
+      "scope": "in_progress as of 2026-11-21 audit; do not count as passed until completion",
+      "commit": "29024310e655c2e38a6caf9071b2d92f28075cd1",
+      "run_id": 44886141340,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886141340"
+    },
+    {
+      "id": "native-ui-browser-11",
+      "component": "seven-tab UI with Route-card toggles and fixed CSQTT outbound",
+      "status": "passed",
+      "scope": "CI SUCCESS on 2902431; native app mock route and interaction, no real traffic and no 390px Route overflow assertion yet",
+      "commit": "29024310e655c2e38a6caf9071b2d92f28075cd1",
+      "run_id": 44886141341,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886141341"
+    },
+    {
+      "id": "original-v250-arm64-client",
+      "component": "original CSQTT 2.5.0 native ARM64 client binary",
+      "status": "passed",
+      "scope": "original pinned Rust client built on ARM64 from fd936ef; SHA256 3c76a4323ef784568a38a82e206cecfa7657d93c01b6a69033a2f7a2f44760fa; no VK live acceptance",
+      "commit": "c89e18aa13a17d554278f42401fc66551e0b0410",
+      "run_id": 44833128457,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833128457"
+    },
+    {
+      "id": "original-v250-realpair",
+      "component": "original 2.5.0 isolated real TURN client-session engine and independent server E2E",
+      "status": "historical",
+      "scope": "overall workflow FAILED due separate recovery 10s limit; one independent DTLS/GETCONF/TUNCONF/ICMP client-server test PASSED, not an overall green run",
+      "commit": "28a75a998e11cee88cfc55f02c9e0302ffb3cfed",
+      "run_id": 44833443344,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344"
+    },
+    {
+      "id": "original-v250-recovery-diagnostic",
+      "component": "isolated ARM64 recovery test with longer fixture timeout",
+      "status": "passed",
+      "scope": "focused workflow SUCCESS after changing only disposable Rust test timeout 10 to 40 seconds; product client/server untouched",
+      "commit": "7e907e18318cc118806fb9e9b7d1102e0af2b21c",
+      "run_id": 44834213912,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912"
+    },
+    {
+      "id": "go-launch-v250-experimental",
+      "component": "isolated Go-to-original-2.5 password environment contract",
+      "status": "passed",
+      "scope": "experimental branch only, native ARM64 test success; not compiled into main Go controller or deployed to NanoPi",
+      "commit": "bf4ba8c4f14c2a9c3ab69c4220e406867a801cf9",
+      "run_id": 44886448519,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519"
     }
   ],
   "impact_rules": [

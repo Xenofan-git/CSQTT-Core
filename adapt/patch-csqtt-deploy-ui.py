@@ -50,7 +50,7 @@ replace_once(
         return;
       }
       if (deviceId.isEmpty || !RegExp(r'^[A-Za-z0-9-]+$').hasMatch(deviceId)) {
-        _showToast('Не удалось получить корректный ID устройства LaLune');
+        _showToast('Не удалось получить корректный ID устройства CSQTT Core');
         return;
       }
     }
@@ -100,7 +100,7 @@ replace_once(
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'ID устройства берётся из настроек LaLune и привязывается к основному паролю, как в CSQTT 2.1.9.',
+                    'ID устройства берётся из настроек CSQTT Core и используется для авторизации туннеля.',
                     style: TextStyle(fontSize: 12, color: Colors.white70),
                   ),
                 ]),

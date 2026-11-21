@@ -20,6 +20,15 @@ assert "/updates/lalune" not in ui, "old upstream updater must not be shown as a
 assert 'id="laluneUpdate"' not in ui
 assert all(legacy_brand not in manifest[field] for field in ("name","description"))
 assert product_name in manifest["name"]
+# UI/Deploy diagnostics must not expose the historical source-project label.
+for filename in (
+    "adapt/patch-csqtt-deploy-ui.py",
+    "adapt/patch-csqtt-deploy-manager.py",
+    "adapt/apply-pinned-original-linux-arm64-policy.py",
+):
+    source = Path(filename).read_text()
+    assert "ID устройства " + legacy_brand not in source, filename
+    assert "настроек " + legacy_brand not in source, filename
 for path in Path(".github/workflows").glob("*.yml"):
     for line in path.read_text().splitlines():
         # Artifact names are backwards-compatible IDs, not public job titles.

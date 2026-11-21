@@ -197,6 +197,15 @@ main{width:100%;max-width:100%}
 #page-route .route-rule-toggle input[type=checkbox]:checked{background:#d8e7ff;border-color:var(--blue)}
 #page-route .route-rule-toggle input[type=checkbox]:checked::after{transform:translateX(18px);background:var(--blue)}
 #page-route .route-rule-toggle input[type=checkbox]:disabled{opacity:.45;cursor:not-allowed}
+
+/* Route queue must fit the approved 390px phone canvas without document scrolling. */
+@media(max-width:520px){
+  #page-route .route-rule-list,#page-route .route-rule{min-width:0;max-width:100%}
+  #page-route .route-rule-summary{flex-wrap:wrap}
+  #page-route .route-rule-summary b{flex:1 1 58%;min-width:0}
+  #page-route .route-rule-meta{max-width:none}
+  #page-route>.card>.row>button{flex:1 1 100%;white-space:normal}
+}
 </style>
 </head>
 <body>
