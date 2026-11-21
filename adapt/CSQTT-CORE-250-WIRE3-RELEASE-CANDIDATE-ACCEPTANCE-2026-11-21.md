@@ -1,0 +1,41 @@
+# CSQTT Core 2.5.0 WIRE-3 — ARM64 release-candidate acceptance (2026-11-21)
+
+## Scope and protection
+
+This is a **tested candidate**, **not** a production deployment or a release promotion. The existing WIRE-4 branch and active NanoPi M-UI/HRCore/Tailscale remain untouched. No system-wide default route, real-host rp_filter, real-host nftables, or DNS modifications have been made as part of the work.
+
+The release-candidate branch is release/csqtt-250-wire3-candidate-20261121. Its source is the original opt-in Go supervisor candidate ed7516a, with one isolated Go Linux TUN raw-fd generator fix. The original CSQTT v2.5.0 Rust client is pinned; the Core8 server uses the matching WIRE-3 revision.
+
+## Binary provenance
+
+| Component | Evidence |
+|---|---|
+| Original Rust CSQTT 2.5.0 ARM64 client | original source commit fd936ef087c34cc46f26111dc2361f43b8b03c07; SHA-256 3c76a4323ef784568a38a82e206cecfa7657d93c01b6a69033a2f7a2f44760fa |
+| Derived Core8 ARM64 server | source commit 91b154011ca16c219f57eef99462d3408dccfeeb; WIRE-3; SHA-256 a131751f29a5373d3ebf08bc0d3bfe59988a8badaf2854f01eb5561fc903a706 |
+| sing-box | v1.14.4 ARM64, verified pin |
+| Go supervisor | candidate binary produced by CI 44912292825 from source generation including adapt/apply-csqtt-core-linux-tun-rawfd.py |
+
+The experimental bundle contains exactly four ARM64 binaries and a JSON manifest. Its status remains experimental-not-approved-for-production.
+
+## Proven tests
+
+- CI 44891239516: true original Rust 2.5 client ↔ Core8 WIRE-3 session/turn/icmp — PASS; separate Rust-pair acceptance.
+- CI 44894005565: real original Rust 2.5 ARM64 ELF launched via opted-in Go supervisor, secrets passed via environment — PASS.
+- CI 44907818083: one native isolated ARM64 WIRE-3 chain with Go, test-built original-source Rust client and synthetic local TURN fixture, Core8, Go TUN, SOCKS5, sing-box, HTTP and UDP echo — PASS. It does not use the unchanged release ELF and must not be misrepresented as such.
+- CI 44912292825: updated Go TUN native nonblocking raw-fd fix; Go unit, TUN stop/reconnect lifecycle and race checks; exact original-client/Core8/sing-box ELF hashes; four-component ARM64 candidate bundle — PASS.
+- CI 44912627426: updated four-component bundle systemd activation, forced failed update and atomic rollback, private Go HTTP and sing-box DIRECT SOCKS smoke — PASS.
+- CI 44912386606: isolated A/B demonstrated rp_filter=2 preserved with src_valid_mark and owner-scoped packet marking in the disposable client namespace, with full WIRE-3 TCP/UDP chain — PASS. No production sysctl or nft rules were changed.
+
+## Confirmed root causes and limits
+
+1. Go os.File.Read on Linux /dev/net/tun returned "not pollable" before processing packets. The tested release-candidate generator uses unix.SetNonblock and unix.Read/unix.Write with bounded unix.Poll, including EINTR/EAGAIN handling. The working WIRE-4 version is not changed.
+2. In the intentionally route-less test namespace, a loose rp_filter without a main reverse route discarded otherwise valid WIRE-3 SYN+ACK packets. Keeping rp_filter=2 and enabling *test-namespace-only* mark-aware reverse lookup fixed this. A production NanoPi already has an ordinary main default route via Keenetic; the test result **does not authorize disabling or changing production rp_filter, nft, or host routing without a separate need and ownership check**.
+3. Full TCP/UDP synthetic TURN E2E demonstrates interoperability but not full byte-identical production client authentication via VK. Original release ELF and original Rust ↔ Core8 pair have separately passed their exact-binary tests.
+
+## Remaining release gate
+
+- Verify joined ARM64 full-chain data-plane using the **same generated Go TUN fix** in the release-candidate source, with only the synthetic TURN Rust fixture and narrow test auth adaptations. Dedicated CI 44912824079 started; result must be checked before a PASS is claimed.
+- If needed, make a narrow, fully owned, rollback-safe, host-independent reverse-path policy feature; do not add global route changes or disable rp_filter by default.
+- Finish release packaging metadata and operator instructions only after last checks. Do not install on a working NanoPi before explicit promotion.
+
+All evidence is from isolated ARM64 CI; never infer real-world availability or production readiness from a single control-plane PASS.
