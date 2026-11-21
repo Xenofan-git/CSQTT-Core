@@ -10,6 +10,8 @@ on:
       - adapt/csqtt_core_250_supervisor_gate_linux_test.go
       - adapt/csqtt_core_250_supervisor_lifecycle_linux_test.go
       - adapt/apply-csqtt-core-250-supervisor-gate.py
+      - adapt/assemble-csqtt-core-250-candidate.py
+      - adapt/headless_main.go
       - .github/workflows/csqtt-core-250-go-supervisor-gated-isolated.yml
   workflow_dispatch:
 permissions:
@@ -76,6 +78,7 @@ jobs:
           grep -Fq 'cmd = candidate' upstream-lalune/Desktop/Linux/app_linux.go
           grep -Fq 'cmdArgs = appendCSQTTAuthArgs(cmdArgs, password, deviceID)' upstream-lalune/Desktop/Linux/app_linux.go
           grep -Fq 'чувствительные параметры скрыты' upstream-lalune/Desktop/Libs/bridge.go
+          grep -Fq '"core": csqttCoreSelectedVersionLabel()' upstream-lalune/Desktop/Linux/headless_main.go
           echo EXISTING_GORUNNER_250_EXPERIMENTAL_SOURCE_GENERATION_PASS
       - name: Test Go supervisor's real client startup and regression guards
         working-directory: upstream-lalune/Desktop/Linux
@@ -93,3 +96,62 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o "$RUNNER_TEMP/csqtt-go-supervisor-250-arm64-candidate" .
           file "$RUNNER_TEMP/csqtt-go-supervisor-250-arm64-candidate" | grep -F 'ARM aarch64'
           echo ISOLATED_250_GO_SUPERVISOR_ARM64_CANDIDATE_BUILD_PASS
+      - name: Download separately verified corrected Core 2.5.0 WIRE-3 ARM64 server
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 44890803542
+          name: csqtt-core-verified-linux-arm64-91b154011ca16c219f57eef99462d3408dccfeeb
+          github-token: ${{ github.token }}
+          path: core8
+      - name: Verify Core8 server and pinned sing-box for candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod 0755 core8/csqtt-core-linux-arm64
+          (cd core8 && sha256sum -c SHA256SUMS)
+          echo "a131751f29a5373d3ebf08bc0d3bfe59988a8badaf2854f01eb5561fc903a706  core8/csqtt-core-linux-arm64" | sha256sum -c -
+          grep -Fx 'repo_commit=91b154011ca16c219f57eef99462d3408dccfeeb' core8/BUILD-INFO.txt
+          test "$(core8/csqtt-core-linux-arm64 --protocol-revision)" = "CSQTT-WIRE-3"
+          curl -fL --retry 2 --retry-delay 1 --connect-timeout 10 --max-time 75 \
+            https://github.com/SagerNet/sing-box/releases/download/v1.14.4/sing-box-1.14.4-linux-arm64.tar.gz \
+            -o "$RUNNER_TEMP/sing-box-1.14.4-arm64.tar.gz"
+          echo "436441f76ee2f7fe21b5b2d426d3cb261a480455a704865789ad533e4273ec26  $RUNNER_TEMP/sing-box-1.14.4-arm64.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/sing-box-pinned"
+          tar -xzf "$RUNNER_TEMP/sing-box-1.14.4-arm64.tar.gz" -C "$RUNNER_TEMP/sing-box-pinned"
+          singbox="$(find "$RUNNER_TEMP/sing-box-pinned" -type f -name sing-box -print -quit)"
+          test -n "$singbox"
+          chmod 0755 "$singbox"
+          "$singbox" version | grep -Fx 'sing-box version 1.14.4'
+          echo "CSQTT_250_PINNED_SINGBOX=$singbox" >> "$GITHUB_ENV"
+          echo PINNED_CORE8_AND_SINGBOX_ARM64_VERIFIED
+      - name: Assemble exact candidate bundle with no legacy server
+        shell: bash
+        env:
+          CSQTT_CANDIDATE_ASSEMBLY: isolated-github-runner
+        run: |
+          set -euo pipefail
+          python3 adapt/assemble-csqtt-core-250-candidate.py \
+            --go "$RUNNER_TEMP/csqtt-go-supervisor-250-arm64-candidate" \
+            --client "$CSQTT_250_ORIGINAL_CLIENT_BINARY" \
+            --server "$GITHUB_WORKSPACE/core8/csqtt-core-linux-arm64" \
+            --sing-box "$CSQTT_250_PINNED_SINGBOX" \
+            --output "$GITHUB_WORKSPACE/candidate-bundle"
+          python3 - <<'VERIFY'
+          from pathlib import Path
+          import json
+          base=Path('candidate-bundle')
+          m=json.loads((base/'manifest.json').read_text())
+          assert m['wireProtocol']=='CSQTT-WIRE-3'
+          assert m['status']=='experimental-not-approved-for-production'
+          assert len(m['files'])==4
+          assert all('wire4' not in n.lower() and '2.1.9' not in n for n in m['files'])
+          assert not any(p.name.endswith(('.env','.key','.pem')) for p in base.rglob('*'))
+          print('CSQTT_250_BUNDLE_MANIFEST_AND_NO_WIRE4_SERVER_PASS')
+          VERIFY
+      - name: Publish disposable test candidate for further ARM64 VM checks
+        uses: actions/upload-artifact@v4
+        with:
+          name: csqtt-core-250-experimental-go-client-server-singbox-arm64
+          path: candidate-bundle/
+          retention-days: 7
+          if-no-files-found: error

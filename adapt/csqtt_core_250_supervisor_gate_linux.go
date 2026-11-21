@@ -74,3 +74,12 @@ func csqtt250NormalizeSupervisorArgv(legacy []string) ([]string, error) {
 	}
 	return result,nil
 }
+
+// Version metadata must describe the selected candidate, never mislabel the
+// unchanged legacy Go controller as CSQTT server 2.5.0.
+func csqttCoreSelectedVersionLabel() string {
+    selected, err := csqtt250CandidateMode()
+    if err != nil { return "csqtt-core-client-selection-invalid" }
+    if selected { return "csqtt-server/2.5.0-candidate" }
+    return "csqtt-server/2.1.9"
+}

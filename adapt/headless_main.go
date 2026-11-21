@@ -307,7 +307,7 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
         writeJSON(w, map[string]any{
             "api": 1,
             "backend": "original-go",
-            "core": "csqtt-server/2.1.9",
+            "core": csqttCoreSelectedVersionLabel(),
             "ui": "0.6.0",
             "commit": buildCommit,
             "buildRun": buildRunID,

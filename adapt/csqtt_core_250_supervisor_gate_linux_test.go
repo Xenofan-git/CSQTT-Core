@@ -60,3 +60,18 @@ func TestCSQTT250SupervisorBinaryRequiresRealPinnedELF(t *testing.T) {
     _=os.Setenv("CSQTT_250_ORIGINAL_CLIENT_BINARY",exe)
     if _,err:=csqtt250VerifiedBinaryPath();err==nil {t.Fatal("accepted wrong ELF checksum")}
 }
+
+func TestCSQTT250SupervisorVersionMetadataMatchesSelection(t *testing.T) {
+    t.Setenv("CSQTT_CORE_250_EXPERIMENT","")
+    if got:=csqttCoreSelectedVersionLabel();got!="csqtt-server/2.1.9" {
+        t.Fatalf("legacy version mismatch: %q",got)
+    }
+    t.Setenv("CSQTT_CORE_250_EXPERIMENT","isolated-only")
+    if got:=csqttCoreSelectedVersionLabel();got!="csqtt-server/2.5.0-candidate" {
+        t.Fatalf("candidate version mismatch: %q",got)
+    }
+    t.Setenv("CSQTT_CORE_250_EXPERIMENT","invalid")
+    if got:=csqttCoreSelectedVersionLabel();got!="csqtt-core-client-selection-invalid" {
+        t.Fatalf("invalid mode unexpectedly advertised a successful server: %q",got)
+    }
+}
