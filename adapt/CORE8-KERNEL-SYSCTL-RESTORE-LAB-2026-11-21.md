@@ -116,3 +116,57 @@ This simulates loss of the Core8 child but NOT loss of the supervisor itself.
 A supervisor SIGKILL/power loss needs separate persistent recovery orchestration
 and is still unverified. No real process was launched except a temporary
 Python child that only changed test files and killed itself.
+
+## 2026-11-21: durable private guest supervisor — ONLY OFFLINE TESTED
+
+Added adapt/core8-private-durable-sysctl-guard.py, an opt-in Python3
+supervisor with RUN and RECOVER modes, and an example disabled systemd unit
+adapt/csqtt-core8-private-durable-guard.service.example. No service is
+installed, started or enabled. The original bash VM smoke wrapper and
+validated ARM64 Core8 release binary are unchanged.
+
+Safety and lifecycle details:
+1. Guest real /proc mode is refused unless explicitly --private-guest,
+   root, AArch64, hostname csqtt-core8-isolated and no IPv4 default route.
+   Without these, offline tests must point to a disposable /tmp fixture.
+2. Strict 0700 state directory, 0600 journal and flock lock, reject symlink
+   and nonregular sysctl paths. Only the original Core8 global twelve
+   kernel sysctls are allowlisted (the TUN-specific path is created later
+   and owned/removed by KernelNetworking). No TUN, routes or firewall changes
+   are made by the supervisor.
+3. On fresh run the original values and exact kernel boot-id are written to
+   a JSON journal using temporary-file+fsync+atomic replace+directory fsync
+   BEFORE spawning child Core8.
+4. Only ONE *cooperative* supervisor at a time can hold the nonblocking
+   advisory exclusive lock. Child inherits the same lock FD: if Python
+   wrapper is SIGKILLed while Core8 remains alive, a second cooperating
+   instance fails closed instead of restoring against a still-running child.
+5. On ordinary exit / child crash / same-boot recover: only values that
+   still equal the expected Core8-written value are restored; changes from
+   third parties are NOT overwritten, and a partially unresolved journal
+   remains for diagnosis. Any changed/missing/bad journal fails closed.
+6. On kernel reboot (boot-id mismatch) the old snapshot is archived but
+   NEVER applied: kernel sysctl values are boot-scoped. A new run may
+   then snapshot the freshly booted kernel.
+7. A separately provisioned systemd service could manage the private guest
+   as a cgroup, KillMode=control-group and ExecStopPost RECOVER. The unit
+   included here is an inert example, not deployed or tested in systemd.
+   Credentials are neither saved nor printed by the guard.
+
+Offline evidence: 17 Python unittest cases using OWNED temp files and
+synthetic child processes, covering fresh/run recovery, child SIGKILL,
+parent SIGKILL with inherited lock, simultaneous run rejection, partial
+launch snapshot, external change fail closed, boot mismatch, corrupt or
+unsafe journal, symlink lock/journal/sysctl, directory permissions, missing
+sysctl, parent SIGTERM, and real host /proc denial. No real /proc write.
+
+Limitations: lock only coordinates participants that use this guard;
+unwrapped original Core8 processes or other services can still change
+sysctls. Child libraries may explicitly close inherited FDs in future.
+A power outage stops the machine: no writes are possible during outage,
+and stale settings must not be replayed across a boot boundary. Automatic
+recovery on restart requires a separately approved, provisioned systemd
+service (the unit has NOT been enabled or exercised). Fail-closed if an
+external component changed a parameter. A different component writing the
+same expected value cannot be distinguished. Real ARM64 VM and live VK TURN
+acceptance remain UNTESTED and may require separate authorization.

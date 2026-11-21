@@ -10,6 +10,9 @@ on:
       - adapt/patch-core8-tproxy-sysctl-ownership.py
       - adapt/test-core8-tproxy-sysctl-ownership-offline.py
       - adapt/test-core8-tproxy-kernel-owner-integration-offline.py
+      - adapt/core8-private-durable-sysctl-guard.py
+      - adapt/test-core8-private-durable-sysctl-guard-offline.py
+      - adapt/csqtt-core8-private-durable-guard.service.example
       - .github/workflows/csqtt-core8-kernel-sysctl-restore-lab.yml
   workflow_dispatch:
 
@@ -30,3 +33,4 @@ jobs:
           python3 -B adapt/test-core8-guest-sysctl-restore-offline.py
           python3 -B adapt/test-core8-tproxy-sysctl-ownership-offline.py
           python3 -B adapt/test-core8-tproxy-kernel-owner-integration-offline.py
+          python3 -B adapt/test-core8-private-durable-sysctl-guard-offline.py
