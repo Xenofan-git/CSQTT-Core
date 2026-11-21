@@ -62,7 +62,10 @@ jobs:
           python3 adapt/fullchain-fixture/inject-test-turn-only.py /tmp/csqtt-original-250
           cd /tmp/csqtt-original-250/rust-client
           cargo test --locked --bin client --no-run --message-format=json > /tmp/fullchain-cargo-tests.jsonl 2>/tmp/fullchain-cargo-tests.err || {
-            tail -70 /tmp/fullchain-cargo-tests.err
+            echo 'ISOLATED_RUST_FIXTURE_COMPILE_ERROR_START'
+            grep -n -C 8 -E 'error(\[[A-Z0-9]+\])?:|^ *-->|^help:' /tmp/fullchain-cargo-tests.err | tail -120 || true
+            echo 'ISOLATED_RUST_FIXTURE_COMPILE_ERROR_END'
+            head -45 /tmp/fullchain-cargo-tests.err
             exit 1
           }
           python3 - <<'PY'
