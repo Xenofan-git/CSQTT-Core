@@ -35,6 +35,7 @@
 | Rust 2.5.0 клиент ↔ сервер | [E2E #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44833443344) | Отдельный обмен GETCONF/TUNCONF и ICMP PASS, но общий workflow FAILURE: тест 10 сек не успел |
 | Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
 | Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
+| Физический NanoPi: Go HTTP API → оригинальный Rust client 2.5 | Локальный RK3566, CI кандидата 44894005565 | PASS: реальный /vpn/connect → Rust ELF → /vpn/disconnect; no secret in logs; host default route unchanged. Full VPN/TUN/SOCKS/sing-box dataplane NOT tested |
 | Реальный клиент v2.5.0 запускается из Go адаптера | [Native ARM64 #2](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44892486891) | SUCCESS на a56e96b: проверенный оригинальный ELF 2.5.0, пароль только env, не argv; тестовый процесс завершён до TUN. Не объединён с production Go |
 | Физический NanoPi R3S LTS — нативный ARM64 Core №7 | Физический RK3566, 21.11.2026 | PASS: два нативных запуска, 64/64 real API, TUN/iptables, SIGKILL/restart, штатная очистка; маршруты и службы хоста неизменны |
 | Реальный клиент 2.5.0 / Core №8: современный TURN/DTLS/SRTP/ICMP | GitHub 44891239516 | SUCCESS: исходный Rust-клиент 2.5.0, синтетический local TURN, DTLS, SRTP, GETCONF/TUNCONF, двусторонний ICMP в диспетчере, 1 passed; 0 failed |
@@ -303,6 +304,15 @@
       "commit": "a56e96ba2f775d72195ceb6d9884334e829356fa",
       "run_id": 44892486891,
       "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44892486891"
+    },
+    {
+      "id": "go-v250-candidate-native-http-control",
+      "component": "Native ARM64 Go HTTP /vpn/connect launches verified original CSQTT 2.5 Rust ELF and disconnects",
+      "status": "passed",
+      "scope": "2026-11-21 physical NanoPi R3S RK3566 user+network isolated loopback-only. Test branch ed7516a, run44894005565 SUCCESS; real HTTP API synthetic profile and tunnel password, POST /vpn/connect 200, actual Rust child launched by Go LinuxRunner, POST /vpn/disconnect 200 and cleanup. No secret in logs, outer default route unchanged, running services active. No real VPN/TUN/SOCKS5/sing-box traffic (fake peer). See adapt/CSQTT-CORE-250-NATIVE-GO-CANDIDATE-API-2026-11-21.md.",
+      "commit": "ed7516a82c909e2f405a2e655c0f849c1ed08964",
+      "run_id": 44894005565,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44894005565"
     }
   ],
   "impact_rules": [
