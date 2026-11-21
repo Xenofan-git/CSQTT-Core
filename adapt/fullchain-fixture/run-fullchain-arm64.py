@@ -394,20 +394,32 @@ finally: s.close()
                   "net.ipv4.conf.csqtt0.rp_filter").stdout
     print("FULLCHAIN_RPFILTER_AB_BASELINE",before_rpf.strip(),flush=True)
     assert " = 2" in before_rpf, "original loose rp_filter state changed"
-    change=ns(client_ns,"sysctl","-w","net.ipv4.conf.all.rp_filter=0",
-              "net.ipv4.conf.csqtt0.rp_filter=0",timeout=6)
-    print("FULLCHAIN_RPFILTER_AB_DISABLE_ONLY_IN_NETNS",change.stdout.strip(),flush=True)
+    # Preserve loose RPF=2, but make its reverse lookup aware of our
+    # owner-scoped SO_MARK. Only replies entering the test TUN are marked.
+    # Everything is in a disposable Linux netns; host sysctl/nft untouched.
+    for key in ("all","csqtt0"):
+        change=ns(client_ns,"sysctl","-w",
+                  f"net.ipv4.conf.{key}.src_valid_mark=1",timeout=6)
+        print("FULLCHAIN_RPFILTER_MARK_AWARE_SYSCTL",change.stdout.strip(),flush=True)
+    ns(client_ns,"nft","add","table","inet","csqtt_core_rpf_test")
+    ns(client_ns,"nft","add","chain","inet","csqtt_core_rpf_test","prerouting",
+       "{ type filter hook prerouting priority mangle; policy accept; }")
+    ns(client_ns,"nft","add","rule","inet","csqtt_core_rpf_test","prerouting",
+       "iifname","csqtt0","ip","saddr","10.67.69.1/32","meta","mark","set","0x4d53")
+    installed=ns(client_ns,"nft","list","table","inet","csqtt_core_rpf_test").stdout
+    assert 'iifname "csqtt0"' in installed and "mark set 0x00004d53" in installed
+    assert not ns(client_ns,"ip","-4","route","show","default").stdout.strip()
     after_rpf=ns(client_ns,"sysctl","net.ipv4.conf.all.rp_filter",
                  "net.ipv4.conf.csqtt0.rp_filter").stdout
-    assert "net.ipv4.conf.all.rp_filter = 0" in after_rpf
-    assert "net.ipv4.conf.csqtt0.rp_filter = 0" in after_rpf
-    assert not ns(client_ns,"ip","-4","route","show","default").stdout.strip()
+    print("FULLCHAIN_RPFILTER_PRESERVED_LAB",after_rpf.strip(),flush=True)
+    assert "net.ipv4.conf.all.rp_filter = 2" in after_rpf
+    assert "net.ipv4.conf.csqtt0.rp_filter = 2" in after_rpf
     second=ns(client_ns,"python3","-c",raw_probe,check=False,timeout=7)
-    print("FULLCHAIN_RPFILTER_OFF_MARKED_TCP_CONTROL",
+    print("FULLCHAIN_RPFILTER_PRESERVED_MARKED_REVERSE_TCP",
           second.returncode,second.stdout[-800:],second.stderr[-250:],flush=True)
-    print("FULLCHAIN_RPFILTER_OFF_TUN_PACKETS",
-          ns(client_ns,"ip","-s","link","show","dev","csqtt0").stdout[-650:],flush=True)
-
+    assert second.returncode==0 and "HTTP/1.0 200 OK" in second.stdout, (
+      "RPF on + src_valid_mark + narrow inbound packet marking must allow WIRE3 reply")
+    print("FULLCHAIN_RPFILTER_PRESERVED_MARKED_REVERSE_TCP_PASS",flush=True)
     # Negative control was unreachable directly. Positive request must
     # complete via sing-box SOCKS inbound -> CSQTT SOCKS outbound -> Go
     # marked TCP -> csqtt0 packet bridge -> Rust original client -> local

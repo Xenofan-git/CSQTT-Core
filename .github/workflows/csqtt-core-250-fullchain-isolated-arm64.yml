@@ -1,7 +1,7 @@
 name: CSQTT Core 2.5 authenticated WIRE-3 full-chain ARM64 isolated experiment
 on:
   push:
-    branches: [test/csqtt-250-fullchain-arm64-20261121]
+    branches: [test/csqtt-250-rpfilter-mark-20261121]
     paths:
       - adapt/fullchain-fixture/**
       - .github/workflows/csqtt-core-250-fullchain-isolated-arm64.yml
