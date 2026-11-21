@@ -129,7 +129,33 @@ new="""	go func() {
 		}
 	}()"""
 s=s.replace(needle,new,1)
+
+# ONLY isolated ARM64 fixture: os.File.Read(/dev/net/tun) exits "not pollable".
+# Raw nonblocking unix.Read() plus unix.Poll() tests the smallest plausible fix.
+needle = "\tt.mu.Lock()\n\tt.tunFile, t.udpConn = f, udpConn"
+assert s.count(needle) == 1, "TUN fd install source marker changed"
+s=s.replace(needle, """\ttunFD := int(f.Fd())
+\tif err := unix.SetNonblock(tunFD, true); err != nil {
+\t\t_ = f.Close()
+\t\treturn fmt.Errorf("nonblocking test TUN fd: %w", err)
+\t}
+""" + needle, 1)
+needle = "\t\t\tn, readErr := f.Read(buf)\n"
+assert s.count(needle) == 1, "Go TUN os.File.Read marker changed"
+s=s.replace(needle, """\t\t\tn, readErr := unix.Read(tunFD, buf)
+\t\t\tif readErr == unix.EAGAIN || readErr == unix.EWOULDBLOCK {
+\t\t\t\t_, pollErr := unix.Poll([]unix.PollFd{{Fd: int32(tunFD), Events: unix.POLLIN}}, 150)
+\t\t\t\tif pollErr == unix.EINTR { continue }
+\t\t\t\tif pollErr != nil {
+\t\t\t\t\tt.app.core.AddLog(fmt.Sprintf("[TEST TUN->UDP] poll exited: %v", pollErr))
+\t\t\t\t\treturn
+\t\t\t\t}
+\t\t\t\tcontinue
+\t\t\t}
+\t\t\tif readErr == unix.EINTR { continue }
+""", 1)
 runner.write_text(s)
+print('TEST_ONLY_RAW_TUN_READ_NONBLOCKING_POLL_ENABLED')
 print('TEST_ONLY_GO_TUN_UDP_BIDIRECTIONAL_METADATA_TRACE_ENABLED')
 print('TEST_ONLY_GO_SOCKS5_TRACE_ENABLED')
 print('TEST_ONLY_DIRECT_DNSMASQ_SKIPPED_ON_DISPOSABLE_ARM64_WITHOUT_DNSMASQ')
