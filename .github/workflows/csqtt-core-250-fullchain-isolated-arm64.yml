@@ -18,6 +18,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_DEV_OPT_LEVEL: "1"
+      CARGO_TERM_COLOR: never
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -61,11 +62,11 @@ jobs:
           test "$(git -C /tmp/csqtt-original-250 rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
           python3 adapt/fullchain-fixture/inject-test-turn-only.py /tmp/csqtt-original-250
           cd /tmp/csqtt-original-250/rust-client
-          cargo test --locked --bin client --no-run --message-format=json > /tmp/fullchain-cargo-tests.jsonl 2>/tmp/fullchain-cargo-tests.err || {
+          cargo test --quiet --locked --bin client --no-run --message-format=json > /tmp/fullchain-cargo-tests.jsonl 2>/tmp/fullchain-cargo-tests.err || {
             echo 'ISOLATED_RUST_FIXTURE_COMPILE_ERROR_START'
-            grep -n -C 8 -E 'error(\[[A-Z0-9]+\])?:|^ *-->|^help:' /tmp/fullchain-cargo-tests.err | tail -120 || true
+            sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' /tmp/fullchain-cargo-tests.err | grep -n -C 8 -E 'error|^ *-->|^help:' | tail -130 || true
             echo 'ISOLATED_RUST_FIXTURE_COMPILE_ERROR_END'
-            head -45 /tmp/fullchain-cargo-tests.err
+            tail -130 /tmp/fullchain-cargo-tests.err
             exit 1
           }
           python3 - <<'PY'
