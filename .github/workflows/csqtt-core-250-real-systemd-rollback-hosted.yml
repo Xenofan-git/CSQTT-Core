@@ -1,0 +1,46 @@
+name: CSQTT Core 2.5 native ARM64 real systemd release7 rollback (hosted only)
+on:
+  push:
+    branches: [test/csqtt-250-systemd-rollback-hosted-20261121]
+    paths: [.github/workflows/csqtt-core-250-real-systemd-rollback-hosted.yml, adapt/test-csqtt-core-release7-rollback-hosted.sh]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  actual-upgrade-and-rollback:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44535829277
+          github-token: ${{ github.token }}
+          name: csqtt-core-verified-linux-arm64-7402d52fe0319c75c85f80f902cd39e42527e7f4
+          path: old
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44553540024
+          github-token: ${{ github.token }}
+          name: csqtt-core-verified-linux-arm64-21c59ba2918fd04e4324a897d7afc2e53a2e0cae
+          path: new
+      - name: Verify exact existing installer and hosted runner prerequisites
+        run: |
+          bash -n adapt/test-csqtt-core-release7-rollback-hosted.sh
+          bash -n server-assets/deploy-csqtt-core-250.sh
+          test "$(uname -m)" = aarch64
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iptables kmod
+          sudo modprobe tun || true
+          sudo sysctl -w net.ipv4.ip_forward=1
+      - name: Real baseline systemd install and fault-induced release7 rollback
+        run: |
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" GITHUB_WORKSPACE="$GITHUB_WORKSPACE" bash adapt/test-csqtt-core-release7-rollback-hosted.sh
+      - name: Report disposable guest state
+        if: always()
+        run: |
+          if [ -f /tmp/ci-base.log ]; then tail -15 /tmp/ci-base.log; fi
+          if [ -f /tmp/ci-candidate.log ]; then tail -25 /tmp/ci-candidate.log; fi
+          if [ -f /tmp/ci-default-before ]; then diff -u /tmp/ci-default-before <(ip route show default); fi
