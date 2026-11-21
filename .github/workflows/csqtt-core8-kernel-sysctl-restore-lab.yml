@@ -13,6 +13,7 @@ on:
       - adapt/core8-private-durable-sysctl-guard.py
       - adapt/test-core8-private-durable-sysctl-guard-offline.py
       - adapt/test-core8-private-arm64-systemd-restart-failure-fixture.sh
+      - adapt/test-core8-private-arm64-rustpatch-raii-acceptance.py
       - adapt/csqtt-core8-private-durable-guard.service.example
       - .github/workflows/csqtt-core8-kernel-sysctl-restore-lab.yml
   workflow_dispatch:
@@ -37,6 +38,9 @@ jobs:
           python3 -B adapt/test-core8-private-durable-sysctl-guard-offline.py
       - name: Syntax check opt-in manual private ARM64 restart fixture
         run: bash -n adapt/test-core8-private-arm64-systemd-restart-failure-fixture.sh
+      - name: Syntax-check manual real ARM64 Rust RAII acceptance harness only
+        run: |
+          python3 -B -c 'import ast; from pathlib import Path; p=Path("adapt/test-core8-private-arm64-rustpatch-raii-acceptance.py"); ast.parse(p.read_text()); print("MANUAL_ARM64_RAII_HARNESS_PARSE_OK")'
       - name: Validate private guest systemd template without installation
         run: |
           scratch="$(mktemp -d)"
