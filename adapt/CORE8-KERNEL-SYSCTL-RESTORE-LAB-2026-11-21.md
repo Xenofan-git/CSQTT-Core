@@ -67,3 +67,41 @@ logged. No /proc/sys is accessed by the Python patch or offline tests.
   the unchanged asset, cargo check passed.
 - This checks host x86_64 Rust types, not a rebuilt ARM64 production release,
   and it does not exercise real VM, kernel forwarding, or external VK TURN.
+
+## 2026-11-21: eliminate overlapping direct TPROXY sysctl writes
+
+The original derived Core8 proxy_route.rs activate_tproxy called sysctl -w on
+four policy parameters already owned by KernelNetworking: IPv4 forwarding,
+all/default rp_filter, and the csqtt-core0 TUN interface rp_filter. In
+the original main startup flow the protocol runtime initializes the dataplane
+and KernelNetworking before launching the local proxy monitor (main.rs).
+Independent TPROXY writes therefore had no owner or rollback.
+
+Strict opt-in adapt/patch-core8-tproxy-sysctl-ownership.py replaces ONLY these
+four redundant writes with ensure_tproxy_kernel_parameters()?, which invokes
+a READ-ONLY, fail-closed checker on the same four values. It does not create
+a new conflicting TPROXY sysctl owner. A missing, nonregular or mismatched
+parameter aborts TPROXY activation before installing its new interception
+rules. Original legacy rule cleanup, failure handling, ACTIVE_RUNTIME
+ownership, watchdog and normal route cleanup remain unchanged.
+
+Proof:
+- Python source-contract tests PASS; compiled Rust checker 4 fake-file
+  scenarios PASS (correct, mismatch no mutation, missing, symlink).
+- Compiled Rust cross-component lifecycle tests 4 scenarios PASS: normal
+  KernelNetworking->TPROXY readiness->drop restoration, partial initialize,
+  externally modified parameter, already desired/no new ownership.
+- Derived Core8 source copy with BOTH opt-in patches: full offline Cargo
+  check under Rust 1.97.1 x86_64 target PASS in 7.51 s.
+- Same derived source copy with BOTH patches: full offline Cargo check
+  for aarch64-unknown-linux-gnu target PASS in ~1m30s.
+- Full source copies are disposable, distinct from release/CI archives.
+  This is an ARM64 *type-check*, not an executed ARM64 VM test or
+  byte-identical ARM64 release ELF acceptance.
+
+Remaining limitations: KernelNetworking Drop does not run after SIGKILL
+or power failure; concurrent independent Core8 processes writing the
+same machine-wide sysctls lack a cross-process coordination lock;
+external edits matching expected values cannot be distinguished;
+real VM sysctl restore and actual VK TURN remain unverified. No public
+test UDP socket was opened, and no production service was altered.
