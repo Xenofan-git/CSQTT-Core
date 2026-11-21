@@ -36,6 +36,8 @@
 | Восстановление Rust 2.5.0 | [Диагностика #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44834213912) | SUCCESS после изменения только тестового лимита 10 → 40 сек |
 | Go-адаптер запуска 2.5.0 | [Isolated #1](https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44886448519) | SUCCESS только в экспериментальной ветке; в рабочий Go-раннер не включён |
 | Физический NanoPi R3S LTS — нативный ARM64 Core №7 | Физический RK3566, 21.11.2026 | PASS: два нативных запуска, 64/64 real API, TUN/iptables, SIGKILL/restart, штатная очистка; маршруты и службы хоста неизменны |
+| Реальный клиент 2.5.0 / Core №7: двусторонний ICMP | GitHub 44890243962 | FAIL: DTLS/SRTP/GETCONF/TUNCONF PASS, но обратный ICMP отсутствует; route_index() оставался на 10.66.67/24 при Core 10.67.69/24 |
+| Core №8: исправление downlink subnet и нативный запуск | GitHub Rust release №8: 44890803542, NanoPi RK3566 | PASS: build+source guard+runtime smoke, ELF SHA256 a131751f29a5373d3ebf08bc0d3bfe59988a8badaf2854f01eb5561fc903a706; NanoPi TUN/HTTPS/firewall and cleanup. Modern client roundtrip separately pending |
 | Реальный native ARM64 systemd install и forced rollback | GitHub Actions run 44890007663 | SUCCESS: verified старый 10aa3f1 → новый 21c59ba, сбой активации вызван намеренно; прежний бинарник/unit/env/state, active/boot-enabled и HTTPS восстановлены, default route не изменён |
 | Новый Rust Core ARM64 №7: живой HTTPS/API, 3 старта | Локальный тест 21.11.2026, ELF 21c59ba | PASS: 96/96 API; аварийное завершение SIGKILL, следующий старт и HTTPS, 0 тайм-аутов startup cleanup. Изолированный QEMU, не Native ARM64 VM |
 | Новый Rust Core ARM64 №7: реальный Linux TUN/NAT | Локальный тест 21.11.2026, ELF 21c59ba | PASS: TUN 10.67.69.1/24, 3 правила iptables, SIGKILL/restart без дублей, SIGTERM полностью удаляет правила, 3 запуска, host default unchanged |
@@ -263,6 +265,24 @@
       "commit": "9e80feaa2699fe800e43ae06efc182c10e7f0421",
       "run_id": 44890007663,
       "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44890007663"
+    },
+    {
+      "id": "core-release7-modern-realpair-icmp-failure",
+      "component": "Original CSQTT 2.5 client vs adapted Core release7 real TURN DTLS/SRTP E2E",
+      "status": "failed",
+      "scope": "GitHub isolated ARM64 run 44890243962: real original client ↔ derived release7 DTLS/SRTP, GETCONF/TUNCONF pass; final return ICMP to client dispatcher FAILED. Root cause Core route_index raw SUBNET_PREFIX [10,66,67] despite TUN/assigned IP 10.67.69/24. Corrected in release8.",
+      "commit": "1da885ab884bbaf3e07c741093b2290d0946d8ed",
+      "run_id": 44890243962,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44890243962"
+    },
+    {
+      "id": "core-release8-fixed-route-source-build-native-smoke",
+      "component": "Corrected route_index prefix [10,67,69] in verified Core 2.5 ARM64 Rust release8",
+      "status": "passed",
+      "scope": "Fixed generator commit 91b154011ca16c219f57eef99462d3408dccfeeb, verified ARM64 Rust release run44890803542 SUCCESS, SHA256 ELF a131751f29a5373d3ebf08bc0d3bfe59988a8badaf2854f01eb5561fc903a706; source route prefix guard passes; on physical NanoPi in user/net namespace real ARM64 TUN/HTTPS/iptables clean start/stop PASS and host services/routing unchanged. Does NOT yet prove modern client ICMP return; separate CI in progress.",
+      "commit": "91b154011ca16c219f57eef99462d3408dccfeeb",
+      "run_id": 44890803542,
+      "url": "https://github.com/Xenofan-git/CSQTT-Core/actions/runs/44890803542"
     }
   ],
   "impact_rules": [
