@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import stat
 
 root=Path("candidate-input")
 out=Path("csqtt-core-250-wire3-arm64-validated-rc")
@@ -32,14 +31,20 @@ out.mkdir()
 for name,meta in m["files"].items():
     binary=root/"bin"/name
     assert binary.is_file() and not binary.is_symlink()
-    assert binary.stat().st_mode & stat.S_IXUSR
+    # Artifact ZIP extraction may drop +x. Trust pinned ELF and SHA, not mode.
     with binary.open("rb") as fh:
-        assert fh.read(4)==b"\x7fELF"
+        header=fh.read(20)
+        assert header[:4]==bytes.fromhex("7f454c46")
+        assert header[4:6]==bytes([2,1])
+        assert int.from_bytes(header[18:20],"little")==183
     sha=hashlib.sha256(binary.read_bytes()).hexdigest()
     assert sha==meta["sha256"]
     if name in approved: assert sha==approved[name]
-    shutil.copy2(binary,out/"bin"/name)
-    assert hashlib.sha256((out/"bin"/name).read_bytes()).hexdigest()==sha
+    dst=out/"bin"/name
+    shutil.copy2(binary,dst)
+    dst.chmod(0o755)
+    assert hashlib.sha256(dst.read_bytes()).hexdigest()==sha
+    assert dst.stat().st_mode & 0o111
     print("CSQTT_250_RC_ELF_SHA256_PASS",name,sha,flush=True)
 assert m["files"]["csqtt-core-go-supervisor-arm64"]["role"]=="go-supervisor"
 m["status"]="validated-isolated-release-candidate-not-production"
