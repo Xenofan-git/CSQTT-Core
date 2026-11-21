@@ -370,6 +370,28 @@ finally: s.close()
     print("FULLCHAIN_TUN_QUEUE_RESTORED_BEFORE_REAL_HTTP",
           ns(client_ns,"ip","-s","link","show","dev","csqtt0").stdout[-550:],flush=True)
 
+    # A/B confirmation of reverse-path filtering exclusively in our
+    # disposable *client* netns. Main table has no default route and
+    # 10.67.69.1 is reachable only by marked table202; Linux loose
+    # rp_filter can therefore discard otherwise correct inbound SYN+ACK.
+    before_rpf=ns(client_ns,"sysctl","net.ipv4.conf.all.rp_filter",
+                  "net.ipv4.conf.csqtt0.rp_filter").stdout
+    print("FULLCHAIN_RPFILTER_AB_BASELINE",before_rpf.strip(),flush=True)
+    assert " = 2" in before_rpf, "original loose rp_filter state changed"
+    change=ns(client_ns,"sysctl","-w","net.ipv4.conf.all.rp_filter=0",
+              "net.ipv4.conf.csqtt0.rp_filter=0",timeout=6)
+    print("FULLCHAIN_RPFILTER_AB_DISABLE_ONLY_IN_NETNS",change.stdout.strip(),flush=True)
+    after_rpf=ns(client_ns,"sysctl","net.ipv4.conf.all.rp_filter",
+                 "net.ipv4.conf.csqtt0.rp_filter").stdout
+    assert "net.ipv4.conf.all.rp_filter = 0" in after_rpf
+    assert "net.ipv4.conf.csqtt0.rp_filter = 0" in after_rpf
+    assert not ns(client_ns,"ip","-4","route","show","default").stdout.strip()
+    second=ns(client_ns,"python3","-c",raw_probe,check=False,timeout=7)
+    print("FULLCHAIN_RPFILTER_OFF_MARKED_TCP_CONTROL",
+          second.returncode,second.stdout[-800:],second.stderr[-250:],flush=True)
+    print("FULLCHAIN_RPFILTER_OFF_TUN_PACKETS",
+          ns(client_ns,"ip","-s","link","show","dev","csqtt0").stdout[-650:],flush=True)
+
     # Negative control was unreachable directly. Positive request must
     # complete via sing-box SOCKS inbound -> CSQTT SOCKS outbound -> Go
     # marked TCP -> csqtt0 packet bridge -> Rust original client -> local
