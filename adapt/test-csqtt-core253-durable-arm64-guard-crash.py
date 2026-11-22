@@ -87,7 +87,8 @@ def guard_arguments(binary: Path, work: Path, state: Path) -> list[str]:
         "--dns","77.88.8.8",
     ]
 
-def supervise_one(binary: Path, work: Path, state: Path, credential_env: dict[str,str], phase: str) -> None:
+def supervise_one(binary: Path, work: Path, state: Path, credential_env: dict[str,str],
+                  phase: str, *, soak_seconds: int = 0) -> None:
     logpath = work / f"guard-{phase}.log"
     parent = None
     with logpath.open("w", encoding="utf8") as stream:
@@ -101,6 +102,40 @@ def supervise_one(binary: Path, work: Path, state: Path, credential_env: dict[st
             safety.check_no_default_route()
             test_tls_ready()
             print("CSQTT_CORE253_GUARDED_UDP_HTTPS_TLS_READY_PHASE_"+phase.upper(),flush=True)
+            if soak_seconds:
+                # Check REAL wall-clock uptime of the SAME Core8 child, not
+                # mocked polls or a restarted process. The 140-second bug
+                # would cause the parent to terminate the child before this
+                # loop completes; any listener outage fails the experiment.
+                started=time.monotonic()
+                deadline=started+soak_seconds
+                checkpoints=0
+                while time.monotonic()<deadline:
+                    if parent.poll() is not None:
+                        safety.fail("durable guard exited during live Core8 uptime soak")
+                    if not Path("/proc").joinpath(str(child),"exe").exists():
+                        safety.fail("Core8 PID vanished during live uptime soak")
+                    if not (safety.bound("udp",UDP_PORT) and safety.bound("tcp",HTTPS_PORT)):
+                        safety.fail("Core8 lost UDP or HTTPS listeners during uptime soak")
+                    if not (state/"pending-sysctls-v1.json").is_file():
+                        safety.fail("durable ownership journal vanished while Core8 runs")
+                    safety.check_no_default_route()
+                    test_tls_ready()
+                    checkpoints+=1
+                    print("CSQTT_CORE253_REAL_UPTIME_CHECKPOINT seconds="+
+                          str(int(time.monotonic()-started))+
+                          " pid="+str(child),flush=True)
+                    remaining=deadline-time.monotonic()
+                    if remaining>0:
+                        time.sleep(min(10.0,remaining))
+                elapsed=time.monotonic()-started
+                if elapsed<soak_seconds:
+                    safety.fail("insufficient real measured uptime")
+                if parent.poll() is not None:
+                    safety.fail("guard exited exactly at end of uptime soak")
+                test_tls_ready()
+                print("CSQTT_CORE253_REAL_CORE8_165S_CONTINUOUS_UPTIME_PASS elapsed="+
+                      str(round(elapsed,3))+" checkpoints="+str(checkpoints),flush=True)
             if phase=="sigkill":
                 # Guard process is NOT killed. Only the child Core8 group.
                 os.killpg(child,signal.SIGKILL)
@@ -134,7 +169,10 @@ def main() -> None:
     p=argparse.ArgumentParser()
     p.add_argument("--bundle",required=True,type=Path)
     p.add_argument("--work",required=True,type=Path)
+    p.add_argument("--soak-seconds",type=int,default=0)
     args=p.parse_args()
+    if args.soak_seconds not in (0,165):
+        safety.fail("only 0 or exactly 165 real seconds of guarded soak allowed")
     binary=safety.preflight(args.bundle,args.work)
     if socket.gethostname() != EXPECTED_HOSTNAME:
         safety.fail("not the named disposable ARM64 NET+UTS namespace")
@@ -156,7 +194,8 @@ def main() -> None:
     (args.work/"config").mkdir(mode=0o700)
     before=safety.sysctl_baseline()
     verify_no_listener()
-    supervise_one(binary,args.work,state,env,"sigkill")
+    supervise_one(binary,args.work,state,env,"sigkill",
+                  soak_seconds=args.soak_seconds)
     after=safety.sysctl_baseline()
     if before != after:
         safety.fail("actual sysctl changed after guarded real SIGKILL: "+

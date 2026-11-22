@@ -1,0 +1,80 @@
+name: CSQTT Core 253 real ARM64 165-second uninterrupted durable-guard soak
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/test-csqtt-core253-durable-arm64-guard-crash.py
+      - .github/workflows/csqtt-core253-arm64-real-165s-uptime-soak.yml
+      - adapt/core8-private-durable-sysctl-guard.py
+      - adapt/test-core8-private-durable-sysctl-guard-offline.py
+      - .github/workflows/csqtt-core-253-arm64-durable-sigkill-recovery.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  durable-real-core8-sigkill:
+    name: Native Core8 165-second uptime then SIGKILL recovery without routes
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 45038262207
+          name: csqtt-core-linux-arm64-unified-253-four-component-EXPERIMENTAL
+          github-token: ${{ github.token }}
+          path: verified-bundle
+      - name: Reject execution outside disposable isolated environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          sudo test -c /dev/net/tun
+          chmod 0755 verified-bundle/bin/*
+          if python3 -B adapt/test-csqtt-core253-durable-arm64-guard-crash.py \
+              --bundle verified-bundle --work /tmp >/tmp/csqtt-core-253-host-negative.log 2>&1; then
+            echo UNAUTHORIZED_HOST_TEST_ACCEPTED
+            exit 60
+          fi
+          grep -Fq 'not an authorized root-capable disposable GitHub AArch64 netns experiment' \
+            /tmp/csqtt-core-253-host-negative.log
+          rm -f /tmp/csqtt-core-253-host-negative.log
+          echo CSQTT_CORE253_GUARD_REFUSES_HOST_CONTEXT_PASS
+      - name: Offline fake sysctl safety and optional-kernel-knob regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B adapt/test-core8-private-durable-sysctl-guard-offline.py
+          echo CSQTT_CORE253_DURABLE_GUARD_OFFLINE_23_TESTS_PASS
+      - name: Real 165-second uninterrupted Core8 uptime, then SIGKILL and recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/csqtt-core253-guard-165s-soak"
+          mkdir -m 0700 "$work"
+          host_net="$(readlink /proc/self/ns/net)"
+          host_uts="$(readlink /proc/self/ns/uts)"
+          sudo env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
+            RUNNER_TEMP="$RUNNER_TEMP" CSQTT_ISOLATED_NETNS=yes \
+            CSQTT_HOST_NETNS_ID="$host_net" CSQTT_HOST_UTSNS_ID="$host_uts" \
+            timeout --signal=TERM --kill-after=10s 330s \
+            unshare --net --uts --fork --mount-proc \
+            bash -euc '
+              hostname csqtt-core8-isolated
+              test "$(hostname)" = csqtt-core8-isolated
+              ip link set lo up
+              test -z "$(ip -4 route show default)"
+              test -z "$(ip -6 route show default)"
+              python3 -B "$1" --bundle "$2" --work "$3" --soak-seconds 165
+            ' _ "$GITHUB_WORKSPACE/adapt/test-csqtt-core253-durable-arm64-guard-crash.py" "$GITHUB_WORKSPACE/verified-bundle" "$work"
+          echo CSQTT_CORE253_REAL_ARM64_165S_UPTIME_SIGKILL_RECOVERY_JOB_PASS
+# This workflow runs with real Core8 and an unmodified existing durable guard,
+# but only in a disposable GitHub-hosted NET+UTS namespace without routes.
+# It makes no production NanoPi, VPS systemd, networking, service or route changes.
+
+# This verifies true uninterrupted wall-clock uptime: 165 seconds from
+# a single Core8 PID, repeated native TLS/UDP checks and real SIGKILL.
+# It does NOT start systemd, change host routes, or deploy to NanoPi.
