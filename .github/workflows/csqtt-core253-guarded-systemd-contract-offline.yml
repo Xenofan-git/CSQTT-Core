@@ -1,0 +1,32 @@
+name: CSQTT Core 253 guarded systemd offline unit safety contract
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/csqtt-core8-private-durable-guard.service.example
+      - adapt/test-core8-guarded-systemd-253-contract-offline.py
+      - adapt/core8-private-durable-sysctl-guard.py
+      - adapt/test-core8-private-durable-sysctl-guard-offline.py
+      - .github/workflows/csqtt-core253-guarded-systemd-contract-offline.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-guarded-service-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate private systemd unit ownership and restart safety contract
+        run: |
+          set -euo pipefail
+          python3 -B adapt/test-core8-guarded-systemd-253-contract-offline.py
+      - name: Validate durable journal recovery ownership and refusals
+        run: |
+          set -euo pipefail
+          python3 -B adapt/test-core8-private-durable-sysctl-guard-offline.py
+      - name: Confirm no active services, system routes or sysctls were touched
+        run: |
+          echo CSQTT_CORE253_SYSTEMD_STATIC_AND_OFFLINE_GUARD_TESTS_PASSED
+# Does not start or install any systemd unit or execute real root network tests.

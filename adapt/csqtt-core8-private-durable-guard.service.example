@@ -24,6 +24,9 @@ ExecStopPost=/usr/bin/python3 /usr/local/libexec/core8-private-durable-sysctl-gu
 KillMode=control-group
 TimeoutStopSec=20
 Restart=on-failure
+# Guard uses code 75 for failed ownership/recovery. Such a failure must
+# require intervention, not an automatic loop that can race sysctl owners.
+RestartPreventExitStatus=75
 RestartSec=5
 UMask=0077
 NoNewPrivileges=true
