@@ -30,7 +30,7 @@ AFTER = {
 # 2.5.3 source: legacy 46000/46002 defaults and "csqtt" systemd targets
 # must never be retained in a separate Debian/Ubuntu CSQTT Core install.
 FINAL = {
-    "rust-server": (20, "f702f89b929c4c40820c4b89bad1f4fd1b4486cd311d33ec731a0e6aaeb1c60d"),
+    "rust-server": (20, "2c03df9581e87fe9e1e9ab0baaa7549dadaa8d2c32f5f62cb180193de2cb605a"),
     "shared": (3, "8d2d1e01f62570e7f63422aa0ea55deb745ad334122f585404bdddd1d41d37df"),
     "app/src/main/assets": (3, "0b24150c8e0e5a5e4d8e7664e972d0b3d0e4657181ba8ae47efe3f5309fed92d"),
 }

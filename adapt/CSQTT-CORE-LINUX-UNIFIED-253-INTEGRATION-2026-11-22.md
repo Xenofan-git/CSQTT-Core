@@ -35,7 +35,7 @@ output never overwrites an existing target.
 Original v2.5.0 source:
 fd936ef087c34cc46f26111dc2361f43b8b03c07.
 Final selected Rust source tree SHA256:
-f702f89b929c4c40820c4b89bad1f4fd1b4486cd311d33ec731a0e6aaeb1c60d.
+2c03df9581e87fe9e1e9ab0baaa7549dadaa8d2c32f5f62cb180193de2cb605a.
 
 ## Found and fixed standalone Linux server isolation gap
 
@@ -44,7 +44,8 @@ Previous Core8 experimental binary still defaulted to legacy UDP
 These settings could conflict with a separate original installation.
 A checksum-pinned, narrow source patch changes main.rs and original
 approved web panel; it defaults to 47000, 47002, /etc/csqtt-core,
-and exclusively controls csqtt-core systemd/Docker service.
+and exclusively controls csqtt-core systemd/Docker service. Also isolates
+local SOCKS5 default to 47005 in the server model and approved panel.
 Original protocol WIRE-3, IP pool 10.67.69.0/24 and historical
 test fixtures remain intact. Approved UI otherwise unchanged.
 
@@ -59,7 +60,7 @@ test fixtures remain intact. Approved UI otherwise unchanged.
 - Complete Rust1.97.1 locked offline AArch64 release build PASS.
 - Read-only ARM64 QEMU invocation confirmed CSQTT-WIRE-3,
   own 47000/47002 ports, /etc/csqtt-core and csqtt-core CLI.
-- Experimental ARM64 server ELF SHA256:
+- Pre-SOCKS5-default-fix interim ARM64 server ELF SHA256:
   3d4ac84e5d33f194f2de7212116a14a95616e1a6fc74f629116f84c77c238067.
   GitHub native ARM64 output may produce a different hash.
 - Added three-job branch-scoped CI for exact source/Deploy,
@@ -78,3 +79,23 @@ an older Core8 artifact and cannot be silently reused.
 
 No production NanoPi, VPS route, firewall, Tailscale, passwords,
 other project or persistent service was changed.
+
+## Final local SOCKS5 isolation correction and rebuild
+
+Additional audit found model.rs and the approved panel still using original
+local SOCKS5 default 45000. The isolated CSQTT Core default is now 47005
+in model.rs and BOTH panel input initialization and reset. Explicit
+legacy profile ports remain valid and protocol fixtures are unchanged.
+
+Final exact source tree SHA256:
+2c03df9581e87fe9e1e9ab0baaa7549dadaa8d2c32f5f62cb180193de2cb605a
+
+The previous experimental binary SHA 3d4ac84e... is superseded.
+Final Moscow Rust 1.97.1 locked Linux ARM64 experimental binary SHA256:
+8cd789e33428f96e183ae3da326dee907496f11536fbaf6cdab5da339262701d
+
+Full ARM64 Rust release compilation and read-only QEMU ARM64
+CSQTT-WIRE-3/47000/47002/private-config CLI smoke PASS.
+Pinned generator --check-only produced no output; modifying the
+original 2.5.0 Rust main.rs caused immediate hash refusal with
+no generated output. Production remains unchanged.

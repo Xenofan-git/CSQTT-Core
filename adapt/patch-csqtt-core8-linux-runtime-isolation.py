@@ -10,13 +10,15 @@ import argparse,hashlib
 
 INPUT_SHA = {
     "main.rs":"bab3a9cbac387e520043851251f42025a67b7522dc5b108cd05ed7c0c1d0939a",
+    "model.rs":"9e9b59b474f9bc94c7e90ba69c7e70a980ce8980d99c33c5d75d0b6f39f14ffa",
     "web_panel.rs":"71b0bc5fa3208d8dd21b5d0f998e973ac5f96bbb94f50f8caf4ecb7b982970ae",
     "csqtt-core-panel.html":"08effb52dccb5de35f29b7605363c5f7d4aafdb87271e057bbbbb673cf9b6b5d",
 }
 OUTPUT_SHA = {
     "main.rs":"e1751dfacb4a8a0cb264cb3e9b1327363574897edeb03b550c2bacbd763e257d",
+    "model.rs":"4703b8948b444e0a427abe7e5a19de2e2de2f1b6091079c5fb5c246b6df5cc3f",
     "web_panel.rs":"defc37fa170c99b4a877369ee75d0a416235d2c1c122f548efd77d00093f96d2",
-    "csqtt-core-panel.html":"600e4e6ef1153ced8fbc831df692be4e7ad171e81440b6d952f68d3c9104d040",
+    "csqtt-core-panel.html":"a0b9bcf9249b9a3441b28b119a05b677383791e97fd7162654d268526f943615",
 }
 def sub(src,old,new,description,count=1):
     actual=src.count(old)
@@ -49,15 +51,27 @@ def patch_main(s):
     ]:
         s=sub(s,old,new,description,count)
     return s
+def patch_model(s):
+    # The original CSQTT local SOCKS5 fallback is not an isolated Core port.
+    # Preserve explicit legacy profile ports; only the default changes.
+    return sub(s,'pub const DEFAULT_LOCAL_PROXY_PORT: u16 = 45000;',
+               'pub const DEFAULT_LOCAL_PROXY_PORT: u16 = 47005;',
+               'private CSQTT Core SOCKS5 default')
 def patch_web(s):
     return sub(s,'if port == 0 { 46000 } else { port }',
                'if port == 0 { 47000 } else { port }','generated client link fallback')
 def patch_panel(s):
-    return sub(s,'46000','47000','approved server panel example/default ports',6)
+    s=sub(s,'46000','47000','approved server panel example/default ports',6)
+    s=sub(s,'value="45000" inputmode="numeric"','value="47005" inputmode="numeric"',
+          'local SOCKS5 profile creation input default')
+    s=sub(s,"document.getElementById('profileDlgPort').value = '45000';",
+          "document.getElementById('profileDlgPort').value = '47005';",
+          'local SOCKS5 reset default')
+    return s
 def apply(root,check_only=False):
     transformed={}
-    for name,fn in [('main.rs',patch_main),('web_panel.rs',patch_web),
-                    ('csqtt-core-panel.html',patch_panel)]:
+    for name,fn in [('main.rs',patch_main),('model.rs',patch_model),
+                    ('web_panel.rs',patch_web),('csqtt-core-panel.html',patch_panel)]:
         p=root/name
         text=p.read_text(encoding='utf8')
         h=hashlib.sha256(text.encode()).hexdigest()

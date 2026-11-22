@@ -41,6 +41,8 @@ jobs:
           grep -Fq 'default_value = "0.0.0.0:47000"' "$RUNNER_TEMP/csqtt-core-unified/rust-server/main.rs"
           grep -Fq '.args(["--no-block", "restart", "csqtt-core"])' "$RUNNER_TEMP/csqtt-core-unified/rust-server/main.rs"
           grep -Fq 'if port == 0 { 47000 } else { port }' "$RUNNER_TEMP/csqtt-core-unified/rust-server/web_panel.rs"
+          grep -Fq 'DEFAULT_LOCAL_PROXY_PORT: u16 = 47005' "$RUNNER_TEMP/csqtt-core-unified/rust-server/model.rs"
+          grep -Fq 'id="profileDlgPort" min="1" max="65535" value="47005"' "$RUNNER_TEMP/csqtt-core-unified/rust-server/csqtt-core-panel.html"
           ! grep -Fq 'command.args([action, "csqtt"])' "$RUNNER_TEMP/csqtt-core-unified/rust-server/main.rs"
           echo CSQTT_CORE_UNIFIED_253_PINNED_SOURCE_AND_UNIT_ISOLATION_PASS
       - name: Regenerate and test read-only Deploy with rollback and ownership guards
