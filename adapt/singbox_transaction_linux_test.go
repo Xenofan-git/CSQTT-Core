@@ -342,7 +342,6 @@ func TestSingBoxCrashRecoveredBeforeRuleSetUpload(t *testing.T) {
 	if err := writeSingBoxRecoveredFile(m.configPath, nextConfig); err != nil {
 		t.Fatal(err)
 	}
-	m.binary = ruleSetValidationFakeBinary(t, "normal")
 	_, err := m.UploadRuleSet("recovered", "recovered.srs", []byte("compiled-srs"))
 	if err != nil {
 		t.Fatalf("Rule Set upload after interrupted save: %v", err)
