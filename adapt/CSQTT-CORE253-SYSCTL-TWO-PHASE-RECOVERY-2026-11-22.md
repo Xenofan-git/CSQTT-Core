@@ -71,3 +71,54 @@ No systemd service, root network, /proc/sys, current NanoPi,
 Moscow VPS network, Amsterdam VPS network or production VPN was
 modified by these local tests. Existing release candidate 236e7b0
 remains immutable.
+
+## Independently confirmed GitHub ARM64 results — SUCCESS
+
+Source commit 032a00930f78971a88b8565771f33401b2f70680.
+Five isolated native/CI jobs all finished SUCCESS.
+
+- 45051481270: genuine pinned ARM64 Rust Core8 started in a
+  private no-route NET+UTS namespace with the updated Python guardian,
+  real child SIGKILL, restored IPv6 forwarding, cleared journal,
+  second real Core8 run and clean SIGTERM.
+  Main marker:
+  CSQTT_CORE253_GUARD_REAL_ARM64_SIGKILL_RECOVER_RESTART_ALL_PASS.
+  All 28 fake-sysctl guardian offline tests also passed.
+- 45051481303: genuine nonroot ARM64 user systemd managing a
+  synthetic Python child and /tmp regular-file fake sysctls.
+  Valid (well-formed) current-boot owner journal with an externally
+  changed later key failed without a single partial restoration,
+  without a new child or repeated unsafe restarts. After fixing the
+  conflict, systemd successfully launched the child and restored the
+  correct baseline after stop. Markers:
+  CSQTT_USER_SYSTEMD_VALID_CONFLICT_ZERO_PARTIAL_RESTORE_PASS
+  and CSQTT_USER_SYSTEMD_CONFLICT_RESOLVED_RESTART_RESTORES_PASS.
+  Previous synthetic stale-boot archival checks also passed.
+- 45051481273: native nonroot user systemd fake-proc guardian
+  auto-restart, KillMode=mixed, ExecStopPost, corrupted journal
+  fail-closed, and three-start rate-limit all PASS.
+- 45051481297: guest-only systemd contract, systemd-analyze
+  verify, full offline guardian tests PASS.
+- 45051481226: genuine ARM64 Core8 PID 2337 remained
+  uninterrupted for 165.0 wall-clock seconds with 17
+  TLS/UDP/journal checkpoints. Real SIGKILL then restored IPv6
+  forwarding, cleared durable journal and allowed second clean
+  Core8 start/stop. Markers:
+  CSQTT_CORE253_REAL_CORE8_165S_CONTINUOUS_UPTIME_PASS and
+  CSQTT_CORE253_GUARD_REAL_ARM64_SIGKILL_RECOVER_RESTART_ALL_PASS.
+  Note: the long-soak workflow's printed historical summary marker
+  still says OFFLINE_23_TESTS_PASS, but its invoked current
+  Python test file actually contains all 28 tests. The separate
+  short native job 45051481270 reports the updated 28-test marker.
+
+Limitations unchanged: nonroot user-systemd fake-proc is not an
+actual root system service with the Rust server; a noncooperative
+external mutation during the second phase may still result in
+partial state changes and a retained journal (not global atomicity).
+No real electrical reboot, privileged production service install
+or live VK TURN auth has been performed.
+
+Main 2.5.0 WIRE-3 candidate:
+236e7b01446d0f01a58b9ad2d86bee093f5e1fe0 (unchanged).
+This source remains experimental; working NanoPi routing, existing
+services and Moscow/Amsterdam default routes remain untouched.
