@@ -1,0 +1,62 @@
+name: CSQTT Core Linux ARM64 Sing-box config rollback
+on:
+  push:
+    branches:
+      - test/csqtt-core-singbox-config-rollback-20261122
+    paths:
+      - adapt/singbox_manager_linux.go
+      - adapt/singbox_manager_rollback_linux_test.go
+      - .github/workflows/csqtt-core-linux-singbox-config-rollback.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  linux-singbox-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.10'
+      - name: Sing-box and SOCKS5 tests with Go race detector
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > adapt/zz_csqtt_rollback_fixture_linux_test.go <<'GO'
+          //go:build linux
+          package main
+          import (
+            "strings"
+            "testing"
+            "time"
+            "syscall"
+          )
+          func shellQuoteForTest(value string) string {
+            return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+          }
+          func waitProcessGone(t *testing.T, pid int) {
+            t.Helper()
+            deadline := time.Now().Add(3*time.Second)
+            for time.Now().Before(deadline) {
+              err := syscall.Kill(pid,0)
+              if err==syscall.ESRCH || (err!=nil && err!=syscall.EPERM) { return }
+              time.Sleep(20*time.Millisecond)
+            }
+            t.Fatalf("process %d still alive after process-group termination",pid)
+          }
+          GO
+          trap 'rm -f adapt/zz_csqtt_rollback_fixture_linux_test.go' EXIT
+          cd adapt
+          GO111MODULE=off GOTOOLCHAIN=local go test -race -count=1 -timeout=150s singbox_config_linux.go singbox_manager_linux.go csqtt_core_socks5_linux.go singbox_config_linux_test.go singbox_manager_linux_test.go csqtt_core_socks5_linux_test.go singbox_manager_rollback_linux_test.go zz_csqtt_rollback_fixture_linux_test.go
+          GO111MODULE=off GOTOOLCHAIN=local go test -count=1 -timeout=150s singbox_config_linux.go singbox_manager_linux.go csqtt_core_socks5_linux.go singbox_config_linux_test.go singbox_manager_linux_test.go csqtt_core_socks5_linux_test.go singbox_manager_rollback_linux_test.go zz_csqtt_rollback_fixture_linux_test.go
+      - name: Compile Linux AArch64 native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd adapt
+          GO111MODULE=off GOTOOLCHAIN=local GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c -o "$RUNNER_TEMP/csqtt-singbox-arm64-tests" singbox_config_linux.go singbox_manager_linux.go singbox_manager_rollback_linux_test.go
+          file "$RUNNER_TEMP/csqtt-singbox-arm64-tests" | tee "$RUNNER_TEMP/arch.txt"
+          grep -q 'ARM aarch64' "$RUNNER_TEMP/arch.txt"
+          echo CSQTT_CORE_ARM64_SINGBOX_COMPILATION_PASS
