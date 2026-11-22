@@ -123,3 +123,30 @@ This is provenance-safe packaging, NOT full combined runtime acceptance.
 The previous controller retains its already-verified Linux source.
 TCP/UDP through the bundled Go controller and new Core8 under a
 single live process supervisor remains a separate release gate.
+
+## Verified four-component ARM64 bundle CI completion
+
+- Full integration/validation CI run 45037804052 on 4211ac5 SUCCESS:
+  native ARM64 Rust1.97.1 Core8 binary, read-only protocol/defaults,
+  exact 2.5.0 source + Deploy, Go Sing-box/SOCKS5 and race detector.
+- Native GitHub ARM64 server SHA256:
+  362a27927764e4e728b6327ce3b62a229c376ae3512fdce3359c4d3bd9b8017e.
+  This differs from Moscow cross-build hash
+  8cd789e33428f96e183ae3da326dee907496f11536fbaf6cdab5da339262701d
+  because the build environments differ; each is independently verified.
+- Four-component experiment commit d03cb8540a66c74fd07cf0bba94b744a8f4ddd1f.
+  GitHub Actions run 45038262207 SUCCESS on native AArch64.
+  All old component SHAs, new Core8 SHA, source commit, ELF architecture,
+  CSQTT-WIRE-3 and private server defaults were checked, and a
+  forged server-commit test was rejected without output.
+- Resulting GitHub Actions artifact ID 14760476415:
+  csqtt-core-linux-arm64-unified-253-four-component-EXPERIMENTAL,
+  archived size 45,042,175 bytes, retention 7 days.
+  It consists of verified Linux Go supervisor, original CSQTT 2.5.0
+  client, NEW selective 2.5.3 Core8 server, and pinned Sing-box.
+  It is NOT approved for production installation.
+
+Remaining RELEASE GATE: actual combined four-component Linux runtime
+with TCP/UDP and SOCKS5 flow, isolated ARM64 systemd failure/restart,
+no-global-default-route safety and power-loss recovery. Do not
+present CI packaging SUCCESS as proof of live traffic or deployment.
