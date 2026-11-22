@@ -1,0 +1,83 @@
+name: CSQTT Core unified ARM64 four-component experimental Linux bundle
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/assemble-csqtt-core-unified-linux-253.py
+      - .github/workflows/csqtt-core-unified-253-arm64-four-component-bundle.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  four-linux-components:
+    name: Verified 2.5.0 Linux Go plus selective 2.5.3 Core8 plus sing-box
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve verified Linux supervisor, client and sing-box
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 45035218000
+          name: csqtt-core-250-raw-tun-go-original-client-core8-singbox-arm64
+          github-token: ${{ github.token }}
+          path: oldbundle
+      - name: Retrieve Core8 from successful unified Linux CI
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 45037804052
+          name: csqtt-core-unified-253-core8-arm64-experimental
+          github-token: ${{ github.token }}
+          path: newcore
+      - name: Verify provenance and assemble NON-PRODUCTION bundle
+        shell: bash
+        env:
+          CSQTT_UNIFIED_BUNDLE_BUILD: isolated-github-runner
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          chmod 0755 oldbundle/bin/* newcore/csqtt-core8-linux-arm64
+          python3 -B adapt/assemble-csqtt-core-unified-linux-253.py \
+            --previous oldbundle \
+            --new-server newcore \
+            --server-commit 4211ac5e3d1356699c84057f608035ae669e7cc7 \
+            --output experimental-linux-bundle
+          python3 -B - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('experimental-linux-bundle')
+          m=json.loads((p/'manifest.json').read_text(encoding='utf8'))
+          assert m['status']=='experimental-not-approved-for-production'
+          assert m['wireProtocol']=='CSQTT-WIRE-3'
+          assert m['globalDefaultRoute'] is False
+          assert m['fullCombinedRuntimeAcceptance'] is False
+          assert len(m['files'])==4
+          assert m['selective253Core8Commit']=='4211ac5e3d1356699c84057f608035ae669e7cc7'
+          assert m['files']['csqtt-core-derived-server-250-arm64']['sha256'] != 'a131751f29a5373d3ebf08bc0d3bfe59988a8badaf2854f01eb5561fc903a706'
+          print('CSQTT_CORE_UNIFIED_253_FOUR_COMPONENTS_SHA_MANIFEST_PASS')
+          PY
+      - name: Incorrect server commit must fail without output
+        shell: bash
+        env:
+          CSQTT_UNIFIED_BUNDLE_BUILD: isolated-github-runner
+        run: |
+          set -euo pipefail
+          if python3 -B adapt/assemble-csqtt-core-unified-linux-253.py \
+            --previous oldbundle --new-server newcore \
+            --server-commit 0000000000000000000000000000000000000000 \
+            --output must-not-exist; then
+            echo FAILED_UNKNOWN_SOURCE_COMMIT_ACCEPTED
+            exit 61
+          fi
+          test ! -e must-not-exist
+          echo CSQTT_CORE_UNIFIED_253_WRONG_SERVER_COMMIT_FAIL_CLOSED_PASS
+      - name: Upload disposable four-component ARM64 bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: csqtt-core-linux-arm64-unified-253-four-component-EXPERIMENTAL
+          path: experimental-linux-bundle/
+          retention-days: 7
+          if-no-files-found: error
+# This bundle is NOT approved for production or NanoPi deployment.

@@ -99,3 +99,27 @@ CSQTT-WIRE-3/47000/47002/private-config CLI smoke PASS.
 Pinned generator --check-only produced no output; modifying the
 original 2.5.0 Rust main.rs caused immediate hash refusal with
 no generated output. Production remains unchanged.
+
+## Four-component experimental Linux ARM64 bundle gate
+
+GitHub Actions 45037804052 on source commit
+4211ac5e3d1356699c84057f608035ae669e7cc7 SUCCESS:
+pinned-source/Deploy, Go Sing-box/SOCKS5 race tests, and native
+ARM64 Core8 build + read-only WIRE-3/private port checks.
+A matching experimental ARM64 server artifact was published.
+
+Created adapt/assemble-csqtt-core-unified-linux-253.py and a separate
+bundle-only branch CI workflow. The builder reuses the prior verified
+Linux 2.5.0 Go supervisor, original client and sing-box from
+GitHub Actions 45035218000, but refuses the OLD Core8 server
+(the old binary's SHA is known). It replaces only the server from
+this final unified Core8 CI, checking both artifacts' SHA-256,
+ARM64 ELF identity, source commit, original upstream commit,
+protocol revision and private runtime defaults. It records all four
+component hashes in one NOT-FOR-PRODUCTION manifest and refuses a
+wrong Core8 source commit without creating a bundle.
+
+This is provenance-safe packaging, NOT full combined runtime acceptance.
+The previous controller retains its already-verified Linux source.
+TCP/UDP through the bundled Go controller and new Core8 under a
+single live process supervisor remains a separate release gate.
