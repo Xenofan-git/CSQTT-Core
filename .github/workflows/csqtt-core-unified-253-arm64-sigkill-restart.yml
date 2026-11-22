@@ -1,0 +1,58 @@
+name: CSQTT Core unified 253 private ARM64 real SIGKILL and restart
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/test-csqtt-core-unified-arm64-sigkill-recovery.py
+      - .github/workflows/csqtt-core-unified-253-arm64-sigkill-restart.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  private-core8-kill-restart:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 45038262207
+          name: csqtt-core-linux-arm64-unified-253-four-component-EXPERIMENTAL
+          github-token: ${{ github.token }}
+          path: verified-bundle
+      - name: Reject any host or unsafe network context
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          sudo test -c /dev/net/tun
+          chmod 0755 verified-bundle/bin/*
+          if python3 -B adapt/test-csqtt-core-unified-arm64-sigkill-recovery.py --bundle verified-bundle --work /tmp; then
+            echo FATAL_TEST_ALLOWED_HOST_NAMESPACE
+            exit 63
+          fi
+          echo CSQTT_CORE253_SIGKILL_TEST_REFUSES_HOST_NETNS_PASS
+      - name: Crash real pinned ARM64 Core8 and restart only in no-route netns
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/csqtt-core253-kill-restart"
+          mkdir -m 0700 "$work"
+          host_ns="$(readlink /proc/self/ns/net)"
+          sudo env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
+            RUNNER_TEMP="$RUNNER_TEMP" CSQTT_ISOLATED_NETNS=yes \
+            CSQTT_HOST_NETNS_ID="$host_ns" \
+            timeout --signal=TERM --kill-after=7s 145s \
+            unshare --net --fork --mount-proc \
+            bash -euc '
+              ip link set lo up
+              test -z "$(ip -4 route show default)"
+              test -z "$(ip -6 route show default)"
+              python3 -B "$1" --bundle "$2" --work "$3"
+            ' _ "$GITHUB_WORKSPACE/adapt/test-csqtt-core-unified-arm64-sigkill-recovery.py" "$GITHUB_WORKSPACE/verified-bundle" "$work"
+          echo CSQTT_CORE253_PRIVATE_ARM64_REAL_SIGKILL_RESTART_JOB_PASS
+# This is not a systemd or auto-watchdog test. No production NanoPi, VPS
+# route, firewall, Tailscale connection or service is touched.
