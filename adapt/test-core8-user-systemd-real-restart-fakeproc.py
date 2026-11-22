@@ -241,19 +241,40 @@ def main():
             timeout=9,what="rate-limit first child")
         if len(launched)!=before_count+1:
             reject("unexpected rate-limit first child count")
+        print("CSQTT_STARTLIMIT_CONFIG",
+              cmd("systemctl","--user","show",unit,
+                  "-p","StartLimitBurst","-p","StartLimitIntervalUSec",
+                  "-p","Restart","-p","RestartUSec","-p","NRestarts",
+                  check=False).replace("\\n",";"),flush=True)
         for crash in range(3):
             count_before=len(read_pids(launches))
             pid=read_pids(launches)[-1]
             if not alive(pid):
                 reject("rate-limit candidate exited before deliberate SIGKILL")
+            print("CSQTT_STARTLIMIT_KILL index="+str(crash+1)+" pid="+str(pid),
+                  flush=True)
             os.kill(pid,signal.SIGKILL)
             if crash<2:
                 wait_until(
                     lambda: read_pids(launches) if len(read_pids(launches))>count_before else None,
                     timeout=9,what="next rate-limit child")
             else:
-                wait_until(lambda: userprop(unit,"Result")=="start-limit-hit",
-                           timeout=10,what="systemd start-limit-hit")
+                try:
+                    wait_until(
+                        lambda: (userprop(unit,"Result")=="start-limit-hit"
+                                 or len(read_pids(launches))>count_before),
+                        timeout=10,what="rate limit or unexpected new process")
+                finally:
+                    print("CSQTT_STARTLIMIT_POST_THIRD",
+                          cmd("systemctl","--user","show",unit,
+                              "-p","ActiveState","-p","Result","-p","NRestarts",
+                              "-p","ExecMainStatus","-p","StartLimitBurst",
+                              check=False).replace("\\n",";"),
+                          "NEW_PIDS="+str(read_pids(launches)[before_count:]),
+                          "LOG_SUFFIX="+logfile.read_text(errors="replace")[-1500:],
+                          flush=True)
+                if userprop(unit,"Result")!="start-limit-hit":
+                    reject("systemd did not prevent a fourth rapid start")
         time.sleep(1.5)
         if len(read_pids(launches))!=before_count+3:
             reject("systemd exceeded expected three starts within rate limit")
