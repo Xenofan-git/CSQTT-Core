@@ -22,6 +22,15 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B adapt/test-core8-guarded-systemd-253-contract-offline.py
+      - name: Check unit syntax using systemd-analyze without installing or starting it
+        shell: bash
+        run: |
+          set -euo pipefail
+          unit="$(mktemp --suffix=.service)"
+          trap 'rm -f "$unit"' EXIT
+          cp adapt/csqtt-core8-private-durable-guard.service.example "$unit"
+          systemd-analyze verify "$unit"
+          echo CSQTT_CORE253_SYSTEMD_ANALYZE_OFFLINE_VERIFY_PASS
       - name: Validate durable journal recovery ownership and refusals
         run: |
           set -euo pipefail
