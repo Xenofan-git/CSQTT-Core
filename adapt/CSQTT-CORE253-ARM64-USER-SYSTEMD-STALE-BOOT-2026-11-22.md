@@ -54,3 +54,30 @@ before marking PASS.
 
 Production installer, working NanoPi, routes, subscriptions and
 original 2.5.0 Linux release candidate stay unchanged.
+
+## Verified native ARM64 CI result: SUCCESS
+
+- Source commit: 03642855da6097b0b9735d15804aa2843cb73124.
+- Native GitHub Actions run **45050551596 SUCCESS**,
+  job 137294485249. The workflow executed under genuine nonroot
+  systemd user manager on a disposable ARM64 GitHub runner.
+- Log markers:
+  - CSQTT_USER_SYSTEMD_REAL_STALE_BOOT_ARCHIVED_PASS
+  - CSQTT_USER_SYSTEMD_NEW_BOOT_JOURNAL_BASELINE_PASS
+  - CSQTT_USER_SYSTEMD_REAL_NEW_BOOT_STOP_RESTORED_PASS
+  - CSQTT_USER_SYSTEMD_STALE_ARCHIVE_COLLISION_FAILCLOSED_PASS
+  - CSQTT_USER_SYSTEMD_SYNTHETIC_BOOT_TRANSITION_ALL_PASS
+  - CSQTT_CORE253_ARM64_NONROOT_USER_SYSTEMD_STALE_BOOT_PASS
+- Verified old-boot journal bytes unchanged in a private archive;
+  new journal used new boot UUID and distinct new baseline values;
+  actual user systemd stop restored the new baseline and cleared
+  the new journal. Reintroducing an old journal with a pre-existing
+  audit archive failed closed without launching a second child,
+  overwriting evidence, modifying fake sysctls, or retrying in
+  an unsafe loop.
+- All kernel parameters in this scenario are ORDINARY FILES under
+  /tmp. It does NOT emulate a real hardware power loss, a kernel
+  reboot, actual /proc/sys, or a privileged systemd-managed Rust
+  Core8 process. Those integration gates remain open.
+- Original release candidate, active NanoPi services and all
+  real host/network/systemd state remain untouched.
