@@ -6,6 +6,8 @@ on:
     paths:
       - adapt/patch-csqttr-253-android-ssh-change-250.py
       - adapt/test-csqttr-253-android-ssh-change-offline.py
+      - adapt/patch-csqttr-253-android-independent-ssh-port-250.py
+      - adapt/test-csqttr-253-android-independent-ssh-port-offline.py
       - .github/workflows/csqttr-253-android-ssh-hostkey-source.yml
   workflow_dispatch:
 permissions:
@@ -24,7 +26,9 @@ jobs:
           import ast
           from pathlib import Path
           for file in ('patch-csqttr-253-android-ssh-change-250.py',
-                       'test-csqttr-253-android-ssh-change-offline.py'):
+                       'test-csqttr-253-android-ssh-change-offline.py',
+                       'patch-csqttr-253-android-independent-ssh-port-250.py',
+                       'test-csqttr-253-android-independent-ssh-port-offline.py'):
               ast.parse((Path('adapt')/file).read_text(encoding='utf8'))
               print('PY_PARSE_PASS', file)
           PY

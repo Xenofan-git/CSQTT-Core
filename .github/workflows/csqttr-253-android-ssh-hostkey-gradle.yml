@@ -7,6 +7,8 @@ on:
       - .github/workflows/csqttr-253-android-ssh-hostkey-gradle.yml
       - adapt/patch-csqttr-253-android-ssh-change-250.py
       - adapt/test-csqttr-253-android-ssh-change-offline.py
+      - adapt/patch-csqttr-253-android-independent-ssh-port-250.py
+      - adapt/test-csqttr-253-android-independent-ssh-port-offline.py
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,13 +33,16 @@ jobs:
           test "$(git -C original-250 rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
           python3 -B adapt/test-csqttr-253-android-ssh-change-offline.py --source-root original-250
           python3 -B adapt/patch-csqttr-253-android-ssh-change-250.py --source-root original-250
+          python3 -B adapt/test-csqttr-253-android-independent-ssh-port-offline.py --source-root original-250
+          python3 -B adapt/patch-csqttr-253-android-independent-ssh-port-250.py --source-root original-250
           python3 -B - <<'PY'
           from hashlib import sha256
           from pathlib import Path
           p=Path('original-250/app/src/main/java/com/csqtt/client')
           expected={
             'SshHostKeyStore.kt':'ce9b4c3a2bbdb348b3f8b5f89a270c2eaaeba364783db3a8f975b971bccd46bc',
-            'ui/DeployTab.kt':'88cad066b94110f139a1a8774134a663bbc528e9d8e8e1d5da9ceee557a03748'
+            'ui/DeployTab.kt':'e75b35a9eab728f614c12a80c1bccdcad8879a58c8e0b8ad68ea5a02e90289d8',
+            'ui/DeployScreen.kt':'444a6d4117e75f9a35d73e1d483e63130e8165d059013e057a1d852327620f0b'
           }
           for f,digest in expected.items():
               actual=sha256((p/f).read_bytes()).hexdigest()
