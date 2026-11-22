@@ -37,6 +37,9 @@ type SingBoxManager struct {
 	lastError string
 	starting bool
 	configuring bool
+	// Test seam: production always uses os.Rename. It must not be changed
+	// while SaveConfig is active.
+	renameOverride func(string, string) error
 	startDone chan struct{}
 	startCancel context.CancelFunc
 }
@@ -111,6 +114,61 @@ func (m *SingBoxManager) checkConfigPath(ctx context.Context, configPath string)
 }
 
 
+// renameConfigFile uses the filesystem's atomic rename in production.
+func (m *SingBoxManager) renameConfigFile(from, to string) error {
+	if m.renameOverride != nil {
+		return m.renameOverride(from, to)
+	}
+	return os.Rename(from, to)
+}
+
+// stageConfigRollback prepares the last known active file *before* the new
+// config is published. A backup is a private regular file on the same
+// filesystem, so restoring it needs only one atomic rename.
+func stageConfigRollback(path string) (backupPath string, hadOld bool, err error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("inspect existing sing-box config: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", false, fmt.Errorf("existing sing-box config must be a regular file")
+	}
+	previous, err := os.ReadFile(path)
+	if err != nil {
+		return "", false, fmt.Errorf("read previous sing-box config for rollback: %w", err)
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".sing-box-config-rollback-*.json")
+	if err != nil {
+		return "", false, fmt.Errorf("create sing-box rollback snapshot: %w", err)
+	}
+	backupPath = f.Name()
+	hadOld = true
+	defer func() {
+		if err != nil {
+			_ = f.Close()
+			_ = os.Remove(backupPath)
+		}
+	}()
+	// Never copy a legacy permissive config mode into a secrets-bearing
+	// recovery snapshot. Successful restore also hardens it to 0600.
+	if err = f.Chmod(0600); err != nil {
+		return "", false, fmt.Errorf("chmod sing-box rollback snapshot: %w", err)
+	}
+	if _, err = f.Write(previous); err != nil {
+		return "", false, fmt.Errorf("write sing-box rollback snapshot: %w", err)
+	}
+	if err = f.Sync(); err != nil {
+		return "", false, fmt.Errorf("sync sing-box rollback snapshot: %w", err)
+	}
+	if err = f.Close(); err != nil {
+		return "", false, fmt.Errorf("close sing-box rollback snapshot: %w", err)
+	}
+	return backupPath, hadOld, nil
+}
+
 func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	if m.configPath == "" || m.binary == "" { return fmt.Errorf("sing-box binary and config path are required") }
 	if err := m.normalizeRuleSetCachePath(&input); err != nil { return err }
@@ -128,6 +186,11 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	m.configuring = true
 	m.mu.Unlock()
 	defer func() { m.mu.Lock(); m.configuring = false; m.mu.Unlock() }()
+	// Complete any transaction interrupted by a previous process exit before
+	// starting another write; never discard its recovery journal.
+	if err := m.recoverPendingTransaction(); err != nil {
+		return fmt.Errorf("recover interrupted Sing-box save: %w", err)
+	}
 
 	dir := filepath.Dir(m.configPath)
 	if err := os.MkdirAll(dir, 0700); err != nil { return fmt.Errorf("create sing-box config directory: %w", err) }
@@ -155,16 +218,71 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	defer cancel()
 	if err := m.checkConfigPath(ctx, tmp); err != nil { return fmt.Errorf("refusing invalid sing-box config: %w", err) }
 	m.mu.Lock()
-	if m.cmd != nil || m.starting { m.mu.Unlock(); return fmt.Errorf("sing-box started while config was being validated") }
-	if err := os.Rename(tmp, m.configPath); err != nil { m.mu.Unlock(); return fmt.Errorf("activate sing-box config: %w", err) }
-	if err := os.Rename(stateTmp, m.panelStatePath()); err != nil {
-		m.lastError = "config saved but panel state activation failed: " + err.Error()
+	if m.cmd != nil || m.starting {
 		m.mu.Unlock()
-		return fmt.Errorf("activate sing-box panel state: %w", err)
+		return fmt.Errorf("sing-box started while config was being validated")
+	}
+	backup, hadPrevious, err := stageConfigRollback(m.configPath)
+	if err != nil {
+		m.mu.Unlock()
+		return err
+	}
+	// Keep a failed rollback snapshot for manual recovery; otherwise it is
+	// removed after the transaction. The snapshot inherits the old file mode.
+	keepBackup := false
+	defer func() {
+		if backup != "" && !keepBackup {
+			_ = os.Remove(backup)
+		}
+	}()
+	if err := m.writeTransactionJournal(encoded, append(stateData, '\n')); err != nil {
+		m.mu.Unlock()
+		return fmt.Errorf("prepare durable Sing-box transaction: %w", err)
+	}
+	if err := m.renameConfigFile(tmp, m.configPath); err != nil {
+		m.mu.Unlock()
+		if clearErr := m.clearTransactionJournal(); clearErr != nil {
+			return fmt.Errorf("activate Sing-box config: %w; journal cleanup failed: %v", err, clearErr)
+		}
+		return fmt.Errorf("activate sing-box config: %w", err)
+	}
+	if err := m.renameConfigFile(stateTmp, m.panelStatePath()); err != nil {
+		// The old panel sidecar has NOT been changed by a failed rename.
+		// Restore the old config so its checksum still matches the sidecar.
+		var rollbackErr error
+		if hadPrevious {
+			rollbackErr = m.renameConfigFile(backup, m.configPath)
+		} else {
+			rollbackErr = os.Remove(m.configPath)
+		}
+		if rollbackErr != nil {
+			keepBackup = hadPrevious
+			m.lastError = fmt.Sprintf("sing-box panel activation failed: %v; config rollback FAILED: %v; recovery snapshot: %s", err, rollbackErr, backup)
+			m.mu.Unlock()
+			return fmt.Errorf("activate sing-box panel state: %w; config rollback failed: %v", err, rollbackErr)
+		}
+		m.lastError = "sing-box panel state activation failed; previous config restored: " + err.Error()
+		m.mu.Unlock()
+		if syncErr := syncSingBoxDirectory(dir); syncErr != nil {
+			return fmt.Errorf("restore previous Sing-box config directory: %w", syncErr)
+		}
+		if clearErr := m.clearTransactionJournal(); clearErr != nil {
+			return fmt.Errorf("clear Sing-box transaction after rollback: %w", clearErr)
+		}
+		if d, syncErr := os.Open(dir); syncErr == nil {
+			_ = d.Sync()
+			_ = d.Close()
+		}
+		return fmt.Errorf("activate sing-box panel state (previous config restored): %w", err)
 	}
 	m.lastError = ""
 	m.mu.Unlock()
-	if d, err := os.Open(dir); err == nil { _ = d.Sync(); _ = d.Close() }
+	if err := syncSingBoxDirectory(dir); err != nil {
+		return fmt.Errorf("sync new Sing-box config pair: %w", err)
+	}
+	if err := m.clearTransactionJournal(); err != nil {
+		return fmt.Errorf("finish durable Sing-box config transaction: %w", err)
+	}
 	return nil
 }
 
@@ -298,6 +416,16 @@ func (m *SingBoxManager) Status() SingBoxStatus {
 func (m *SingBoxManager) panelStatePath() string { return m.configPath + ".panel.json" }
 
 func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
+	if err := m.recoverPendingTransactionForLoad(); err != nil {
+		return singBoxConfigInput{}, fmt.Errorf("recover Sing-box interrupted transaction: %w", err)
+	}
+	return m.loadConfigWithoutRecovery()
+}
+
+// Internal Rule Set operations already control m.mu / m.configuring.
+// They must use this reader after explicitly recovering the journal; calling
+// LoadConfig there would recursively acquire the mutex or reject its own write.
+func (m *SingBoxManager) loadConfigWithoutRecovery() (singBoxConfigInput, error) {
 	var input singBoxConfigInput
 	data, err := os.ReadFile(m.configPath)
 	if err != nil { return input, fmt.Errorf("read sing-box config: %w", err) }
@@ -685,7 +813,8 @@ func (m *SingBoxManager) DeleteRuleSet(tag string) error {
  if !singBoxIDPattern.MatchString(tag){return fmt.Errorf("invalid Rule Set tag %q",tag)}
  m.mu.Lock();defer m.mu.Unlock()
  if m.cmd!=nil||m.starting||m.configuring{return fmt.Errorf("cannot delete Rule Set while sing-box is running, starting, or configuring")}
- input,err:=m.LoadConfig();if err!=nil&&!errors.Is(err, os.ErrNotExist){return fmt.Errorf("load sing-box config before deletion: %w",err)}
+ if err:=m.recoverPendingTransaction();err!=nil{return fmt.Errorf("recover Sing-box transaction before Rule Set deletion: %w",err)}
+ input,err:=m.loadConfigWithoutRecovery();if err!=nil&&!errors.Is(err, os.ErrNotExist){return fmt.Errorf("load sing-box config before deletion: %w",err)}
  if referenced, err := singBoxConfigRouteReferencesRuleSet(m.configPath, tag); err != nil {
   return fmt.Errorf("inspect sing-box Rule Set references: %w", err)
  } else if referenced {
@@ -738,7 +867,10 @@ func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singB
 	// an unrelated path while leaving the configured Rule Set unchanged.
 	dir := filepath.Join(filepath.Dir(m.configPath), "rule-sets")
 	activePath := filepath.Join(dir, tag+ext)
-	if input, err := m.LoadConfig(); err == nil {
+	if err := m.recoverPendingTransaction(); err != nil {
+		return result, fmt.Errorf("recover Sing-box transaction before Rule Set upload: %w", err)
+	}
+	if input, err := m.loadConfigWithoutRecovery(); err == nil {
 		for _, existing := range input.RuleSets {
 			if existing.Tag != tag { continue }
 			if existing.Type != "local" || existing.Format != format || filepath.Clean(existing.Path) != activePath {

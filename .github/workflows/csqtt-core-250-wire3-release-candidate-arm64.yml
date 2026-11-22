@@ -1,7 +1,9 @@
 name: CSQTT Core 2.5 WIRE-3 release-candidate Go TUN ARM64 regression
 on:
   push:
-    branches: [release/csqtt-250-wire3-candidate-20261121]
+    branches:
+      - release/csqtt-250-wire3-candidate-20261121
+      - test/csqtt-core-singbox-crash-recovery-20261122
     paths:
       - adapt/csqtt_core_250_client_launch_linux.go
       - adapt/csqtt_core_250_client_launch_linux_test.go
@@ -9,6 +11,10 @@ on:
       - adapt/csqtt_core_250_supervisor_gate_linux.go
       - adapt/csqtt_core_250_supervisor_gate_linux_test.go
       - adapt/csqtt_core_250_supervisor_lifecycle_linux_test.go
+      - adapt/singbox_manager_linux.go
+      - adapt/singbox_transaction_linux.go
+      - adapt/singbox_transaction_linux_test.go
+      - adapt/singbox_manager_rollback_linux_test.go
       - adapt/apply-csqtt-core-250-supervisor-gate.py
       - adapt/apply-csqtt-core-linux-tun-rawfd.py
       - adapt/assemble-csqtt-core-250-candidate.py
@@ -67,6 +73,8 @@ jobs:
           cp adapt/linux_runner_lifecycle_test.go adapt/linux_tun_vm_test.go adapt/linux_core_argv_test.go upstream-lalune/Desktop/Linux/
           cp adapt/singbox_config_linux.go adapt/singbox_config_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/singbox_manager_linux.go adapt/singbox_manager_linux_test.go upstream-lalune/Desktop/Linux/
+          cp adapt/singbox_transaction_linux.go adapt/singbox_transaction_linux_test.go upstream-lalune/Desktop/Linux/
+          cp adapt/singbox_manager_rollback_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/headless_main.go adapt/headless_main_test.go adapt/headless_api_contract_test.go upstream-lalune/Desktop/Linux/
           cp adapt/csqtt_core_250_auth_api_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/vktoken_input_test.go upstream-lalune/Desktop/Libs/

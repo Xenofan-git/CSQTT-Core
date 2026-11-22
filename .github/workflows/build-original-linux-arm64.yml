@@ -324,6 +324,7 @@ jobs:
           cp adapt/singbox_config_linux.go upstream-lalune/Desktop/Linux/singbox_config_linux.go
           cp adapt/singbox_config_linux_test.go upstream-lalune/Desktop/Linux/singbox_config_linux_test.go
           cp adapt/singbox_manager_linux.go upstream-lalune/Desktop/Linux/singbox_manager_linux.go
+          cp adapt/singbox_transaction_linux.go upstream-lalune/Desktop/Linux/singbox_transaction_linux.go
           cp adapt/singbox_manager_linux_test.go upstream-lalune/Desktop/Linux/singbox_manager_linux_test.go
           grep -Fq 'func TestSingBoxManagerOwnsIndependentProcessLifecycle' upstream-lalune/Desktop/Linux/singbox_manager_linux_test.go
           grep -Fq 'func TestSingBoxManagerFailsClosedWhenConfigCheckFails' upstream-lalune/Desktop/Linux/singbox_manager_linux_test.go
