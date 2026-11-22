@@ -55,16 +55,19 @@ jobs:
           set -euo pipefail
           sdk="$(printenv ANDROID_HOME || echo /usr/local/lib/android/sdk)"
           test -d "$sdk/cmdline-tools"
+          manager="$(find "$sdk/cmdline-tools" -name sdkmanager -type f -print | sort -V | tail -1)"
+          test -n "$manager"
+          test -x "$manager"
           echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$sdk" >> "$GITHUB_ENV"
-          echo "$sdk/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
-          echo "Using runner SDK at $sdk"
+          echo "SDKMANAGER_BIN=$manager" >> "$GITHUB_ENV"
+          echo "$(dirname "$manager")" >> "$GITHUB_PATH"
+          echo "Using runner SDK at $sdk and sdkmanager at $manager"
       - name: Install pinned Android API 37 and build-tools
         shell: bash
         run: |
           set -euo pipefail
-          test -x "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
-          "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" --sdk_root="$ANDROID_HOME"             "platforms;android-37" "build-tools;37.0.0"
+          "$SDKMANAGER_BIN" --sdk_root="$ANDROID_HOME"             "platforms;android-37" "build-tools;37.0.0"
           test -f "$ANDROID_HOME/platforms/android-37/android.jar"
       - name: Compile Kotlin/Compose and run JVM tests against patched 2.5.0
         shell: bash
