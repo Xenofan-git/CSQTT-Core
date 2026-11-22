@@ -1,0 +1,40 @@
+name: CSQTT Core253 native ARM64 real user systemd synthetic boot-journal recovery
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/test-core8-user-systemd-stale-boot-arm64.py
+      - adapt/test-core8-user-systemd-real-restart-fakeproc.py
+      - adapt/core8-private-durable-sysctl-guard.py
+      - .github/workflows/csqtt-core253-arm64-user-systemd-stale-boot.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  nonroot-user-systemd-stale-boot:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify GH disposable ARM64 non-root and parse scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          test "$(id -u)" -ne 0
+          command -v systemctl
+          python3 -B -m py_compile \
+            adapt/test-core8-user-systemd-stale-boot-arm64.py \
+            adapt/test-core8-user-systemd-real-restart-fakeproc.py
+      - name: Real nonroot user systemd starts safely after synthetic reboot journal
+        shell: bash
+        env:
+          CSQTT_PRIVATE_USER_SYSTEMD_TEST: "yes"
+        run: |
+          set -euo pipefail
+          python3 -B adapt/test-core8-user-systemd-stale-boot-arm64.py
+          echo CSQTT_CORE253_ARM64_NONROOT_USER_SYSTEMD_STALE_BOOT_PASS
+# Synthetic boot transition: ordinary file values and disposable
+# user-level systemd. Never touch actual /proc/sys, host networking,
+# system service manager, live NanoPi, or any VPN configuration.
