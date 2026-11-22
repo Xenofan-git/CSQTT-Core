@@ -1,0 +1,139 @@
+name: CSQTT Core unified 253 native ARM64 real SOCKS5 and isolated Core8 runtime
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/test-csqtt-core-unified-arm64-netns-lifecycle.py
+      - .github/workflows/csqtt-core-unified-253-arm64-real-runtime-e2e.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  native-singbox-real-tcp-udp:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 45038262207
+          name: csqtt-core-linux-arm64-unified-253-four-component-EXPERIMENTAL
+          github-token: ${{ github.token }}
+          path: verified-bundle
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.10'
+      - name: Verify actual four-component ARM64 provenance before live loopback tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          chmod 0755 verified-bundle/bin/*
+          python3 -B - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root=Path('verified-bundle')
+          m=json.loads((root/'manifest.json').read_text())
+          assert m['status']=='experimental-not-approved-for-production'
+          assert m['fullCombinedRuntimeAcceptance'] is False
+          assert m['globalDefaultRoute'] is False
+          assert m['wireProtocol']=='CSQTT-WIRE-3'
+          assert m['selective253Core8Commit']=='4211ac5e3d1356699c84057f608035ae669e7cc7'
+          assert len(m['files'])==4
+          for n,record in m['files'].items():
+            binary=root/'bin'/n
+            assert binary.is_file() and not binary.is_symlink()
+            assert hashlib.sha256(binary.read_bytes()).hexdigest()==record['sha256'],n
+          assert m['files']['csqtt-core-derived-server-250-arm64']['sha256']=='362a27927764e4e728b6327ce3b62a229c376ae3512fdce3359c4d3bd9b8017e'
+          print('CSQTT_UNIFIED_253_NATIVE_ARM64_FOUR_COMPONENT_SHA_CHECK_PASS')
+          PY
+          verified-bundle/bin/csqtt-core-sing-box-arm64 version | grep -Fx 'sing-box version 1.14.4'
+      - name: Real ARM64 sing-box plus Linux CSQTT SOCKS5 TCP UDP DNS routing and race suite
+        shell: bash
+        env:
+          CSQTT_SING_BOX_BINARY: ${{ github.workspace }}/verified-bundle/bin/csqtt-core-sing-box-arm64
+        run: |
+          set -euo pipefail
+          cat > adapt/zz_csqtt_live_arm64_fixture_linux_test.go <<'GO'
+          //go:build linux
+          package main
+          import ("strings";"testing";"time";"syscall")
+          func shellQuoteForTest(value string) string {
+            return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+          }
+          func waitProcessGone(t *testing.T,pid int) {
+            t.Helper()
+            deadline:=time.Now().Add(3*time.Second)
+            for time.Now().Before(deadline) {
+              err:=syscall.Kill(pid,0)
+              if err==syscall.ESRCH || (err!=nil && err!=syscall.EPERM) {return}
+              time.Sleep(20*time.Millisecond)
+            }
+            t.Fatalf("process %d still alive",pid)
+          }
+          GO
+          trap 'rm -f adapt/zz_csqtt_live_arm64_fixture_linux_test.go' EXIT
+          cd adapt
+          GO111MODULE=off GOTOOLCHAIN=local go test -race -count=1 -timeout=180s -v \
+            singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go \
+            csqtt_core_socks5_linux.go singbox_config_linux_test.go singbox_manager_linux_test.go \
+            csqtt_core_socks5_linux_test.go singbox_manager_rollback_linux_test.go \
+            singbox_transaction_linux_test.go zz_csqtt_live_arm64_fixture_linux_test.go \
+            | tee "$RUNNER_TEMP/real-singbox-native-arm64-tests.log"
+          grep -q '^--- PASS: TestSingBoxRoutesDomainThroughRealCSQTTSocks5Server' "$RUNNER_TEMP/real-singbox-native-arm64-tests.log"
+          grep -q '^--- PASS: TestSingBoxUDPAssociateRelaysThroughRealCSQTTSocks5Server' "$RUNNER_TEMP/real-singbox-native-arm64-tests.log"
+          grep -q '^--- PASS: TestSingBoxFirstMatchingRuleWinsAndFinalOutboundIsUsed' "$RUNNER_TEMP/real-singbox-native-arm64-tests.log"
+          grep -q '^--- PASS: TestSingBoxDNSHijackAndReverseMappingThroughSOCKSInbound' "$RUNNER_TEMP/real-singbox-native-arm64-tests.log"
+          grep -q '^--- PASS: TestSingBoxDeadSOCKSOutboundNeverFallsBackToDIRECT' "$RUNNER_TEMP/real-singbox-native-arm64-tests.log"
+          echo CSQTT_CORE_UNIFIED_253_NATIVE_ARM64_REAL_SOCKS5_TCP_UDP_DNS_RACE_PASS
+
+  isolated-core8-start-restart:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 45038262207
+          name: csqtt-core-linux-arm64-unified-253-four-component-EXPERIMENTAL
+          github-token: ${{ github.token }}
+          path: verified-bundle
+      - name: Preflight kernel namespace and private TUN capability
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          chmod 0755 verified-bundle/bin/*
+          sudo test -c /dev/net/tun
+          command -v unshare
+          command -v ip
+          command -v ss
+          python3 -B adapt/test-csqtt-core-unified-arm64-netns-lifecycle.py --help >/dev/null
+          echo CSQTT_CORE_UNIFIED_253_LINUX_AARCH64_PRIVATE_NETNS_PREFLIGHT_PASS
+      - name: Real Core8 start, HTTPS and stop/restart with NO default route in disposable netns
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/csqtt-core8-isolated-netns"
+          mkdir -m 0700 "$work"
+          bundle="$GITHUB_WORKSPACE/verified-bundle"
+          host_ns="$(readlink /proc/self/ns/net)"
+          sudo env -i \
+            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted \
+            RUNNER_TEMP="$RUNNER_TEMP" CSQTT_ISOLATED_NETNS=yes \
+            CSQTT_HOST_NETNS_ID="$host_ns" \
+            timeout --signal=TERM --kill-after=6s 145s \
+            unshare --net --fork --mount-proc \
+            bash -euc '
+              ip link set lo up
+              test -z "$(ip -4 route show default)"
+              test -z "$(ip -6 route show default)"
+              python3 -B "$1" --bundle "$2" --work "$3"
+            ' _ "$GITHUB_WORKSPACE/adapt/test-csqtt-core-unified-arm64-netns-lifecycle.py" "$bundle" "$work"
+          echo CSQTT_CORE_UNIFIED_253_ARM64_REAL_PRIVATE_SERVER_RESTART_ACCEPTANCE_PASS
+# No production NanoPi, VPS networking, external tunnel, systemd unit,
+# firewall rules or credentials are accessed or modified by this workflow.
