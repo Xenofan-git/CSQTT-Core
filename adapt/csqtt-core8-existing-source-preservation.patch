@@ -1,0 +1,801 @@
+--- a/rust-server/main.rs
++++ b/rust-server/main.rs
+@@ -1028,11 +1028,8 @@
+     }
+ 
+     let _instance_lock = acquire_instance_lock(&args.config_dir)?;
+-    // The policy cleanup invokes multiple ip/iptables commands, each with its
+-    // own 2s timeout. An outer 1s deadline aborts valid cleanup in mid-flight.
+-    // Keep this bounded and preserve the existing warn-and-continue behavior.
+     match tokio::time::timeout(
+-        Duration::from_secs(15),
++        Duration::from_secs(1),
+         proxy_route::ProxyRoute::cleanup_orphaned_policy(),
+     )
+     .await
+--- a/rust-server/dataplane.rs
++++ b/rust-server/dataplane.rs
+@@ -142,7 +142,11 @@
+     pub fn shutdown(mut self) -> Result<()> {
+         let signal_result = self.handle.shutdown();
+         let join_result = if let Some(join) = self.join.take() {
+-            let deadline = Instant::now() + Duration::from_secs(1);
++            // A live transparent TCP session can delay reactor cleanup beyond
++            // one second. Give the dataplane a bounded chance to drop its
++            // owned KernelNetworking sysctl journal before main exits.
++            // An external durable restore guard remains necessary on timeout.
++            let deadline = Instant::now() + Duration::from_secs(6);
+             while !join.is_finished() && Instant::now() < deadline {
+                 std::thread::sleep(Duration::from_millis(10));
+             }
+@@ -150,8 +154,10 @@
+                 join.join()
+                     .map_err(|_| anyhow!("dataplane thread panicked"))?
+             } else {
+-                eprintln!("[DATAPLANE] shutdown timed out");
+-                Ok(())
++                eprintln!("[DATAPLANE] shutdown timed out (6s bounded grace)");
++                Err(anyhow!(
++                    "dataplane worker did not stop within the bounded 6s grace; external recovery required"
++                ))
+             }
+         } else {
+             Ok(())
+--- a/rust-server/protocol.rs
++++ b/rust-server/protocol.rs
+@@ -5399,10 +5399,10 @@
+     fn hot_tunnel_configuration_preserves_client_ip_and_replaces_dns() {
+         let payload = format!(
+             "TUNCONF:{}:{}:0:stream-v1",
+-            Ipv4Addr::from([10, 67, 69, 42]),
++            Ipv4Addr::from([10, 66, 67, 42]),
+             "8.8.8.8,8.8.4.4"
+         );
+-        assert_eq!(payload, "TUNCONF:10.67.69.42:8.8.8.8,8.8.4.4:0:stream-v1");
++        assert_eq!(payload, "TUNCONF:10.66.67.42:8.8.8.8,8.8.4.4:0:stream-v1");
+     }
+ 
+     #[test]
+@@ -6234,7 +6234,7 @@
+     #[test]
+     fn test_stream_descriptor_tracking_and_no_leak_on_reconnect_and_teardown() {
+         use crate::tun_device::RouteTable;
+-        let ip = [10, 67, 69, 10];
++        let ip = [10, 66, 67, 10];
+         let mut table = RouteTable::new();
+ 
+         assert!(table.register(ip, 101, 1, 1, 0));
+--- a/rust-server/proxy_route.rs
++++ b/rust-server/proxy_route.rs
+@@ -139,43 +139,11 @@
+     }
+ 
+     pub async fn cleanup_orphaned_policy() -> Result<()> {
+-        // Diagnostic mode is opt-in and never prints route secrets or keys.
+-        let diagnostic = std::env::var("CSQTT_CORE_DIAG_POLICY_CLEANUP")
+-            .ok()
+-            .as_deref()
+-            == Some("1");
+-        let started = Instant::now();
+-        if diagnostic {
+-            eprintln!("[PROXY-CLEANUP] stage=lock_wait elapsed_ms=0");
+-        }
+         let _guard = POLICY_LOCK.lock().await;
+-        if diagnostic {
+-            eprintln!("[PROXY-CLEANUP] stage=lock_acquired elapsed_ms={}", started.elapsed().as_millis());
+-        }
+         ACTIVE_RUNTIME.store(0, Ordering::Release);
+-        if diagnostic {
+-            eprintln!("[PROXY-CLEANUP] stage=shared_start elapsed_ms={}", started.elapsed().as_millis());
+-        }
+         cleanup_shared_policy().await;
+-        if diagnostic {
+-            eprintln!("[PROXY-CLEANUP] stage=shared_done elapsed_ms={}", started.elapsed().as_millis());
+-            eprintln!("[PROXY-CLEANUP] stage=legacy_start elapsed_ms={}", started.elapsed().as_millis());
+-        }
+         cleanup_legacy_proxy_policy().await;
+-        if diagnostic {
+-            eprintln!("[PROXY-CLEANUP] stage=legacy_done elapsed_ms={}", started.elapsed().as_millis());
+-            eprintln!("[PROXY-CLEANUP] stage=verify_start elapsed_ms={}", started.elapsed().as_millis());
+-        }
+-        let verification = verify_proxy_policy_clean().await;
+-        if diagnostic {
+-            let result = if verification.is_ok() { "ok" } else { "error" };
+-            eprintln!(
+-                "[PROXY-CLEANUP] stage=verify_done elapsed_ms={} result={}",
+-                started.elapsed().as_millis(),
+-                result
+-            );
+-        }
+-        verification
++        verify_proxy_policy_clean().await
+     }
+ }
+ 
+@@ -528,13 +496,42 @@
+     Ok((SocketAddr::new(ip, port), &packet[header_end..]))
+ }
+ 
++fn check_tproxy_kernel_parameters(parameters: &[(String, &str)]) -> std::io::Result<()> {
++    for (path, expected) in parameters {
++        let metadata = std::fs::symlink_metadata(path)?;
++        if !metadata.file_type().is_file() {
++            return Err(std::io::Error::other(format!(
++                "TPROXY kernel parameter is not a regular file: {path}"
++            )));
++        }
++        let actual = std::fs::read_to_string(path)?;
++        if actual.trim() != *expected {
++            return Err(std::io::Error::other(format!(
++                "TPROXY kernel parameter mismatched: {path}"
++            )));
++        }
++    }
++    Ok(())
++}
++
++fn ensure_tproxy_kernel_parameters() -> Result<()> {
++    let tun_iface = crate::tun_device::TUN_IFACE;
++    let parameters = [
++        ("/proc/sys/net/ipv4/ip_forward".to_owned(), "1"),
++        ("/proc/sys/net/ipv4/conf/all/rp_filter".to_owned(), "2"),
++        ("/proc/sys/net/ipv4/conf/default/rp_filter".to_owned(), "2"),
++        (format!("/proc/sys/net/ipv4/conf/{tun_iface}/rp_filter"), "2"),
++    ];
++    check_tproxy_kernel_parameters(&parameters)
++        .context("TPROXY requires KernelNetworking policy without writing sysctl")
++}
++
+ async fn activate_tproxy(runtime_id: u64, port: u16) -> Result<()> {
+     let _guard = POLICY_LOCK.lock().await;
+     cleanup_legacy_proxy_policy().await;
+-    let _ = command_output("sysctl", &["-w", "net.ipv4.ip_forward=1"]).await;
+-    let _ = command_output("sysctl", &["-w", "net.ipv4.conf.all.rp_filter=2"]).await;
+-    let _ = command_output("sysctl", &["-w", "net.ipv4.conf.default.rp_filter=2"]).await;
+-    let _ = command_output("sysctl", &["-w", "net.ipv4.conf.csqtt-core0.rp_filter=2"]).await;
++    // The dataplane's KernelNetworking owner is the sole writer/restorer of
++    // these parameters. Do not create a second untracked TPROXY sysctl owner.
++    ensure_tproxy_kernel_parameters()?;
+     add_tproxy_shared_rules().await?;
+     add_tproxy_rules(port).await?;
+     let _ = command_output("ip", &["route", "flush", "cache"]).await;
+@@ -1098,46 +1095,6 @@
+         assert!(validate_config(&value).is_err());
+     }
+ 
+-    #[tokio::test]
+-    async fn socks5_udp_associate_loopback_roundtrip() {
+-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+-        use tokio::net::{TcpListener, UdpSocket};
+-        use std::net::{Ipv4Addr, SocketAddr};
+-        let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
+-        let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+-        let proxy_addr = tcp.local_addr().unwrap();
+-        let relay_addr = udp.local_addr().unwrap();
+-        let server = tokio::spawn(async move {
+-            let (mut control, _) = tcp.accept().await.unwrap();
+-            let mut hello = [0;3]; control.read_exact(&mut hello).await.unwrap();
+-            assert_eq!(hello, [5,1,0]);
+-            control.write_all(&[5,0]).await.unwrap();
+-            let mut request = [0;10]; control.read_exact(&mut request).await.unwrap();
+-            assert_eq!(&request[..4], &[5,3,0,1]);
+-            let mut reply = vec![5,0,0];
+-            super::append_socks_address(&mut reply, relay_addr);
+-            control.write_all(&reply).await.unwrap();
+-            let mut buffer = [0u8;256];
+-            let (len, client) = udp.recv_from(&mut buffer).await.unwrap();
+-            assert_eq!(&buffer[..4], &[0,0,0,1]);
+-            assert_eq!(&buffer[10..len], b"loopback-datagram");
+-            udp.send_to(&buffer[..len], client).await.unwrap();
+-        });
+-        let mut config = config(); config.port = proxy_addr.port();
+-        let (_control, relay) = super::socks_command(&config, 3, SocketAddr::from((Ipv4Addr::UNSPECIFIED,0))).await.unwrap();
+-        assert_eq!(relay, relay_addr);
+-        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+-        let mut packet = vec![0,0,0,1,127,0,0,1,0,53];
+-        packet.extend_from_slice(b"loopback-datagram");
+-        client.send_to(&packet,relay).await.unwrap();
+-        let mut response=[0u8;256];
+-        let (len,_) = tokio::time::timeout(std::time::Duration::from_secs(3),client.recv_from(&mut response)).await.unwrap().unwrap();
+-        let (source,payload)=super::socks_udp_response(&response[..len]).unwrap();
+-        assert_eq!(source, "127.0.0.1:53".parse().unwrap());
+-        assert_eq!(payload,b"loopback-datagram");
+-        server.await.unwrap();
+-    }
+-
+     #[test]
+     fn parses_socks5_udp_ipv4_response() {
+         let mut packet = vec![0, 0, 0, 1, 1, 1, 1, 1, 0, 53];
+--- a/rust-server/tokio_io.rs
++++ b/rust-server/tokio_io.rs
+@@ -1098,9 +1098,63 @@
+     ("/proc/sys/net/ipv4/tcp_slow_start_after_idle", "0"),
+ ];
+ 
+-fn set_kernel_parameter(path: &str, value: &str) {
++// Record only kernel parameters this instance actually changes.
++struct SavedKernelParameter {
++    path: String,
++    previous: String,
++    expected: String,
++}
++
++fn kernel_parameter_is_regular(path: &str) -> bool {
++    std::fs::symlink_metadata(path)
++        .map(|metadata| metadata.file_type().is_file())
++        .unwrap_or(false)
++}
++
++fn set_kernel_parameter(path: &str, value: &str) -> Option<SavedKernelParameter> {
++    if !kernel_parameter_is_regular(path) {
++        eprintln!("[NET] refusing non-regular or missing sysctl {path}");
++        return None;
++    }
++    let previous = match std::fs::read_to_string(path) {
++        Ok(content) => content.trim().to_string(),
++        Err(error) => {
++            eprintln!("[NET] cannot snapshot {path}: {error}");
++            return None;
++        }
++    };
++    if previous == value {
++        return None; // Never restore a value this process did not change.
++    }
+     if let Err(error) = std::fs::write(path, value) {
+         eprintln!("[NET] {path} = {value} failed: {error}");
++        return None;
++    }
++    Some(SavedKernelParameter {
++        path: path.to_string(),
++        previous,
++        expected: value.to_string(),
++    })
++}
++
++fn restore_kernel_parameter(saved: &SavedKernelParameter) {
++    if !kernel_parameter_is_regular(&saved.path) {
++        eprintln!("[NET] restore skipped for missing/non-regular {}", saved.path);
++        return;
++    }
++    match std::fs::read_to_string(&saved.path) {
++        Ok(current) if current.trim() == saved.expected => {
++            if let Err(error) = std::fs::write(&saved.path, &saved.previous) {
++                eprintln!("[NET] restore {} failed: {error}", saved.path);
++            }
++        }
++        Ok(current) => {
++            eprintln!(
++                "[NET] restore skipped for externally modified {} (current={})",
++                saved.path, current.trim()
++            );
++        }
++        Err(error) => eprintln!("[NET] read before restore {} failed: {error}", saved.path),
+     }
+ }
+ 
+@@ -1287,6 +1341,7 @@
+ 
+ struct KernelNetworking {
+     rules: Vec<FirewallRule>,
++    changed_parameters: Vec<SavedKernelParameter>,
+ }
+ 
+ impl KernelNetworking {
+@@ -1294,13 +1349,18 @@
+         let _ = std::process::Command::new("modprobe")
+             .arg("tcp_bbr")
+             .output();
++        let mut changed_parameters = Vec::new();
+         for (path, value) in KERNEL_PARAMETERS {
+-            set_kernel_parameter(path, value);
+-        }
+-        set_kernel_parameter(
++            if let Some(saved) = set_kernel_parameter(path, value) {
++                changed_parameters.push(saved);
++            }
++        }
++        if let Some(saved) = set_kernel_parameter(
+             &format!("/proc/sys/net/ipv4/conf/{tun_iface}/rp_filter"),
+             "2",
+-        );
++        ) {
++            changed_parameters.push(saved);
++        }
+         purge_legacy_mss_clamp();
+         let rules = managed_firewall_rules(tun_iface);
+         for rule in &rules {
+@@ -1308,7 +1368,7 @@
+                 eprintln!("[NET] {error:#}");
+             }
+         }
+-        Self { rules }
++        Self { rules, changed_parameters }
+     }
+ }
+ 
+@@ -1316,6 +1376,9 @@
+     fn drop(&mut self) {
+         for rule in &self.rules {
+             rule.remove();
++        }
++        for saved in self.changed_parameters.iter().rev() {
++            restore_kernel_parameter(saved);
+         }
+     }
+ }
+--- a/rust-server/tproxy.rs
++++ b/rust-server/tproxy.rs
+@@ -1625,10 +1625,9 @@
+         let _ = control_socket.set_send_buffer_size(UDP_ASSOCIATION_CONTROL_BUFFER);
+         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
+             .context("open SOCKS5 UDP relay socket")?;
+-        // SOCKS5 relay sockets must never reuse the transparent TPROXY listener
+-        // port. SO_REUSEADDR on both sockets lets Linux allocate that port to an
+-        // ephemeral relay socket and divert intercepted UDP datagrams.
+-        // Keep SO_REUSEADDR disabled on the ephemeral relay socket.
++        socket
++            .set_reuse_address(true)
++            .context("enable SO_REUSEADDR on SOCKS5 UDP relay socket")?;
+         let _ = socket.set_recv_buffer_size(UDP_RELAY_SOCKET_BUFFER);
+         let _ = socket.set_send_buffer_size(UDP_RELAY_SOCKET_BUFFER);
+         socket
+@@ -1678,14 +1677,6 @@
+                 result = tx.send(association) => { let _ = result; }
+             }
+         });
+-    }
+-
+-    fn trace_lab_udp(event: &str, payload: &[u8]) {
+-        if let Some(marker) = payload.strip_prefix(b"REC_UDP_") {
+-            if marker.iter().all(u8::is_ascii_digit) {
+-                eprintln!("UDP_PACKET_TRACE event={event} id=REC_UDP_{}", String::from_utf8_lossy(marker));
+-            }
+-        }
+     }
+ 
+     fn send_frame(flow: &UdpFlow, destination: SocketAddrV4, payload: &[u8]) -> io::Result<()> {
+@@ -1878,21 +1869,6 @@
+             now_ms().saturating_sub(self.last_seen.load(Ordering::Relaxed))
+                 > super::UDP_FLOW_IDLE.as_millis() as i64
+         }
+-    }
+-
+-    // Each SOCKS5 UDP flow holds a TCP control connection and UDP relay socket.
+-    // Keep headroom for TCP sessions, listeners, DNS, and transient openings.
+-    // A low RLIMIT_NOFILE must not be interpreted as permission to open
+-    // thousands of UDP associations just because the configured flow cap allows it.
+-    fn udp_fd_flow_budget() -> usize {
+-        let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+-        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {
+-            return 128;
+-        }
+-        let soft = limit.rlim_cur.min(usize::MAX as libc::rlim_t) as usize;
+-        // Two descriptors per flow plus an equally large reserve for TCP and
+-        // in-flight association establishment; reserve 128 for fixed overhead.
+-        soft.saturating_sub(128).saturating_div(4).max(1).min(super::MAX_UDP_FLOW_LIMIT)
+     }
+ 
+     fn acquire_udp_quota(
+@@ -2144,7 +2120,6 @@
+                                 let payload = unsafe {
+                                     std::slice::from_raw_parts(buf.as_ptr() as *const u8, received)
+                                 };
+-                                trace_lab_udp("INGRESS", payload);
+                                 let key = SocketAddr::V4(client);
+                                 let existing_ok = flows
+                                     .get(&key)
+@@ -2153,7 +2128,6 @@
+                                 if existing_ok {
+                                     let flow = &flows[&key];
+                                     flow.touch();
+-                                    trace_lab_udp("EXISTING_FLOW", payload);
+                                     if let Err(error) = send_frame(flow, destination, payload) {
+                                         stats.udp_send_failed(error);
+                                     }
+@@ -2164,35 +2138,16 @@
+                                     stats.udp_finished();
+                                 }
+                                 if let Some(queue) = opening.get_mut(&key) {
+-                                    trace_lab_udp("OPENING_QUEUED", payload);
+-                                    if !queue.push(destination, payload, &opening_buffers) {
+-                                        trace_lab_udp("OPENING_QUEUE_REJECTED", payload);
+-                                    }
++                                    queue.push(destination, payload, &opening_buffers);
+                                     continue;
+                                 }
+                                 if let Some((at, _error)) = &association_failure {
+                                     if at.elapsed() < ASSOCIATION_BACKOFF {
+-                                        trace_lab_udp("ASSOCIATION_BACKOFF_DROP", payload);
+                                         continue;
+                                     }
+                                     association_failure = None;
+                                 }
+-                                // Evict the oldest UDP association *before* opening
+-                                // another SOCKS5 control/relay pair. This prevents
+-                                // EMFILE even when the quota's flow ceiling is higher
+-                                // than the process file-descriptor allowance.
+-                                let fd_budget = udp_fd_flow_budget();
+-                                while flows.len() + opening.len() >= fd_budget {
+-                                    if !evict_oldest_udp_flow(&mut flows, &stats) {
+-                                        break;
+-                                    }
+-                                }
+-                                if flows.len() + opening.len() >= fd_budget {
+-                                    stats.udp_budget_rejected();
+-                                    continue;
+-                                }
+                                 if opening.len() >= MAX_CONCURRENT_OPENINGS {
+-                                    trace_lab_udp("OPENINGS_LIMIT_DROP", payload);
+                                     continue;
+                                 }
+                                 if let Some(association) = pool.pop_front() {
+@@ -2214,7 +2169,6 @@
+                                         &mut response_tasks,
+                                     );
+                                     served += 1;
+-                                    trace_lab_udp("POOLED_FLOW", payload);
+                                     if let Err(error) = send_frame(&flow, destination, payload) {
+                                         stats.udp_send_failed(error);
+                                     }
+@@ -2238,10 +2192,7 @@
+                                         }
+                                     });
+                                     let mut queue = OpeningQueue::default();
+-                                    trace_lab_udp("NEW_OPENING", payload);
+-                                    if !queue.push(destination, payload, &opening_buffers) {
+-                                        trace_lab_udp("NEW_OPENING_QUEUE_REJECTED", payload);
+-                                    }
++                                    queue.push(destination, payload, &opening_buffers);
+                                     opening.insert(key, queue);
+                                 }
+                                 while pool.len() + refills_in_flight < ASSOCIATION_POOL_TARGET {
+@@ -2409,275 +2360,6 @@
+         );
+     }
+ 
+-    #[cfg(target_os = "linux")]
+-    #[tokio::test]
+-    #[ignore = "requires isolated ARM64 VM, root, netns, iptables TPROXY and a SOCKS5 UDP relay on 127.0.0.1:47996"]
+-    async fn privileged_arm64_tproxy_socks_udp() {
+-        use std::sync::Arc;
+-        use std::time::Duration;
+-        use crate::model::LocalProxyProfile;
+-        use tokio_util::sync::CancellationToken;
+-        let config = Arc::new(LocalProxyProfile {
+-            id: "privileged-lab".into(), name: "isolated-lab".into(), port: 47996,
+-            username: String::new(), password: String::new(),
+-        });
+-        let sockets = super::bind_sockets(47997).expect("bind real TPROXY listeners");
+-        let cancel = CancellationToken::new();
+-        let stats = Arc::new(TproxyStats::default());
+-        let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
+-        let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
+-        tokio::time::sleep(Duration::from_secs(4)).await;
+-        assert!(stats.snapshot().udp_total > 0, "real TPROXY UDP datagram was not forwarded");
+-        cancel.cancel();
+-        let counts = tokio::time::timeout(Duration::from_secs(8), task).await.expect("TPROXY task stopped").unwrap();
+-        assert!(counts.2 > 0, "real UDP datagram count is zero");
+-    }
+-
+-    #[cfg(target_os = "linux")]
+-    #[tokio::test]
+-    #[ignore = "requires isolated ARM64 VM, root, netns, TPROXY and externally controlled SOCKS5 relay"]
+-    async fn privileged_arm64_tproxy_socks_recovery() {
+-        use std::sync::Arc;
+-        use std::time::Duration;
+-        use crate::model::LocalProxyProfile;
+-        use tokio_util::sync::CancellationToken;
+-        let config = Arc::new(LocalProxyProfile {
+-            id: "recovery-lab".into(), name: "isolated-recovery".into(), port: 47996,
+-            username: String::new(), password: String::new(),
+-        });
+-        let sockets = super::bind_sockets(47997).expect("bind real TPROXY listeners");
+-        let cancel = CancellationToken::new();
+-        let stats = Arc::new(TproxyStats::default());
+-        let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
+-        let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
+-        tokio::time::sleep(Duration::from_secs(18)).await;
+-        let total = stats.snapshot().udp_total;
+-        println!("RECOVERY_UDP_TOTAL={total}");
+-        cancel.cancel();
+-        let counts = tokio::time::timeout(Duration::from_secs(8), task).await.expect("TPROXY task stopped").unwrap();
+-        assert!(total >= 2 && counts.2 >= 2, "expected UDP datagrams before and after SOCKS5 restart");
+-    }
+-
+-    #[cfg(target_os = "linux")]
+-    #[tokio::test]
+-    #[ignore = "requires isolated ARM64 VM, root, netns, TPROXY and externally controlled SOCKS5 relay"]
+-    async fn privileged_arm64_tproxy_socks_continuous_flow() {
+-        use std::sync::Arc;
+-        use std::time::Duration;
+-        use crate::model::LocalProxyProfile;
+-        use tokio_util::sync::CancellationToken;
+-        let config = Arc::new(LocalProxyProfile {
+-            id: "recovery-lab".into(), name: "isolated-recovery".into(), port: 47996,
+-            username: String::new(), password: String::new(),
+-        });
+-        let sockets = super::bind_sockets(47997).expect("bind real TPROXY listeners");
+-        let cancel = CancellationToken::new();
+-        let stats = Arc::new(TproxyStats::default());
+-        let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
+-        let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
+-        tokio::time::sleep(Duration::from_secs(11)).await;
+-        let total = stats.snapshot().udp_total;
+-        println!("RECOVERY_UDP_TOTAL={total}");
+-        cancel.cancel();
+-        let counts = tokio::time::timeout(Duration::from_secs(8), task).await.expect("TPROXY task stopped").unwrap();
+-        assert!(total >= 1 && counts.2 >= 3, "expected three UDP datagrams on one client flow across SOCKS5 restart");
+-    }
+-
+-    #[cfg(target_os = "linux")]
+-    #[tokio::test]
+-    #[ignore = "requires isolated ARM64 VM, root, TCP TPROXY netns and SOCKS5 relay on 127.0.0.1:47996"]
+-    async fn privileged_arm64_tproxy_socks_tcp_recovery() {
+-        use std::sync::Arc;
+-        use std::time::Duration;
+-        use crate::model::LocalProxyProfile;
+-        use tokio_util::sync::CancellationToken;
+-        let config = Arc::new(LocalProxyProfile {
+-            id: "tcp-recovery-lab".into(), name: "isolated-tcp".into(), port: 47996,
+-            username: String::new(), password: String::new(),
+-        });
+-        let sockets = super::bind_sockets(47997).expect("bind real TPROXY listeners");
+-        let cancel = CancellationToken::new();
+-        let stats = Arc::new(TproxyStats::default());
+-        let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
+-        let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
+-        tokio::time::sleep(Duration::from_secs(13)).await;
+-        let total = stats.snapshot().tcp_total;
+-        println!("TCP_RECOVERY_TOTAL={total}");
+-        cancel.cancel();
+-        let counts = tokio::time::timeout(Duration::from_secs(8), task).await.expect("TPROXY task stopped").unwrap();
+-        assert!(total >= 3 && counts.0 >= 3, "expected TCP attempts before, during and after SOCKS5 restart");
+-    }
+-
+-    #[test]
+-    fn concurrent_tcp_udp_admission_limits_and_release() {
+-        use std::net::Ipv4Addr;
+-        use std::sync::{Arc, Barrier};
+-        let registry = DeviceQuotaRegistry::new();
+-        let ip = Ipv4Addr::new(10, 67, 69, 55);
+-        registry.activate_tunnel_ip(ip);
+-        let barrier = Arc::new(Barrier::new(3));
+-        let tcp_registry = registry.clone();
+-        let tcp_barrier = barrier.clone();
+-        let tcp = std::thread::spawn(move || {
+-            let mut leases = Vec::new();
+-            for _ in 0..600 {
+-                if let Ok(lease) = tcp_registry.try_acquire_tcp(ip) { leases.push(lease); }
+-            }
+-            let count = leases.len();
+-            tcp_barrier.wait();
+-            tcp_barrier.wait();
+-            drop(leases);
+-            count
+-        });
+-        let udp_registry = registry.clone();
+-        let udp_barrier = barrier.clone();
+-        let udp = std::thread::spawn(move || {
+-            let mut leases = Vec::new();
+-            for _ in 0..1100 {
+-                if let Ok(lease) = udp_registry.try_acquire_udp(ip) { leases.push(lease); }
+-            }
+-            let count = leases.len();
+-            udp_barrier.wait();
+-            udp_barrier.wait();
+-            drop(leases);
+-            count
+-        });
+-        barrier.wait();
+-        {
+-            let state = registry.admission.lock().unwrap();
+-            assert_eq!(state.tcp_active, super::GLOBAL_TCP_SESSION_LIMIT);
+-            assert_eq!(state.udp_active, super::GLOBAL_UDP_FLOW_LIMIT);
+-        }
+-        assert!(registry.try_acquire_tcp(ip).is_err(), "TCP limit must reject");
+-        assert!(registry.try_acquire_udp(ip).is_err(), "UDP limit must reject");
+-        barrier.wait();
+-        assert_eq!(tcp.join().unwrap(), super::GLOBAL_TCP_SESSION_LIMIT);
+-        assert_eq!(udp.join().unwrap(), super::GLOBAL_UDP_FLOW_LIMIT);
+-        {
+-            let state = registry.admission.lock().unwrap();
+-            assert_eq!((state.tcp_active, state.udp_active), (0, 0));
+-        }
+-        let tcp_again = registry.try_acquire_tcp(ip).expect("TCP capacity released");
+-        let udp_again = registry.try_acquire_udp(ip).expect("UDP capacity released");
+-        drop((tcp_again, udp_again));
+-    }
+-
+-    #[cfg(target_os = "linux")]
+-    #[tokio::test]
+-    #[ignore = "requires isolated ARM64 VM, TCP+UDP TPROXY netns and combined SOCKS5 relay"]
+-    async fn privileged_arm64_mixed_tcp_udp_network() {
+-        use std::sync::Arc;
+-        use std::time::Duration;
+-        use crate::model::LocalProxyProfile;
+-        use tokio_util::sync::CancellationToken;
+-        let config = Arc::new(LocalProxyProfile {
+-            id: "mixed-network-lab".into(), name: "isolated-mixed".into(), port: 47996,
+-            username: String::new(), password: String::new(),
+-        });
+-        let sockets = super::bind_sockets(47997).expect("bind real TPROXY listeners");
+-        let cancel = CancellationToken::new();
+-        let stats = Arc::new(TproxyStats::default());
+-        let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
+-        let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
+-        tokio::time::sleep(Duration::from_secs(9)).await;
+-        let snapshot = stats.snapshot();
+-        println!("MIXED_NETWORK_TCP={} UDP={}", snapshot.tcp_total, snapshot.udp_total);
+-        cancel.cancel();
+-        let counts = tokio::time::timeout(Duration::from_secs(8), task).await.expect("TPROXY task stopped").unwrap();
+-        assert!(counts.0 >= 8 && counts.2 >= 8, "expected simultaneous real TCP and UDP flows");
+-    }
+-
+-    #[test]
+-    fn capacity_pressure_expansion_is_bounded_and_resettable() {
+-        let registry = DeviceQuotaRegistry::new();
+-        assert_eq!(registry.limits(), (384, 784));
+-        assert!(registry.try_expand_capacity());
+-        assert_eq!(registry.limits(), (1512, 2048));
+-        assert!(!registry.try_expand_capacity(), "no expansion without sufficient memory");
+-        assert_eq!(registry.limits(), (1512, 2048));
+-        assert_eq!(super::ProxyCapacity::next_limits(registry.limits(), Some(511 * 1024 * 1024)), (1512, 2048));
+-        assert_eq!(super::ProxyCapacity::next_limits(registry.limits(), Some(512 * 1024 * 1024)), (1784, 2384));
+-        assert_eq!(super::ProxyCapacity::next_limits(registry.limits(), Some(1200 * 1024 * 1024)), (2384, 4096));
+-        assert_eq!(super::ProxyCapacity::next_limits((2384, 4096), Some(2048 * 1024 * 1024)), (2384, 4096));
+-        registry.reset_capacity();
+-        assert_eq!(registry.limits(), (384, 784));
+-    }
+-
+-    #[test]
+-    fn sustained_mixed_quota_churn_releases_all_resources() {
+-        use std::net::Ipv4Addr;
+-        use std::sync::{Arc, Barrier};
+-        let registry = DeviceQuotaRegistry::new();
+-        let ips = [Ipv4Addr::new(10,67,69,51), Ipv4Addr::new(10,67,69,52), Ipv4Addr::new(10,67,69,53), Ipv4Addr::new(10,67,69,54)];
+-        for ip in ips { registry.activate_tunnel_ip(ip); }
+-        let start = Arc::new(Barrier::new(9));
+-        let mut workers = Vec::new();
+-        for worker in 0..8 {
+-            let reg = registry.clone();
+-            let barrier = start.clone();
+-            workers.push(std::thread::spawn(move || {
+-                let ip = ips[worker % ips.len()];
+-                barrier.wait();
+-                for round in 0..3000 {
+-                    let tcp = reg.try_acquire_tcp(ip);
+-                    let udp = reg.try_acquire_udp(ip);
+-                    assert!(tcp.is_ok() && udp.is_ok(), "short lived capacity must be reusable");
+-                    if round % 17 == 0 { std::thread::yield_now(); }
+-                    drop((tcp,udp));
+-                }
+-            }));
+-        }
+-        start.wait();
+-        for worker in workers { worker.join().unwrap(); }
+-        let state = registry.admission.lock().unwrap();
+-        assert_eq!(state.tcp_active, 0);
+-        assert_eq!(state.udp_active, 0);
+-        drop(state);
+-        assert!(registry.tcp_evictions.lock().unwrap().is_empty());
+-    }
+-
+-    #[cfg(target_os = "linux")]
+-    #[tokio::test]
+-    #[ignore = "isolated ARM64 VM only: requires privileged TCP+UDP TPROXY and local SOCKS5 relay; configurable-duration soak"]
+-    async fn privileged_arm64_mixed_tcp_udp_soak() {
+-        use std::sync::Arc;
+-        use std::time::Duration;
+-        use crate::model::LocalProxyProfile;
+-        use tokio_util::sync::CancellationToken;
+-        let config = Arc::new(LocalProxyProfile {
+-            id: "soak-lab".into(), name: "isolated-soak".into(), port: 47996,
+-            username: String::new(), password: String::new(),
+-        });
+-        let _ = std::fs::remove_file("/tmp/csqtt-soak-client.verdict");
+-        let sockets = super::bind_sockets(47997).expect("bind real TPROXY listeners");
+-        let cancel = CancellationToken::new();
+-        let stats = Arc::new(TproxyStats::default());
+-        let log: crate::proxy_route::LogFn = Arc::new(|level, message| println!("TPROXY {level}: {message}"));
+-        let task = tokio::spawn(super::run(sockets, config, cancel.clone(), log, stats.clone(), DeviceQuotaRegistry::new()));
+-        // Capture UDP association pressure every second to correlate short loss bursts.
+-        let soak_seconds: u64 = std::env::var("CSQTT_SOAK_SECONDS")
+-            .ok().and_then(|value| value.parse().ok()).unwrap_or(480);
+-        assert!((480..=3600).contains(&soak_seconds), "isolated soak duration must be 480..=3600 seconds");
+-        println!("SOAK_CONFIG seconds={soak_seconds}");
+-        for second in 1..=soak_seconds {
+-            tokio::time::sleep(Duration::from_secs(1)).await;
+-            let sample = stats.snapshot();
+-            println!("SOAK_SAMPLE second={} tcp_active={} udp_active={} udp_peak={} udp_total={} udp_budget_rejects={} tcp_budget_rejects={}",
+-                second, sample.tcp_active, sample.udp_active, sample.udp_peak,
+-                sample.udp_total, sample.udp_budget_rejects, sample.tcp_budget_rejects);
+-        }
+-        let snapshot = stats.snapshot();
+-        println!("SOAK_NETWORK_TCP={} UDP={} UDP_PEAK={} UDP_ACTIVE={} UDP_BUDGET_REJECTS={} TCP_BUDGET_REJECTS={}",
+-            snapshot.tcp_total, snapshot.udp_total, snapshot.udp_peak,
+-            snapshot.udp_active, snapshot.udp_budget_rejects, snapshot.tcp_budget_rejects);
+-        cancel.cancel();
+-        let counts = tokio::time::timeout(Duration::from_secs(10), task).await.expect("TPROXY task stopped").unwrap();
+-        assert!(counts.0 >= 500 && counts.2 >= 500, "expected sustained real TCP and UDP flows");
+-        let verdict = std::fs::read_to_string("/tmp/csqtt-soak-client.verdict")
+-            .expect("client must write independent success/failure verdict");
+-        assert_eq!(verdict.trim(), "PASS", "real network client reported failed requests");
+-    }
+-
+     #[test]
+     fn ports_are_unique_per_runtime_and_in_range() {
+         let first = tproxy_port(1);
+--- a/rust-server/tun_device.rs
++++ b/rust-server/tun_device.rs
+@@ -4,7 +4,7 @@
+ 
+ pub const TUN_IFACE: &str = "csqtt-core0";
+ pub const TUN_SUBNET: &str = "10.67.69.0/24";
+-const SUBNET_PREFIX: [u8; 3] = [10, 67, 69];
++const SUBNET_PREFIX: [u8; 3] = [10, 66, 67];
+ 
+ pub type SessionId = u64;
+ pub type RegistrationId = u64;
+@@ -472,7 +472,7 @@
+     use super::*;
+ 
+     fn ip(last: u8) -> [u8; 4] {
+-        [10, 67, 69, last]
++        [10, 66, 67, last]
+     }
+ 
+     #[test]
+@@ -547,7 +547,7 @@
+         pkt[2..4].copy_from_slice(&(len as u16).to_be_bytes());
+         pkt[9] = 6;
+         pkt[12..16].copy_from_slice(&[140, 82, 121, 4]);
+-        pkt[16..20].copy_from_slice(&[10, 67, 69, 2]);
++        pkt[16..20].copy_from_slice(&[10, 66, 67, 2]);
+         pkt[20..22].copy_from_slice(&80u16.to_be_bytes());
+         pkt[22..24].copy_from_slice(&sport.to_be_bytes());
+         pkt
+@@ -559,7 +559,7 @@
+         pkt[2..4].copy_from_slice(&(len as u16).to_be_bytes());
+         pkt[9] = 17;
+         pkt[12..16].copy_from_slice(&[155, 133, 240, 10]);
+-        pkt[16..20].copy_from_slice(&[10, 67, 69, 2]);
++        pkt[16..20].copy_from_slice(&[10, 66, 67, 2]);
+         pkt[20..22].copy_from_slice(&27015u16.to_be_bytes());
+         pkt[22..24].copy_from_slice(&sport.to_be_bytes());
+         pkt
+@@ -633,7 +633,7 @@
+         let mut pkt4 = [0u8; 20];
+         pkt4[0] = 0x45;
+         pkt4[2..4].copy_from_slice(&20u16.to_be_bytes());
+-        pkt4[16..20].copy_from_slice(&[10, 67, 69, 5]);
++        pkt4[16..20].copy_from_slice(&[10, 66, 67, 5]);
+         assert_eq!(RouteTable::packet_key(&pkt4), Some(5));
+ 
+         let mut pkt6 = [0u8; 40];
+@@ -709,7 +709,7 @@
+                         pkt[0] = 0x45;
+                         pkt[9] = 6;
+                         pkt[12..16].copy_from_slice(&[185, 220, 100, 50]);
+-                        pkt[16..20].copy_from_slice(&[10, 67, 69, 2]);
++                        pkt[16..20].copy_from_slice(&[10, 66, 67, 2]);
+                         pkt[20..22].copy_from_slice(&443u16.to_be_bytes());
+                         pkt[22..24].copy_from_slice(&54321u16.to_be_bytes());
+                         pkt[24..28].copy_from_slice(&cs64_seq.to_be_bytes());
+@@ -731,7 +731,7 @@
+                         pkt[0] = 0x45;
+                         pkt[9] = 17;
+                         pkt[12..16].copy_from_slice(&[155, 133, 240, 10]);
+-                        pkt[16..20].copy_from_slice(&[10, 67, 69, 2]);
++                        pkt[16..20].copy_from_slice(&[10, 66, 67, 2]);
+                         pkt[20..22].copy_from_slice(&27015u16.to_be_bytes());
+                         pkt[22..24].copy_from_slice(&27015u16.to_be_bytes());
+                         pkt[28..32].copy_from_slice(&cs128_seq.to_be_bytes());
+@@ -751,7 +751,7 @@
+                     bulk_pkt[0] = 0x45;
+                     bulk_pkt[9] = 6;
+                     bulk_pkt[12..16].copy_from_slice(&[140, 82, 121, 4]);
+-                    bulk_pkt[16..20].copy_from_slice(&[10, 67, 69, 2]);
++                    bulk_pkt[16..20].copy_from_slice(&[10, 66, 67, 2]);
+                     bulk_pkt[20..22].copy_from_slice(&80u16.to_be_bytes());
+                     bulk_pkt[22..24].copy_from_slice(&49152u16.to_be_bytes());
+                     bulk_pkt[24..28].copy_from_slice(&bulk_seq.to_be_bytes());

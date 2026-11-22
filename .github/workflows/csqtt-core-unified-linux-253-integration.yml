@@ -1,0 +1,169 @@
+name: CSQTT Core unified Linux ARM64 2.5.0 + selective 2.5.3
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/derive-csqtt-core-unified-linux-253.py
+      - adapt/csqtt-core8-existing-source-preservation.patch
+      - adapt/patch-csqtt-core8-linux-runtime-isolation.py
+      - adapt/patch-csqttr-253-selective-core8.py
+      - adapt/singbox_manager_linux.go
+      - adapt/singbox_transaction_linux.go
+      - adapt/singbox_transaction_linux_test.go
+      - adapt/singbox_manager_rollback_linux_test.go
+      - server-assets/deploy-csqtt-core-250.sh
+      - adapt/derive-csqtt-core-deploy-250.py
+      - .github/workflows/csqtt-core-unified-linux-253-integration.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pinned-sources-deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout exact original CSQTT 2.5.0 source
+        uses: actions/checkout@v4
+        with:
+          repository: Afteroid/csqttr
+          ref: fd936ef087c34cc46f26111dc2361f43b8b03c07
+          path: original-250
+          persist-credentials: false
+      - name: Reconstruct audited Linux Core8 server and panel
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C original-250 rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
+          python3 -B adapt/derive-csqtt-core-unified-linux-253.py --upstream-root original-250 --output "$RUNNER_TEMP/csqtt-core-unified"
+          test -f "$RUNNER_TEMP/csqtt-core-unified/rust-server/csqtt-core-panel.html"
+          grep -Fq 'default_value = "0.0.0.0:47000"' "$RUNNER_TEMP/csqtt-core-unified/rust-server/main.rs"
+          grep -Fq '.args(["--no-block", "restart", "csqtt-core"])' "$RUNNER_TEMP/csqtt-core-unified/rust-server/main.rs"
+          grep -Fq 'if port == 0 { 47000 } else { port }' "$RUNNER_TEMP/csqtt-core-unified/rust-server/web_panel.rs"
+          ! grep -Fq 'command.args([action, "csqtt"])' "$RUNNER_TEMP/csqtt-core-unified/rust-server/main.rs"
+          echo CSQTT_CORE_UNIFIED_253_PINNED_SOURCE_AND_UNIT_ISOLATION_PASS
+      - name: Regenerate and test read-only Deploy with rollback and ownership guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B adapt/test-csqttr-253-selective-patch-offline.py
+          python3 -B adapt/derive-csqtt-core-deploy-250.py --upstream-root original-250
+          git diff --exit-code -- server-assets/deploy-csqtt-core-250.sh
+          bash -n server-assets/deploy-csqtt-core-250.sh
+          python3 -B adapt/test-csqttr-253-selective-deploy-ports-offline.py
+          python3 -B adapt/test-csqttr-253-core-deploy-inventory-offline.py
+          echo CSQTT_CORE_UNIFIED_253_DEPLOY_REGEN_INVENTORY_PORTS_PASS
+  linux-singbox-socks5:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.10'
+      - name: Original Linux Sing-box and SOCKS5 unit and crash tests with race detector
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > adapt/zz_unified_fixture_linux_test.go <<'GO'
+          //go:build linux
+          package main
+          import ("strings";"testing";"time";"syscall")
+          func shellQuoteForTest(value string) string {
+            return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+          }
+          func waitProcessGone(t *testing.T,pid int) {
+            t.Helper()
+            deadline:=time.Now().Add(3*time.Second)
+            for time.Now().Before(deadline) {
+              err:=syscall.Kill(pid,0)
+              if err==syscall.ESRCH || (err!=nil && err!=syscall.EPERM) {return}
+              time.Sleep(20*time.Millisecond)
+            }
+            t.Fatalf("process %d still alive",pid)
+          }
+          GO
+          trap 'rm -f adapt/zz_unified_fixture_linux_test.go' EXIT
+          cd adapt
+          GO111MODULE=off GOTOOLCHAIN=local go test -race -count=1 -timeout=150s singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go csqtt_core_socks5_linux.go singbox_config_linux_test.go singbox_manager_linux_test.go csqtt_core_socks5_linux_test.go singbox_manager_rollback_linux_test.go singbox_transaction_linux_test.go zz_unified_fixture_linux_test.go
+          GO111MODULE=off GOTOOLCHAIN=local go test -count=1 -timeout=150s singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go csqtt_core_socks5_linux.go singbox_config_linux_test.go singbox_manager_linux_test.go csqtt_core_socks5_linux_test.go singbox_manager_rollback_linux_test.go singbox_transaction_linux_test.go zz_unified_fixture_linux_test.go
+          echo CSQTT_CORE_UNIFIED_253_LINUX_SINGBOX_SOCKS5_RACE_PASS
+      - name: Cross-compile Sing-box crash recovery tests for linux arm64
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd adapt
+          GO111MODULE=off GOTOOLCHAIN=local GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go test -c -o "$RUNNER_TEMP/csqtt-linux-arm64-singbox-tests" singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go singbox_manager_rollback_linux_test.go singbox_transaction_linux_test.go
+          file "$RUNNER_TEMP/csqtt-linux-arm64-singbox-tests" | grep -F 'ARM aarch64'
+          echo CSQTT_CORE_UNIFIED_253_GO_ARM64_BUILD_PASS
+  native-core8-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned 2.5.0 source without Android build
+        uses: actions/checkout@v4
+        with:
+          repository: Afteroid/csqttr
+          ref: fd936ef087c34cc46f26111dc2361f43b8b03c07
+          path: original-250
+          persist-credentials: false
+      - name: Install Rust 1.97.1 for native ARM64
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          targets: aarch64-unknown-linux-gnu
+      - name: Reconstruct exact reviewed Core8 source including old Linux fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B adapt/derive-csqtt-core-unified-linux-253.py --upstream-root original-250 --output "$RUNNER_TEMP/csqtt-core-unified"
+          python3 -B adapt/test-csqttr-253-selective-tun-native.py --source-root "$RUNNER_TEMP/csqtt-core-unified/rust-server" --rustc "$(command -v rustc)"
+          python3 -B adapt/test-csqttr-253-selective-import-native.py --source-root "$RUNNER_TEMP/csqtt-core-unified/rust-server" --rustc "$(command -v rustc)"
+          echo CSQTT_CORE_UNIFIED_253_REAL_RUST_TUN_UDP_IP_NATIVE_TESTS_PASS
+      - name: Compile full CSQTT-WIRE-3 Core8 binary for Linux ARM64
+        shell: bash
+        env:
+          CARGO_BUILD_JOBS: "2"
+          CARGO_TERM_COLOR: never
+          CARGO_PROFILE_RELEASE_LTO: thin
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "4"
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          cd "$RUNNER_TEMP/csqtt-core-unified/rust-server"
+          cargo +1.97.1 build --locked --release --target aarch64-unknown-linux-gnu --bin csqtt
+          install -m 0755 target/aarch64-unknown-linux-gnu/release/csqtt "$RUNNER_TEMP/csqtt-core8-unified-arm64"
+          file "$RUNNER_TEMP/csqtt-core8-unified-arm64" | grep -F 'ARM aarch64'
+      - name: Read-only ARM64 protocol, private service and default-port checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/csqtt-core8-unified-arm64"
+          test "$("$bin" --protocol-revision)" = "CSQTT-WIRE-3"
+          "$bin" help > "$RUNNER_TEMP/csqtt-core8-help.txt"
+          grep -Fq 'csqtt-core start' "$RUNNER_TEMP/csqtt-core8-help.txt"
+          grep -Fq '0.0.0.0:47000' "$RUNNER_TEMP/csqtt-core8-help.txt"
+          grep -Fq '47002' "$RUNNER_TEMP/csqtt-core8-help.txt"
+          grep -Fq '/etc/csqtt-core' "$RUNNER_TEMP/csqtt-core8-help.txt"
+          ! grep -Eq '46000|46002|/etc/csqtt$' "$RUNNER_TEMP/csqtt-core8-help.txt"
+          echo CSQTT_CORE_UNIFIED_253_ARM64_SAFE_READONLY_CLI_PASS
+      - name: Package experiment-only ARM64 Core8 with SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "$RUNNER_TEMP/csqtt-core8-unified-arm64" dist/csqtt-core8-linux-arm64
+          (cd dist && sha256sum csqtt-core8-linux-arm64 > SHA256SUMS)
+          (cd dist && sha256sum -c SHA256SUMS)
+          printf 'source_commit=%s\nupstream_commit=fd936ef087c34cc46f26111dc2361f43b8b03c07\narchitecture=linux-arm64\nstatus=EXPERIMENTAL-not-deployed\n' "$GITHUB_SHA" > dist/BUILD-INFO.txt
+          cat dist/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csqtt-core-unified-253-core8-arm64-experimental
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+# This CI never installs on NanoPi or mutates systemd, default route, TUN
+# interfaces, firewall policy, credentials or running services.
