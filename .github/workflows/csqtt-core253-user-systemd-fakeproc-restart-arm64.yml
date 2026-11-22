@@ -1,0 +1,38 @@
+name: CSQTT Core253 native ARM64 unprivileged user systemd fake-sysctl restart
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/test-core8-user-systemd-real-restart-fakeproc.py
+      - adapt/core8-private-durable-sysctl-guard.py
+      - .github/workflows/csqtt-core253-user-systemd-fakeproc-restart-arm64.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-user-systemd-fake-proc:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify unprivileged ARM64 disposable runner and user manager availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          test "$(id -u)" -ne 0
+          command -v systemctl
+          command -v systemd-analyze
+          python3 -B -m py_compile adapt/test-core8-user-systemd-real-restart-fakeproc.py
+          echo USER_SYSTEMD_PRECHECK_UNPRIVILEGED_AARCH64
+      - name: Real user systemd restarts synthetic Core8 after SIGKILL and blocks corrupt journal
+        shell: bash
+        env:
+          CSQTT_PRIVATE_USER_SYSTEMD_TEST: "yes"
+        run: |
+          set -euo pipefail
+          python3 -B adapt/test-core8-user-systemd-real-restart-fakeproc.py
+          echo CSQTT_CORE253_USER_SYSTEMD_FAKEPROC_RESTART_AND_FAILCLOSED_PASS
+# Only user-level systemd on disposable GH AArch64. All network/sysctls
+# use regular files under a private /tmp folder. No sudo, no real /proc.
