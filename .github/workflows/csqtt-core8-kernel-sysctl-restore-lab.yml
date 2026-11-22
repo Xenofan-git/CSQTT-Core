@@ -21,6 +21,7 @@ on:
       - adapt/patch-core8-dataplane-timeout-nonzero.py
       - adapt/test-core8-dataplane-timeout-nonzero-offline.py
       - adapt/test-core8-dataplane-timeout-error-chain-offline.py
+      - adapt/test-core8-dataplane-timeout-compiled-offline.py
       - adapt/csqtt-core8-private-durable-guard.service.example
       - .github/workflows/csqtt-core8-kernel-sysctl-restore-lab.yml
   workflow_dispatch:
@@ -46,6 +47,7 @@ jobs:
           python3 -B adapt/test-core8-stalled-tcp-dataplane-stop-budget-offline.py
           python3 -B adapt/test-core8-dataplane-timeout-nonzero-offline.py
           python3 -B adapt/test-core8-dataplane-timeout-error-chain-offline.py
+          python3 -B adapt/test-core8-dataplane-timeout-compiled-offline.py
       - name: Syntax check opt-in manual private ARM64 restart fixture
         run: bash -n adapt/test-core8-private-arm64-systemd-restart-failure-fixture.sh
       - name: Syntax-check manual real ARM64 Rust RAII acceptance harness only
