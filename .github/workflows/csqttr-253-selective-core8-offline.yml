@@ -1,0 +1,40 @@
+name: CSQTTR 2.5.3 selective Core8 source guards (offline)
+on:
+  push:
+    branches:
+      - test/csqttr-253-selective-core8-20261122
+    paths:
+      - adapt/patch-csqttr-253-selective-core8.py
+      - adapt/test-csqttr-253-selective-patch-offline.py
+      - adapt/test-csqttr-253-selective-tun-native.py
+      - adapt/test-csqttr-253-selective-import-native.py
+      - .github/workflows/csqttr-253-selective-core8-offline.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source-only strict anchor/reapply checks
+        run: python3 -B adapt/test-csqttr-253-selective-patch-offline.py
+      - name: Syntax-check manual native Rust code test harnesses
+        run: |
+          python3 -B - <<'PY'
+          from pathlib import Path
+          import ast
+          for name in ("patch-csqttr-253-selective-core8.py",
+                       "test-csqttr-253-selective-patch-offline.py",
+                       "test-csqttr-253-selective-tun-native.py",
+                       "test-csqttr-253-selective-import-native.py"):
+              ast.parse((Path("adapt") / name).read_text(encoding="utf8"))
+              print("CHECKED", name)
+          PY
+      # Actual modified Rust sources live in the separate private Moscow
+      # scratch tree. NEVER run a privileged Core8/TUN test in GitHub CI.
+      # Real Rust method tests and offline ARM64 cross build run manually
+      # against the pinned source outside this repository.
