@@ -87,6 +87,14 @@ s=s.replace(needle, '    local elf_magic elf_machine expected_machine\n    elf_m
 # DB filenames must stay csqtt.db because original Rust binary uses that basename.
 s=s.replace('csqtt-core.db','csqtt.db').replace('csqtt-core.db-wal','csqtt.db-wal').replace('csqtt-core.db-shm','csqtt.db-shm')
 # Explicit human-review safety gate: do not silently claim deployment-ready.
+# Preserve independently reviewed 2.5.3 port-owner fail-closed logic when
+# rebuilding the derived installer from pinned original 2.5.0 sources.
+import importlib.util
+guard_path = Path(__file__).with_name('patch-csqttr-253-selective-deploy-ports.py')
+spec=importlib.util.spec_from_file_location('csqtt_selective_port_guard',guard_path)
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+s=module.patch(s)
 output=Path('server-assets/deploy-csqtt-core-250.sh')
 output.write_text(s)
 result=subprocess.run(['bash','-n',str(output)],capture_output=True,text=True)

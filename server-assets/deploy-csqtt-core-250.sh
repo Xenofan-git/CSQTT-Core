@@ -494,6 +494,8 @@ force_release_peer_port() {
         found=0
         while IFS= read -r pid; do
             [ -n "$pid" ] || continue
+            csqtt_process_is_owned "$pid" ||
+                die "UDP/${PEER_PORT} changed to unrelated PID $pid; refusing cleanup" "$EXIT_CUTOVER_FAILED"
             found=1
             container="$(docker_container_for_pid "$pid" 2>/dev/null || true)"
             if [ -n "$container" ]; then
@@ -519,13 +521,62 @@ force_release_peer_port() {
     return 1
 }
 
+web_port_listeners() {
+    ss -H -ltnp "sport = :${WEB_PORT}" 2>/dev/null || true
+}
+
+web_port_listener_pids() {
+    web_port_listeners | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -un || true
+}
+
+assert_deployment_ports_not_foreign() {
+    command -v ss >/dev/null 2>&1 ||
+        die "Cannot verify port ownership: ss missing" "$EXIT_PREFLIGHT_FAILED"
+    local listeners pids pid
+    listeners="$(peer_port_listeners)"
+    if [ -n "$listeners" ]; then
+        pids="$(peer_port_listener_pids)"
+        [ -n "$pids" ] ||
+            die "UDP/${PEER_PORT} owner unknown" "$EXIT_PREFLIGHT_FAILED"
+        while IFS= read -r pid; do
+            [ -n "$pid" ] || continue
+            csqtt_process_is_owned "$pid" ||
+                die "UDP/${PEER_PORT} owned by unrelated PID $pid" "$EXIT_PREFLIGHT_FAILED"
+        done <<< "$pids"
+    fi
+    listeners="$(web_port_listeners)"
+    if [ -n "$listeners" ]; then
+        pids="$(web_port_listener_pids)"
+        [ -n "$pids" ] ||
+            die "TCP/${WEB_PORT} owner unknown" "$EXIT_PREFLIGHT_FAILED"
+        while IFS= read -r pid; do
+            [ -n "$pid" ] || continue
+            csqtt_process_is_owned "$pid" ||
+                die "TCP/${WEB_PORT} owned by unrelated PID $pid" "$EXIT_PREFLIGHT_FAILED"
+        done <<< "$pids"
+    fi
+}
+
+assert_web_port_is_available() {
+    [ -z "$(web_port_listeners)" ] ||
+        die "TCP/${WEB_PORT} still occupied after cleanup" "$EXIT_CUTOVER_FAILED"
+}
+
 assert_peer_port_is_available() {
-    local listeners
+    local listeners pids pid
     listeners="$(peer_port_listeners)"
     [ -z "$listeners" ] && return 0
-    log_warn "UDP/${PEER_PORT} занят; выполняется принудительное освобождение"
-    force_release_peer_port || die "Не удалось принудительно освободить UDP/${PEER_PORT}"
-    [ -z "$(peer_port_listeners)" ] || die "UDP/${PEER_PORT} остался занят после принудительной очистки"
+    pids="$(peer_port_listener_pids)"
+    [ -n "$pids" ] ||
+        die "UDP/${PEER_PORT} owner unknown; refusing cleanup" "$EXIT_CUTOVER_FAILED"
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        csqtt_process_is_owned "$pid" ||
+            die "UDP/${PEER_PORT} unrelated PID $pid; refusing cleanup" "$EXIT_CUTOVER_FAILED"
+    done <<< "$pids"
+    force_release_peer_port || die "Failed owned UDP/${PEER_PORT} cleanup" "$EXIT_CUTOVER_FAILED"
+    [ -z "$(peer_port_listeners)" ] ||
+        die "UDP/${PEER_PORT} occupied after cleanup" "$EXIT_CUTOVER_FAILED"
 }
 
 archive_csqtt_docker_state() {
@@ -1170,6 +1221,7 @@ csqtt_cleanup() {
     clear_runtime_config_preserving_database
 
     assert_peer_port_is_available
+    assert_web_port_is_available
 
     cleanup_legacy_proxy_interfaces
     remove_csqtt_tun_interface || die "Не удалось освободить TUN-интерфейс $CSQTT_IFACE; переключение отменено"
@@ -2707,6 +2759,8 @@ main() {
             validate_port "CSQTT_WEB_PORT" "$WEB_PORT"
             validate_positive_seconds "CSQTT_DOCKER_BUILD_TIMEOUT_SECONDS" "$DOCKER_BUILD_TIMEOUT_SECONDS"
             validate_distinct_network_ports
+            # Before apt, sysctl, service stop and TUN cleanup.
+            assert_deployment_ports_not_foreign
 
             local total_started=$SECONDS
             detect_os
