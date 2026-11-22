@@ -23,6 +23,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 PARAMETERS = {
@@ -289,35 +290,55 @@ def snapshot(root: Path, *, allow_optional_missing: bool = False) -> dict[str, s
     return values
 
 
-def run_child(cmd: list[str], lock: int) -> int:
+def run_child(cmd: list[str], lock: int, *,
+              stop_grace_seconds: float = 8.0,
+              poll_seconds: float = 1.0) -> int:
     if not cmd:
         raise GuardFailure("missing child command")
     if not Path(cmd[0]).is_absolute():
         raise GuardFailure("child executable must be an absolute path")
+    if stop_grace_seconds <= 0 or poll_seconds <= 0:
+        raise GuardFailure("invalid supervised shutdown budget")
     # Lock descriptor is intentionally inherited: if guard parent is killed,
     # the Core8 child still holds the lock; no new instance may restore while
     # it could still modify global sysctls.
     child = subprocess.Popen(cmd, pass_fds=(lock,), start_new_session=True)
-    previous = {}
+    termination_requested_at = None
+
     def forward(sig, frame):
+        nonlocal termination_requested_at
         if child.poll() is None:
+            if termination_requested_at is None:
+                termination_requested_at = time.monotonic()
             try:
                 os.killpg(child.pid, sig)
             except ProcessLookupError:
                 pass
+
+    previous = {}
     for sig in (signal.SIGINT, signal.SIGTERM):
         previous[sig] = signal.signal(sig, forward)
     try:
-        try:
-            return child.wait(timeout=140)
-        except subprocess.TimeoutExpired:
-            os.killpg(child.pid, signal.SIGTERM)
+        # Core8 is a permanent server. NEVER impose a limit on healthy
+        # uptime: an earlier child.wait(timeout=140) incorrectly killed
+        # every functioning Core8 after 140 seconds.
+        # Only a signal-triggered shutdown is time bounded.
+        while True:
             try:
-                child.wait(timeout=5)
+                return child.wait(timeout=poll_seconds)
             except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
+                if (termination_requested_at is None
+                        or time.monotonic() - termination_requested_at < stop_grace_seconds):
+                    continue
+                # Child ignored the forwarded stop signal. Escalate only
+                # within its private process group; the caller still owns
+                # the durable lock and must restore AFTER the child exits.
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 child.wait(timeout=5)
-            return 124
+                return 124
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)

@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 import uuid
 
 GUARD = Path(__file__).with_name("core8-private-durable-sysctl-guard.py")
@@ -399,6 +400,89 @@ pathlib.Path(cfg["marker"]).write_text(str(grand.pid))
         else:
             self.fail("recovery remained blocked after synthetic descendant exit")
         self.assertEqual(self.values(), self.previous)
+
+    def test_healthy_long_lived_core8_is_never_timed_out(self):
+        # Fake 181 sequential one-second wait polls in zero wall-clock
+        # time, representing more than the historical 140-second cap.
+        # A normal service must be allowed to live for weeks/months.
+        class LongLivingChild:
+            pid = 24680
+            count = 0
+            def poll(self):
+                return None
+            def wait(self, timeout):
+                self.count += 1
+                if self.count <= 180:
+                    raise subprocess.TimeoutExpired("simulated-healthy-core8", timeout)
+                return 0
+        child = LongLivingChild()
+        fake_lock = os.open(os.devnull, os.O_RDONLY)
+        try:
+            with mock.patch.object(guard.subprocess,"Popen",return_value=child) as spawn, \
+                 mock.patch.object(guard.os,"killpg") as forced_kill:
+                result = guard.run_child([sys.executable,"-c","pass"],fake_lock,
+                                         poll_seconds=0.001)
+            self.assertEqual(result,0)
+            self.assertEqual(child.count,181)
+            forced_kill.assert_not_called()
+            self.assertEqual(spawn.call_args.kwargs["start_new_session"],True)
+            self.assertEqual(spawn.call_args.kwargs["pass_fds"],(fake_lock,))
+        finally:
+            os.close(fake_lock)
+
+    def test_signal_stop_escalates_only_unresponsive_child(self):
+        # No sysctl files or host namespaces involved; just isolated
+        # short-lived Python processes. Force SIGTERM ignoring child to
+        # exercise the finite shutdown budget, not server uptime.
+        child_path = self.root/"ignoring-child.py"
+        ready = self.root/"ignoring-child-ready"
+        child_path.write_text(
+            "import os,signal,time,sys\n"
+            "from pathlib import Path\n"
+            "signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
+            "Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+            "while True: time.sleep(.2)\n"
+        )
+        runner_path=self.root/"guard-signal-runner.py"
+        runner_path.write_text(
+            "import importlib.util,os,sys\n"
+            "from pathlib import Path\n"
+            "spec=importlib.util.spec_from_file_location('guard',sys.argv[1])\n"
+            "g=importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(g)\n"
+            "fd=os.open(os.devnull,os.O_RDONLY)\n"
+            "try: sys.exit(g.run_child([sys.executable,sys.argv[2],sys.argv[3]],fd,"
+            "stop_grace_seconds=.35,poll_seconds=.05))\n"
+            "finally:os.close(fd)\n"
+        )
+        runner=subprocess.Popen(
+            [sys.executable,str(runner_path),str(GUARD),str(child_path),str(ready)],
+            stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
+            start_new_session=True)
+        self.parents.append(runner)
+        child_pid=None
+        try:
+            for _ in range(100):
+                if ready.exists():
+                    child_pid=int(ready.read_text())
+                    break
+                if runner.poll() is not None:
+                    self.fail("supervised child failed to initialize")
+                time.sleep(.02)
+            self.assertIsNotNone(child_pid)
+            os.kill(runner.pid,signal.SIGTERM)
+            out,err=runner.communicate(timeout=8)
+            self.assertEqual(runner.returncode,124,(out,err))
+            # The child should be reaped: no surviving orphan
+            # may hold the inherited journal owner lock.
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child_pid,0)
+        finally:
+            if child_pid:
+                try:
+                    os.kill(child_pid,signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
     def test_parent_sigterm_propagates_child_stop_then_restores(self):
         parent, childpid = self.spawn_guard()
