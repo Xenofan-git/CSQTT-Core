@@ -186,6 +186,11 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	m.configuring = true
 	m.mu.Unlock()
 	defer func() { m.mu.Lock(); m.configuring = false; m.mu.Unlock() }()
+	// Complete any transaction interrupted by a previous process exit before
+	// starting another write; never discard its recovery journal.
+	if err := m.recoverPendingTransaction(); err != nil {
+		return fmt.Errorf("recover interrupted Sing-box save: %w", err)
+	}
 
 	dir := filepath.Dir(m.configPath)
 	if err := os.MkdirAll(dir, 0700); err != nil { return fmt.Errorf("create sing-box config directory: %w", err) }
@@ -230,8 +235,15 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 			_ = os.Remove(backup)
 		}
 	}()
+	if err := m.writeTransactionJournal(encoded, append(stateData, '\n')); err != nil {
+		m.mu.Unlock()
+		return fmt.Errorf("prepare durable Sing-box transaction: %w", err)
+	}
 	if err := m.renameConfigFile(tmp, m.configPath); err != nil {
 		m.mu.Unlock()
+		if clearErr := m.clearTransactionJournal(); clearErr != nil {
+			return fmt.Errorf("activate Sing-box config: %w; journal cleanup failed: %v", err, clearErr)
+		}
 		return fmt.Errorf("activate sing-box config: %w", err)
 	}
 	if err := m.renameConfigFile(stateTmp, m.panelStatePath()); err != nil {
@@ -251,6 +263,12 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 		}
 		m.lastError = "sing-box panel state activation failed; previous config restored: " + err.Error()
 		m.mu.Unlock()
+		if syncErr := syncSingBoxDirectory(dir); syncErr != nil {
+			return fmt.Errorf("restore previous Sing-box config directory: %w", syncErr)
+		}
+		if clearErr := m.clearTransactionJournal(); clearErr != nil {
+			return fmt.Errorf("clear Sing-box transaction after rollback: %w", clearErr)
+		}
 		if d, syncErr := os.Open(dir); syncErr == nil {
 			_ = d.Sync()
 			_ = d.Close()
@@ -259,9 +277,11 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 	}
 	m.lastError = ""
 	m.mu.Unlock()
-	if d, err := os.Open(dir); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
+	if err := syncSingBoxDirectory(dir); err != nil {
+		return fmt.Errorf("sync new Sing-box config pair: %w", err)
+	}
+	if err := m.clearTransactionJournal(); err != nil {
+		return fmt.Errorf("finish durable Sing-box config transaction: %w", err)
 	}
 	return nil
 }
@@ -396,6 +416,16 @@ func (m *SingBoxManager) Status() SingBoxStatus {
 func (m *SingBoxManager) panelStatePath() string { return m.configPath + ".panel.json" }
 
 func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
+	if err := m.recoverPendingTransactionForLoad(); err != nil {
+		return singBoxConfigInput{}, fmt.Errorf("recover Sing-box interrupted transaction: %w", err)
+	}
+	return m.loadConfigWithoutRecovery()
+}
+
+// Internal Rule Set operations already control m.mu / m.configuring.
+// They must use this reader after explicitly recovering the journal; calling
+// LoadConfig there would recursively acquire the mutex or reject its own write.
+func (m *SingBoxManager) loadConfigWithoutRecovery() (singBoxConfigInput, error) {
 	var input singBoxConfigInput
 	data, err := os.ReadFile(m.configPath)
 	if err != nil { return input, fmt.Errorf("read sing-box config: %w", err) }
@@ -783,7 +813,8 @@ func (m *SingBoxManager) DeleteRuleSet(tag string) error {
  if !singBoxIDPattern.MatchString(tag){return fmt.Errorf("invalid Rule Set tag %q",tag)}
  m.mu.Lock();defer m.mu.Unlock()
  if m.cmd!=nil||m.starting||m.configuring{return fmt.Errorf("cannot delete Rule Set while sing-box is running, starting, or configuring")}
- input,err:=m.LoadConfig();if err!=nil&&!errors.Is(err, os.ErrNotExist){return fmt.Errorf("load sing-box config before deletion: %w",err)}
+ if err:=m.recoverPendingTransaction();err!=nil{return fmt.Errorf("recover Sing-box transaction before Rule Set deletion: %w",err)}
+ input,err:=m.loadConfigWithoutRecovery();if err!=nil&&!errors.Is(err, os.ErrNotExist){return fmt.Errorf("load sing-box config before deletion: %w",err)}
  if referenced, err := singBoxConfigRouteReferencesRuleSet(m.configPath, tag); err != nil {
   return fmt.Errorf("inspect sing-box Rule Set references: %w", err)
  } else if referenced {
@@ -836,7 +867,10 @@ func (m *SingBoxManager) UploadRuleSet(tag, filename string, data []byte) (singB
 	// an unrelated path while leaving the configured Rule Set unchanged.
 	dir := filepath.Join(filepath.Dir(m.configPath), "rule-sets")
 	activePath := filepath.Join(dir, tag+ext)
-	if input, err := m.LoadConfig(); err == nil {
+	if err := m.recoverPendingTransaction(); err != nil {
+		return result, fmt.Errorf("recover Sing-box transaction before Rule Set upload: %w", err)
+	}
+	if input, err := m.loadConfigWithoutRecovery(); err == nil {
 		for _, existing := range input.RuleSets {
 			if existing.Tag != tag { continue }
 			if existing.Type != "local" || existing.Format != format || filepath.Clean(existing.Path) != activePath {

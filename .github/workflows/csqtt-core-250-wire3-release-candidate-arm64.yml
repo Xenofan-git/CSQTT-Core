@@ -67,6 +67,8 @@ jobs:
           cp adapt/linux_runner_lifecycle_test.go adapt/linux_tun_vm_test.go adapt/linux_core_argv_test.go upstream-lalune/Desktop/Linux/
           cp adapt/singbox_config_linux.go adapt/singbox_config_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/singbox_manager_linux.go adapt/singbox_manager_linux_test.go upstream-lalune/Desktop/Linux/
+          cp adapt/singbox_transaction_linux.go adapt/singbox_transaction_linux_test.go upstream-lalune/Desktop/Linux/
+          cp adapt/singbox_manager_rollback_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/headless_main.go adapt/headless_main_test.go adapt/headless_api_contract_test.go upstream-lalune/Desktop/Linux/
           cp adapt/csqtt_core_250_auth_api_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/vktoken_input_test.go upstream-lalune/Desktop/Libs/
