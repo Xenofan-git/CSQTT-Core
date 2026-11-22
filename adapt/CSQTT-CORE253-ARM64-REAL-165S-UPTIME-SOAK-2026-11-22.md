@@ -48,3 +48,33 @@ No working NanoPi, active VPN, host sysctl or VPS systemd touched.
 
 Prepared source and CI; outcome must be read from its own GitHub
 Actions run before describing true 165-second uptime as passing.
+
+## Native AArch64 GitHub result: PASS, twice
+
+- Branch commit d869ab4c56fb09a3436d83a5dea4299f4765b27d:
+  GitHub Actions **45046748969 SUCCESS**, actual live Core8 PID2352
+  survived checkpoints 0,10,...,160 sec, actual monotonic elapsed165.0s,
+  TLS/UDP port checks + journal remained intact. Then real SIGKILL
+  of only the Core8 child, guardian restored IPv6 forwarding, cleared
+  journal, started fresh Core8 and gracefully stopped. Success marker
+  CSQTT_CORE253_REAL_ARM64_165S_UPTIME_SIGKILL_RECOVERY_JOB_PASS.
+- After subsequent private guest hardening commit
+  6154e6b5a309a53c80911573b3582ab77d831206:
+  GitHub Actions **45046942359 SUCCESS**, actual live Core8 PID2391
+  survived 17 checks over real 165.0s, then guardian handled child
+  SIGKILL, sysctl restore and next graceful run/stop correctly.
+  Native ARM64 pipeline simultaneously ran 25/25 offline guard tests.
+  Short native control run 45046942340 SUCCESS and guarded systemd
+  offline contract 45046942661 SUCCESS.
+- These are real uptime tests with a real ARM64 Linux Core8 ELF and
+  actual TLS/UDP readiness, not simulated waits. They are *not*
+  traffic-load or unattended month-long soak tests.
+
+## Remaining boundaries
+
+Service was intentionally invoked under the private NET+UTS supervisor,
+NOT as a real systemd unit. Real systemd auto-restart after SIGKILL
+and power-loss recovery still require an authorized disposable
+fully isolated guest and review of host service ownership. In
+particular no active NanoPi, existing VPN, host route, /proc or
+service manager configuration was changed.

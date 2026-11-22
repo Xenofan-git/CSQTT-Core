@@ -34,3 +34,17 @@ Synthetic fake /tmp sysctl tests retain their own boot files.
 
 The native ARM64 CI must independently retest this change. Real
 systemd service integration and live VK/TURN remain separate gates.
+
+## Native CI results after guest gate tightening
+
+- GitHub Actions **45046942340 SUCCESS**, new private guest code:
+  actual Core8 ARM64 guarded SIGKILL, correct sysctl recovery,
+  second normal startup, no default route.
+- GitHub Actions **45046942359 SUCCESS**, actual uninterrupted
+  165-second Core8 live PID2391, 17 TLS/UDP and journal checkpoints,
+  real SIGKILL, restored IPv6 forwarding, journal cleared,
+  successful restart and normal SIGTERM.
+- GitHub Actions **45046942661 SUCCESS**, eight offline systemd
+  contract checks, systemd-analyze unit syntax and 25 guard tests.
+- No production service installation or systemd privileged
+  restart experiment performed; guest-only isolation still enforced.
