@@ -1,0 +1,31 @@
+name: CSQTTR 2.5.3 selective Android host-key confirmation (source only)
+on:
+  push:
+    branches:
+      - test/csqttr-253-android-ssh-hostkey-20261122
+    paths:
+      - adapt/patch-csqttr-253-android-ssh-change-250.py
+      - adapt/test-csqttr-253-android-ssh-change-offline.py
+      - .github/workflows/csqttr-253-android-ssh-hostkey-source.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-contract-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host key refusal and explicit trust source-contract tests
+        run: python3 -B adapt/test-csqttr-253-android-ssh-change-offline.py
+      - name: Python code syntax check
+        run: |
+          python3 -B - <<'PY'
+          import ast
+          from pathlib import Path
+          for file in ('patch-csqttr-253-android-ssh-change-250.py',
+                       'test-csqttr-253-android-ssh-change-offline.py'):
+              ast.parse((Path('adapt')/file).read_text(encoding='utf8'))
+              print('PY_PARSE_PASS', file)
+          PY
+      # No Android SDK/Kotlin runtime in this CI source-only job.
