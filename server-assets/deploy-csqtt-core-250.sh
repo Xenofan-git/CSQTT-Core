@@ -494,6 +494,8 @@ force_release_peer_port() {
         found=0
         while IFS= read -r pid; do
             [ -n "$pid" ] || continue
+            csqtt_process_is_owned "$pid" ||
+                die "UDP/${PEER_PORT} changed to unrelated PID $pid; refusing cleanup" "$EXIT_CUTOVER_FAILED"
             found=1
             container="$(docker_container_for_pid "$pid" 2>/dev/null || true)"
             if [ -n "$container" ]; then
@@ -519,13 +521,62 @@ force_release_peer_port() {
     return 1
 }
 
+web_port_listeners() {
+    ss -H -ltnp "sport = :${WEB_PORT}" 2>/dev/null || true
+}
+
+web_port_listener_pids() {
+    web_port_listeners | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -un || true
+}
+
+assert_deployment_ports_not_foreign() {
+    command -v ss >/dev/null 2>&1 ||
+        die "Cannot verify port ownership: ss missing" "$EXIT_PREFLIGHT_FAILED"
+    local listeners pids pid
+    listeners="$(peer_port_listeners)"
+    if [ -n "$listeners" ]; then
+        pids="$(peer_port_listener_pids)"
+        [ -n "$pids" ] ||
+            die "UDP/${PEER_PORT} owner unknown" "$EXIT_PREFLIGHT_FAILED"
+        while IFS= read -r pid; do
+            [ -n "$pid" ] || continue
+            csqtt_process_is_owned "$pid" ||
+                die "UDP/${PEER_PORT} owned by unrelated PID $pid" "$EXIT_PREFLIGHT_FAILED"
+        done <<< "$pids"
+    fi
+    listeners="$(web_port_listeners)"
+    if [ -n "$listeners" ]; then
+        pids="$(web_port_listener_pids)"
+        [ -n "$pids" ] ||
+            die "TCP/${WEB_PORT} owner unknown" "$EXIT_PREFLIGHT_FAILED"
+        while IFS= read -r pid; do
+            [ -n "$pid" ] || continue
+            csqtt_process_is_owned "$pid" ||
+                die "TCP/${WEB_PORT} owned by unrelated PID $pid" "$EXIT_PREFLIGHT_FAILED"
+        done <<< "$pids"
+    fi
+}
+
+assert_web_port_is_available() {
+    [ -z "$(web_port_listeners)" ] ||
+        die "TCP/${WEB_PORT} still occupied after cleanup" "$EXIT_CUTOVER_FAILED"
+}
+
 assert_peer_port_is_available() {
-    local listeners
+    local listeners pids pid
     listeners="$(peer_port_listeners)"
     [ -z "$listeners" ] && return 0
-    log_warn "UDP/${PEER_PORT} занят; выполняется принудительное освобождение"
-    force_release_peer_port || die "Не удалось принудительно освободить UDP/${PEER_PORT}"
-    [ -z "$(peer_port_listeners)" ] || die "UDP/${PEER_PORT} остался занят после принудительной очистки"
+    pids="$(peer_port_listener_pids)"
+    [ -n "$pids" ] ||
+        die "UDP/${PEER_PORT} owner unknown; refusing cleanup" "$EXIT_CUTOVER_FAILED"
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        csqtt_process_is_owned "$pid" ||
+            die "UDP/${PEER_PORT} unrelated PID $pid; refusing cleanup" "$EXIT_CUTOVER_FAILED"
+    done <<< "$pids"
+    force_release_peer_port || die "Failed owned UDP/${PEER_PORT} cleanup" "$EXIT_CUTOVER_FAILED"
+    [ -z "$(peer_port_listeners)" ] ||
+        die "UDP/${PEER_PORT} occupied after cleanup" "$EXIT_CUTOVER_FAILED"
 }
 
 archive_csqtt_docker_state() {
@@ -1170,6 +1221,7 @@ csqtt_cleanup() {
     clear_runtime_config_preserving_database
 
     assert_peer_port_is_available
+    assert_web_port_is_available
 
     cleanup_legacy_proxy_interfaces
     remove_csqtt_tun_interface || die "Не удалось освободить TUN-интерфейс $CSQTT_IFACE; переключение отменено"
@@ -2625,6 +2677,116 @@ do_uninstall() {
     log_info "CSQTT удалён. SQLite state и конфигурация сохранены в ${CSQTT_CONFIG_DIR}"
 }
 
+
+# CSQTTR 2.5.3 selective read-only server inspection.
+# Only emit the end marker when every required facility is available.
+# Paths and application credentials are never dumped.
+inventory_emit() {
+    local type="$1" field
+    shift
+    printf 'CSQTT_INV|%s' "$type"
+    for field in "$@"; do
+        field="$(printf '%s' "$field" | tr '\n|' '  ')"
+        printf '|%s' "$field"
+    done
+    printf '\n'
+}
+
+inventory_port() {
+    local proto="$1" port="$2" listeners="" pids="" pid seen_core=0 seen_foreign=0 owner=""
+    case "$proto" in
+        udp)
+            if ! listeners="$(ss -H -lunp "sport = :$port" 2>/dev/null)"; then
+                inventory_emit error reason=udp_socket_query_failed
+                return 20
+            fi ;;
+        tcp)
+            if ! listeners="$(ss -H -ltnp "sport = :$port" 2>/dev/null)"; then
+                inventory_emit error reason=tcp_socket_query_failed
+                return 20
+            fi ;;
+        *) return 20 ;;
+    esac
+    # Unlike the legacy convenience helpers, inventory must NOT swallow
+    # socket query failures as "port is free".
+    pids="$(printf '%s\n' "$listeners" | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -un || true)"
+    if [ -z "$listeners" ]; then
+        inventory_emit port "proto=$proto" "port=$port" state=free owner=none
+        return 0
+    fi
+    if [ -z "$pids" ]; then
+        inventory_emit port "proto=$proto" "port=$port" state=busy owner=unknown
+        return 0
+    fi
+    while IFS= read -r pid; do
+        [ -n "$pid" ] || continue
+        if csqtt_process_is_owned "$pid"; then seen_core=1; else seen_foreign=1; fi
+    done <<< "$pids"
+    if [ "$seen_core" = 1 ] && [ "$seen_foreign" = 1 ]; then owner=mixed
+    elif [ "$seen_core" = 1 ]; then owner=core_candidate
+    elif [ "$seen_foreign" = 1 ]; then owner=foreign
+    else owner=unknown
+    fi
+    inventory_emit port "proto=$proto" "port=$port" state=busy "owner=$owner"
+}
+
+do_inventory() {
+    # Privileged inspection for reliable ss -p PID visibility;
+    # this command never writes data, starts services or changes /proc.
+    if ! command -v systemctl >/dev/null 2>&1; then
+        inventory_emit error reason=missing_systemctl
+        return 20
+    fi
+    if ! command -v ss >/dev/null 2>&1; then
+        inventory_emit error reason=missing_ss
+        return 20
+    fi
+    if ! command -v ip >/dev/null 2>&1; then
+        inventory_emit error reason=missing_ip
+        return 20
+    fi
+
+    local unit_state runtime_state unit_owner iface_state database_state
+    unit_state="$(systemctl show --value -p LoadState csqtt-core.service 2>/dev/null || true)"
+    case "$unit_state" in
+        loaded)
+            if csqtt_systemd_unit_is_managed; then
+                unit_owner=core_candidate
+            else
+                unit_owner=foreign
+            fi
+            runtime_state="$(systemctl show --value -p ActiveState csqtt-core.service 2>/dev/null || true)"
+            case "$runtime_state" in
+                active|activating|reloading) runtime_state=running ;;
+                inactive|failed|deactivating) runtime_state=stopped ;;
+                *) runtime_state=unknown ;;
+            esac
+            ;;
+        not-found) unit_owner=none; runtime_state=absent ;;
+        *) unit_owner=unknown; runtime_state=unknown ;;
+    esac
+    inventory_emit server place=core runtime=systemd "state=$runtime_state" "owner=$unit_owner"
+
+    # A named Docker container is not automatically owned by Core:
+    # its volume and process identity must be validated separately.
+    if command -v docker >/dev/null 2>&1 &&
+       docker inspect "$CSQTT_DOCKER_CONTAINER" >/dev/null 2>&1; then
+        runtime_state="$(docker inspect --format '{{.State.Running}}' "$CSQTT_DOCKER_CONTAINER" 2>/dev/null || true)"
+        case "$runtime_state" in true) runtime_state=running ;; false) runtime_state=stopped ;; *) runtime_state=unknown ;; esac
+        inventory_emit server place=core runtime=docker "state=$runtime_state" owner=unverified
+    fi
+
+    if ip link show "$CSQTT_IFACE" >/dev/null 2>&1; then iface_state=present; else iface_state=absent; fi
+    inventory_emit interface "name=$CSQTT_IFACE" "state=$iface_state" owner=unverified
+    if [ -f "$CSQTT_CONFIG_DIR/csqtt.db" ]; then database_state=present; else database_state=absent; fi
+    inventory_emit database "state=$database_state" name=csqtt.db
+
+    inventory_port udp "$PEER_PORT" || return 20
+    inventory_port tcp "$WEB_PORT" || return 20
+    inventory_emit end
+    return 0
+}
+
 do_status() {
     echo "Статус CSQTT:"
     echo ""
@@ -2669,6 +2831,14 @@ handle_unexpected_error() {
 trap 'handle_unexpected_error "$LINENO" "$?"' ERR
 
 main() {
+    if [ "${1:-}" = inventory ]; then
+        if [ "$(id -u)" -ne 0 ]; then
+            printf 'CSQTT_INV|error|reason=requires_root\n'
+            return 20
+        fi
+        do_inventory
+        return $?
+    fi
     echo "╔══════════════════════════════════════════════════════════════╗"
     echo "║       CSQTT VPN Server — Installer v${SCRIPT_VERSION}                    ║"
     echo "║       PEER: ${PEER_PORT}  |  SSH: ${SSH_PORT}  | WEB: ${WEB_PORT}       ║"
@@ -2707,6 +2877,8 @@ main() {
             validate_port "CSQTT_WEB_PORT" "$WEB_PORT"
             validate_positive_seconds "CSQTT_DOCKER_BUILD_TIMEOUT_SECONDS" "$DOCKER_BUILD_TIMEOUT_SECONDS"
             validate_distinct_network_ports
+            # Before apt, sysctl, service stop and TUN cleanup.
+            assert_deployment_ports_not_foreign
 
             local total_started=$SECONDS
             detect_os

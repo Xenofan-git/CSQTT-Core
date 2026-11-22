@@ -87,6 +87,40 @@ s=s.replace(needle, '    local elf_magic elf_machine expected_machine\n    elf_m
 # DB filenames must stay csqtt.db because original Rust binary uses that basename.
 s=s.replace('csqtt-core.db','csqtt.db').replace('csqtt-core.db-wal','csqtt.db-wal').replace('csqtt-core.db-shm','csqtt.db-shm')
 # Explicit human-review safety gate: do not silently claim deployment-ready.
+# Preserve independently reviewed 2.5.3 port-owner fail-closed logic when
+# rebuilding the derived installer from pinned original 2.5.0 sources.
+import importlib.util
+guard_path = Path(__file__).with_name('patch-csqttr-253-selective-deploy-ports.py')
+spec=importlib.util.spec_from_file_location('csqtt_selective_port_guard',guard_path)
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+s=module.patch(s)
+# The read-only CSQTTR 2.5.3-style server inventory is also part
+# of the canonical regeneration path; never lose it on re-derive.
+inventory_path=Path(__file__).with_name('patch-csqttr-253-selective-deploy-inventory.py')
+inventory_spec=importlib.util.spec_from_file_location('csqtt_selective_inventory',inventory_path)
+inventory=importlib.util.module_from_spec(inventory_spec)
+inventory_spec.loader.exec_module(inventory)
+s=inventory.patch(s)
+# Existing verified rollback improvements are NOT in the original 2.5.0
+# pinned upstream. Reapply only the exact audited overlay in a temp dir.
+# SHA checks fail closed if source, selective guards or rollback ever drift.
+import tempfile
+SOURCE_BEFORE_ROLLBACK='8a3b1878dc65549937f90190ee459d22ce2c2296c52b8db7dfac8f42b2804605'
+RELEASE_WITH_ROLLBACK='18b8fba447a0f6d931f4acea37612326a75aae567e499b4e52ec7d5f6bc0af68'
+assert hashlib.sha256(s.encode()).hexdigest()==SOURCE_BEFORE_ROLLBACK, 'derived installer drift; refusing rollback overlay'
+overlay=Path(__file__).with_name('csqtt-core-existing-rollback-preservation.patch')
+with tempfile.TemporaryDirectory(prefix='csqtt-core-rollback-replay-') as tmp:
+    private=Path(tmp)/'server-assets'
+    private.mkdir()
+    candidate=private/'deploy-csqtt-core-250.sh'
+    candidate.write_text(s)
+    result=subprocess.run(['patch','--batch','--fuzz=0','--forward',
+                           '--no-backup-if-mismatch','-p1','-i',str(overlay)],
+                          cwd=tmp,capture_output=True,text=True,timeout=12)
+    assert result.returncode==0, 'rollback overlay refused: '+result.stderr[-1500:]
+    s=candidate.read_text()
+assert hashlib.sha256(s.encode()).hexdigest()==RELEASE_WITH_ROLLBACK, 'rollback reproduction mismatch; refusing generation'
 output=Path('server-assets/deploy-csqtt-core-250.sh')
 output.write_text(s)
 result=subprocess.run(['bash','-n',str(output)],capture_output=True,text=True)

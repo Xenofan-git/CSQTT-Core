@@ -1,0 +1,62 @@
+name: CSQTTR 2.5.3 selective Core Deploy port ownership (offline)
+on:
+  push:
+    branches:
+      - test/csqttr-253-selective-deploy-20261122
+    paths:
+      - server-assets/deploy-csqtt-core-250.sh
+      - adapt/derive-csqtt-core-deploy-250.py
+      - adapt/patch-csqttr-253-selective-deploy-ports.py
+      - adapt/test-csqttr-253-selective-deploy-ports-offline.py
+      - adapt/patch-csqttr-253-selective-deploy-inventory.py
+      - adapt/test-csqttr-253-core-deploy-inventory-offline.py
+      - adapt/csqtt-core-existing-rollback-preservation.patch
+      - .github/workflows/csqttr-253-selective-deploy-ports-offline.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  port-ownership-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bash syntax for derived Core installer
+        run: bash -n server-assets/deploy-csqtt-core-250.sh
+      - name: Offline 16-case fake UDP/TCP listener ownership tests
+        run: python3 -B adapt/test-csqttr-253-selective-deploy-ports-offline.py
+      - name: Offline 21-case readonly Core inventory Bash tests
+        run: python3 -B adapt/test-csqttr-253-core-deploy-inventory-offline.py
+      - name: Pinned rollback and inventory release contract
+        run: |
+          python3 -B - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          s=Path('server-assets/deploy-csqtt-core-250.sh').read_bytes()
+          assert sha256(s).hexdigest()=='18b8fba447a0f6d931f4acea37612326a75aae567e499b4e52ec7d5f6bc0af68'
+          assert b'verify_rollback_web_panel() {' in s
+          assert b'assert_deployment_ports_not_foreign() {' in s
+          assert b'do_inventory() {' in s
+          d=Path('adapt/derive-csqtt-core-deploy-250.py').read_text()
+          assert 's=module.patch(s)' in d
+          assert 's=inventory.patch(s)' in d
+          assert 'SOURCE_BEFORE_ROLLBACK' in d
+          assert 'RELEASE_WITH_ROLLBACK' in d
+          assert 'csqtt-core-existing-rollback-preservation.patch' in d
+          print('PINNED_ROLLBACK_AND_INVENTORY_CONTRACT_PASS')
+          PY
+      - name: Existing Core standalone isolation regression
+        run: python3 -B adapt/test-csqtt-core-deploy-isolation-250.py
+      - name: Verified ELF payload hash contract
+        run: python3 -B adapt/test-csqtt-core-release-hash-guard.py
+      - name: Syntax-check pinned-source generator and selective patch
+        run: |
+          python3 -B - <<'PY'
+          from pathlib import Path
+          import ast
+          for filename in ('derive-csqtt-core-deploy-250.py','patch-csqttr-253-selective-deploy-ports.py','test-csqttr-253-selective-deploy-ports-offline.py','patch-csqttr-253-selective-deploy-inventory.py','test-csqttr-253-core-deploy-inventory-offline.py'):
+              ast.parse((Path('adapt')/filename).read_text())
+              print('PYTHON_PARSE_PASS', filename)
+          PY
+      # This is entirely source + fake-listener validation; it NEVER calls
+      # install/uninstall or accesses real sockets, other services or sysctls.
