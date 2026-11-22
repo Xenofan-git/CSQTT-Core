@@ -58,3 +58,26 @@ namespace sysctl changes are NOT production configuration advice.
 
 This fullchain remains a TEST until its separate CI result is
 confirmed and recorded. No installation or release promotion.
+
+## Completed selective 2.5.3 Core8 WIRE-3 synthetic TURN fullchain
+
+GitHub Actions **45039689081 SUCCESS** on new server SHA256
+362a27927764e4e728b6327ce3b62a229c376ae3512fdce3359c4d3bd9b8017e.
+Actual native ARM64 CI flow markers:
+- FULLCHAIN_ISOLATED_VETH_TWO_NETNS_NO_GLOBAL_DEFAULT_PASS
+- FULLCHAIN_DIRECT_BYPASS_NEGATIVE_CONTROL_PASS
+- FULLCHAIN_NATIVE_GO_SUPERVISOR_API_LIVE_PASS
+- FULLCHAIN_WIRE3_TUNCONF_ACTIVE_WORKER_GO_TUN_AND_SOCKS_PASS
+- FULLCHAIN_ISOLATED_GO_TUN_POLICY_202_AND_FWMARK_PASS
+- FULLCHAIN_MARKED_ROUTE_TARGETS_REAL_GO_TUN_PASS
+- FULLCHAIN_END_TO_END_GO_RUST250_CORE8_TUN_SOCKS_SINGBOX_TCP_PASS
+- FULLCHAIN_GO_SOCKS5_UDP_WIRE3_RESULT 0
+- FULLCHAIN_SINGBOX_GO_SOCKS5_UDP_WIRE3_RESULT 0
+- FULLCHAIN_END_TO_END_GO_RUST250_CORE8_TUN_SOCKS_SINGBOX_UDP_PASS
+- FULLCHAIN_STOP_AND_CLEANUP_PASS
+- FULLCHAIN_HOST_DEFAULT_ROUTE_UNCHANGED_PASS
+
+Original Rust 2.5 client is rebuilt with *test-only* synthetic
+TURN fixture. This is NOT original release ELF with live VK TURN
+credentials. Both guest namespaces lack default routes; the
+running NanoPi and VPS routing were not changed.

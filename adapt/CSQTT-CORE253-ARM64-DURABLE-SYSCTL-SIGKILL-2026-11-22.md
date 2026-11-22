@@ -62,3 +62,28 @@ a production or power-loss acceptance. Real machine reboot and
 production systemd service wrapping remain separate gates.
 No changes to the Rust 2.5.0 wire protocol, routing, host default
 route, NanoPi, Moscow VPS or Amsterdam VPS runtime configuration.
+
+## Completed native ARM64 verification — PASS
+
+- Commit da06912f3b471e2b580eadd25cf21ff94435d9bc:
+  guard skips genuinely absent optional knobs on real /proc
+  while requiring IPv4/IPv6 forwarding and both rp_filter values.
+  21 offline security/journal/failure regression tests PASS.
+- GH 45040575430: actual Core8 SIGKILL restoration of original
+  IPv6 forwarding and journal cleanup succeeded. The last assertion
+  wrongly required a failure return code for normal SIGTERM.
+- Commit 3e4cfafb8acb5c320e9baebad4eb7ad66b081486 corrected
+  only the assertion: SIGKILL must be nonzero, clean SIGTERM zero.
+- Native ARM64 GitHub Actions **45040689299 SUCCESS**:
+  21/21 offline tests PASS; actual Core8 UDP+HTTPS+TLS running
+  in private NET+UTS namespace; real child SIGKILL recovered by
+  external durable guard; forwarding restored, journal cleared,
+  listeners released; same server restarted and SIGTERM orderly.
+  Final marker:
+  CSQTT_CORE253_GUARD_REAL_ARM64_SIGKILL_RECOVER_RESTART_ALL_PASS.
+- Unsupervised Core8 SIGKILL still leaks forwarding, proven by
+  GH 45039991322. Production must be supervised through
+  durable service ownership; CURRENT guard only authorizes real
+  /proc under isolated guest hostname csqtt-core8-isolated with
+  no default IPv4 route. Do not weaken its gate or install
+  this experiment to NanoPi without a separate service audit.
