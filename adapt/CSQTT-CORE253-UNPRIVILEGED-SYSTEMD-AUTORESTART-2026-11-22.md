@@ -88,3 +88,49 @@ inactive unit, expected configured rate limits, and restoration
 of every fake sysctl value, an empty durable journal, and no orphans.
 It does NOT accept unlimited relaunches or skip journal checks.
 A new GitHub run must confirm this outcome independently.
+
+## Final verified native ARM64 user-systemd result
+
+- Test commits:
+  - 0cbcf4a04c11a0fcc81d83beb66a82103bf6c3dd: test-only actual
+    non-root AArch64 user-systemd service with temporary fake /tmp sysctls.
+  - 8c979e0b6e17511d7c18e60be1ba7c04275aab0d: create a missing
+    runner-owned XDG_RUNTIME_DIR/systemd/user directory safely.
+  - 8c3f721f47d6427729172630d2098eeb6e5bce3c: add real repeated
+    SIGKILL negative test for bounded systemd StartLimitBurst.
+  - 14fce394f640b81c8d0bfa4b7f6bf1b21cbd5fa5: capture systemd
+    actual rate-limit counters and state.
+  - 76bb19c450842170a7b51e614ddaca2419897f34: enforce actual
+    bounded number of live starts and restored journal regardless
+    of variant display value of Result.
+- Real GitHub native ARM64 workflow **45048993025 SUCCESS**.
+  Logs from job137289721979 prove:
+  CSQTT_USER_SYSTEMD_REAL_AUTORESTART_AFTER_SIGKILL_PASS,
+  CSQTT_USER_SYSTEMD_REAL_STOP_MIXED_AND_EXECSTOPPOST_PASS,
+  CSQTT_USER_SYSTEMD_FAILCLOSED_CORRUPT_JOURNAL_PASS,
+  CSQTT_USER_SYSTEMD_REAL_STARTLIMIT_BURST_3_PASS,
+  CSQTT_USER_SYSTEMD_UNPRIVILEGED_FAKEPROC_LIFECYCLE_PASS.
+- Native systemd property values in the preceding diagnostic run:
+  Restart=on-failure, RestartUSec=1s,
+  StartLimitIntervalUSec=25s, StartLimitBurst=3.
+  Three consecutive synthetic child SIGKILL events were recorded.
+  After the final failure: exactly 3 starts, no fourth,
+  no remaining child, restored fake kernel parameters and no journal.
+  systemd showed ActiveState=failed, NRestarts=3,
+  Result=exit-code; checking for exact Result=start-limit-hit was
+  incorrect and is NOT used to weaken the real pass criteria.
+- The earlier CI45048454375 failed when an unprivileged runner-owned
+  runtime unit directory did not exist; CI45048656233 and
+  CI45048812019 failed due to an overly specific expected Result
+  label, while observations showed bounded launches. Corrected
+  test and CI45048993025 passed all steps.
+- This proves actual **user-level systemd** semantics with the
+  real Python guardian and a disposable synthetic Python child,
+  fake regular-file sysctls and fake boot ID. It does NOT prove
+  a privileged system service with actual ARM64 Rust Core8 on
+  host /proc, nor a full reboot after power loss. Existing
+  separate actual ARM64 Core8 supervised crash/recovery CI
+  45046942359 and WIRE3 fullchain CI45039689081 remain green.
+- No root privilege escalation, real sysctl writes, host routes,
+  NanoPi services, Tailscale or VPN policies were performed.
+  Original release candidate is unchanged.
