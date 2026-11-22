@@ -20,8 +20,10 @@ Group=root
 EnvironmentFile=/etc/csqtt-core/private-core8.env
 ExecStart=/usr/bin/python3 /usr/local/libexec/core8-private-durable-sysctl-guard.py --state-dir /var/lib/csqtt-core-private/sysctl-guard --sysctl-root /proc/sys --boot-id-file /proc/sys/kernel/random/boot_id --private-guest run -- /home/csqttlab/core8-arm64 --listen 127.0.0.1:46871 --web-port 46872 --config-dir /var/lib/csqtt-core-private/config
 ExecStopPost=/usr/bin/python3 /usr/local/libexec/core8-private-durable-sysctl-guard.py --state-dir /var/lib/csqtt-core-private/sysctl-guard --sysctl-root /proc/sys --boot-id-file /proc/sys/kernel/random/boot_id --private-guest recover
-# The whole cgroup must stop before ExecStopPost tries a same-boot replay.
-KillMode=control-group
+# Send SIGTERM to the Python supervisor MAIN PID only, so it forwards
+# to Core8 and waits for durable journal restoration. If shutdown
+# hangs, systemd still sends final SIGKILL to the entire cgroup.
+KillMode=mixed
 TimeoutStopSec=20
 Restart=on-failure
 # Guard uses code 75 for failed ownership/recovery. Such a failure must

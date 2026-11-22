@@ -22,6 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B adapt/test-core8-guarded-systemd-253-contract-offline.py
+          echo CSQTT_CORE253_SYSTEMD_SUPERVISOR_MIXED_KILLMODE_CONTRACT_10_PASS
       - name: Check unit syntax using systemd-analyze without installing or starting it
         shell: bash
         run: |

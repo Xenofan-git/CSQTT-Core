@@ -69,7 +69,30 @@ class PrivateGuardedUnitContract(unittest.TestCase):
         self.assertGreaterEqual(int(self.unit["StartLimitIntervalSec"]),30)
         self.assertGreaterEqual(int(self.service["RestartSec"]),2)
         self.assertGreaterEqual(int(self.service["TimeoutStopSec"]),15)
-        self.assertEqual(self.service["KillMode"],"control-group")
+        self.assertEqual(self.service["KillMode"],"mixed")
+
+    def test_supervisor_receives_stop_before_child_cgroup(self):
+        # For a main-PID journal guardian, KillMode=control-group may
+        # deliver TERM independently to both guardian and Core8. The
+        # guardian must coordinate clean stop and durable replay first.
+        self.assertEqual(self.service["Type"],"simple")
+        self.assertEqual(self.service["KillMode"],"mixed")
+        self.assertEqual(self.service["TimeoutStopSec"],"20")
+        self.assertEqual(self.service["RestartPreventExitStatus"],"75")
+        from pathlib import Path
+        source=GUARD.read_text(encoding="utf8")
+        self.assertIn('for sig in (signal.SIGINT, signal.SIGTERM)',source)
+        self.assertIn('os.killpg(child.pid, sig)',source)
+        self.assertIn('child.wait(timeout=poll_seconds)',source)
+        self.assertIn('CORE8_STOP_RECOVERY=',source)
+
+    def test_unsafe_group_stop_policy_would_fail_contract(self):
+        # A negative fixture must prove this assertion is meaningful.
+        from unittest import mock
+        with mock.patch.dict(self.service,{"KillMode":"control-group"}):
+            with self.assertRaises(AssertionError):
+                self.assertEqual(self.service["KillMode"],"mixed")
+        self.assertEqual(self.service["KillMode"],"mixed")
 
     def test_no_automatic_host_network_changes(self):
         self.assertEqual(self.service["UMask"],"0077")
