@@ -82,6 +82,10 @@ def private_guest_gate(root: Path, flag: bool) -> None:
                                capture_output=True, text=True, timeout=3, check=True)
         if route.stdout.strip():
             raise GuardFailure("guest has an IPv4 default route")
+        v6_route = subprocess.run(["ip", "-6", "route", "show", "default"],
+                                  capture_output=True, text=True, timeout=3, check=True)
+        if v6_route.stdout.strip():
+            raise GuardFailure("guest has an IPv6 default route")
     else:
         # Test access must be confined to a disposable fixture; never reach
         # an arbitrary alternative procfs mount.
@@ -355,6 +359,9 @@ def main() -> int:
     a = parser.parse_args()
     cmd = a.command[1:] if a.command and a.command[0] == "--" else a.command
     private_guest_gate(a.sysctl_root, a.private_guest)
+    if (a.sysctl_root.resolve() == Path("/proc/sys")
+            and a.boot_id_file != Path("/proc/sys/kernel/random/boot_id")):
+        raise GuardFailure("real kernel recovery requires canonical host boot-id file")
     boot = read_boot_id(a.boot_id_file)
     state = safe_dir(a.state_dir)
     fd = locked_fd(state)

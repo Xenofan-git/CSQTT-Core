@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import signal
+from types import SimpleNamespace
 import subprocess
 import sys
 import tempfile
@@ -228,6 +229,33 @@ class DurableGuardTests(unittest.TestCase):
         self.assertEqual(r.returncode, 75)
         self.assertIn("journal", r.stderr)
         self.assertEqual(self.values(), self.previous)
+
+    def test_private_guest_rejects_ipv6_default_route_even_if_ipv4_empty(self):
+        with mock.patch.object(guard.os, "geteuid", return_value=0), \
+             mock.patch.object(guard.os, "uname", return_value=SimpleNamespace(
+                 nodename="csqtt-core8-isolated", machine="aarch64"
+             )), \
+             mock.patch.object(guard.subprocess, "run", side_effect=[
+                 subprocess.CompletedProcess(["ip","-4"],0,stdout=""),
+                 subprocess.CompletedProcess(["ip","-6"],0,
+                                             stdout="default via fd00::1 dev eth0"),
+             ]) as run:
+            with self.assertRaisesRegex(guard.GuardFailure,"IPv6 default route"):
+                guard.private_guest_gate(Path("/proc/sys"),True)
+            self.assertEqual(run.call_count,2)
+
+    def test_private_guest_refuses_noncanonical_boot_id_file(self):
+        with mock.patch.object(guard, "private_guest_gate") as fake_gate, \
+             mock.patch.object(guard, "read_boot_id") as fake_read, \
+             mock.patch.object(sys, "argv", [
+                 "guard", "--state-dir",str(self.state),
+                 "--sysctl-root","/proc/sys",
+                 "--boot-id-file",str(self.boot),"--private-guest","recover",
+             ]):
+            with self.assertRaisesRegex(guard.GuardFailure,"canonical host boot-id"):
+                guard.main()
+            fake_gate.assert_called_once()
+            fake_read.assert_not_called()
 
     def test_proc_gate_rejects_real_host_without_private_guest(self):
         r = subprocess.run([
