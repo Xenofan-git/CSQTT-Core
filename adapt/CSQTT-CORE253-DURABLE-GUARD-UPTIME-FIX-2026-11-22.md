@@ -53,3 +53,25 @@ power outage and reboot on a regular Linux host remain unverified.
 Guard continues to refuse real /proc/sys except isolated root
 AArch64 guest named csqtt-core8-isolated without default route.
 Do not bypass this gate or install guest-only template on NanoPi.
+
+## Revalidated in native Linux ARM64 GitHub Actions
+
+- Commit 9abbe3fc2de4a1af2959ca40cbb74537a90043e3.
+- CI 45046139385 SUCCESS (native ARM64):
+  23/23 offline guard unit/security tests PASS, real Core8
+  UDP/HTTPS/TLS bound in an isolated network+hostname namespace.
+  The real child received SIGKILL; the external journal supervisor
+  restored the prior IPv6 forwarding value, cleared ownership
+  state, then allowed a second Core8 start and normal SIGTERM.
+  Read-only log markers include
+  CSQTT_CORE253_GUARD_REAL_SIGKILL_IPV6_FORWARDING_RESTORED_PASS
+  and CSQTT_CORE253_GUARD_REAL_ARM64_SIGKILL_RECOVER_RESTART_ALL_PASS.
+- CI 45046139361 SUCCESS (offline guarded systemd contract):
+  8/8 unit invariants, systemd-analyze verify and 23/23 guard tests.
+- The 181 synthetic wait polls prove absence of the previous 140
+  poll timeout condition in the updated source, not actual 181
+  seconds of production traffic. The real new Core8 restoration
+  test confirms the new guard did not regress crash recovery.
+- No systemd unit was started in CI 45046139361.
+  Actual systemd auto restart, controlled power failure and
+  production host default-route safety remain unverified.
