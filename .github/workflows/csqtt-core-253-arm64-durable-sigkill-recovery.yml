@@ -46,7 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -B adapt/test-core8-private-durable-sysctl-guard-offline.py
-          echo CSQTT_CORE253_DURABLE_GUARD_OFFLINE_25_TESTS_PASS
+          echo CSQTT_CORE253_DURABLE_GUARD_OFFLINE_28_TESTS_PASS
       - name: Real Core8 SIGKILL, durable journal restoration and restart, NET+UTS private
         shell: bash
         run: |

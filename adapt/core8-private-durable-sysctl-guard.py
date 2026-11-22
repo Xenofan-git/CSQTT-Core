@@ -256,7 +256,12 @@ def recover(state: Path, root: Path, boot: str) -> str:
         os.replace(journal_path(state), archived)
         sync_state_dir(state)
         return "STALE_BOOT_ARCHIVED_WITHOUT_RESTORING"
+    # First validate the ENTIRE journal without changing any sysctl.
+    # The prior one-pass loop could partially restore several kernel
+    # parameters before discovering that a later parameter was modified
+    # externally. A known ownership conflict must cause ZERO writes.
     bad = []
+    to_restore = []
     for rel, original in reversed(tuple(j["values"].items())):
         try:
             current = read_parameter(root, rel)
@@ -265,11 +270,33 @@ def recover(state: Path, root: Path, boot: str) -> str:
             if current != PARAMETERS[rel]:
                 bad.append(rel)
                 continue
-            write_parameter(root, rel, original)
-        except (OSError, GuardFailure) as exc:
+            to_restore.append((rel, original))
+        except (OSError, GuardFailure):
             bad.append(rel)
     if bad:
-        # Fail closed, keep durable ownership journal. No silent success.
+        # Keep the durable journal and leave ALL values untouched.
+        raise GuardFailure("RECOVERY_UNRESOLVED:" + ",".join(sorted(bad)))
+
+    # Once the full preflight passes, restore in the deterministic
+    # reverse journal-key order. Recheck each value before writing:
+    # an external change between validation and restoration is not
+    # an authorization for this guard to overwrite that value.
+    bad = []
+    for rel, original in to_restore:
+        try:
+            current = read_parameter(root, rel)
+            if current == original:
+                continue
+            if current != PARAMETERS[rel]:
+                bad.append(rel)
+                break
+            write_parameter(root, rel, original)
+        except (OSError, GuardFailure):
+            bad.append(rel)
+            break
+    if bad:
+        # Mid-restore failure can still leave an incomplete restoration;
+        # keep the journal for an explicit, subsequent recovery.
         raise GuardFailure("RECOVERY_UNRESOLVED:" + ",".join(sorted(bad)))
     clear_journal(state)
     return "RESTORED_AND_VERIFIED"

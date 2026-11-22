@@ -196,6 +196,86 @@ class DurableGuardTests(unittest.TestCase):
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
         self.assertEqual(self.values(), self.previous)
 
+    def test_conflicting_last_parameter_must_not_partially_restore_others(self):
+        # persist() sorts the JSON keys. Recover scans reverse
+        # lexicographic order, so corrupt the LAST examined entry:
+        # a one-pass implementation would restore all others first.
+        guard.safe_dir(self.state)
+        baseline=guard.snapshot(self.sysroot)
+        guard.persist(self.state,str(uuid.UUID(self.boot.read_text())),baseline)
+        for rel,target in guard.PARAMETERS.items():
+            (self.sysroot/rel).write_text(target+"\n")
+        conflict=sorted(guard.PARAMETERS)[0]
+        (self.sysroot/conflict).write_text("9\n")
+        expected={rel:("9" if rel==conflict else target)
+                  for rel,target in guard.PARAMETERS.items()}
+        before=self.values()
+        self.assertEqual(before,expected)
+        blocked=self.run_guard("recover")
+        self.assertEqual(blocked.returncode,75,blocked.stdout+blocked.stderr)
+        self.assertIn("RECOVERY_UNRESOLVED",blocked.stderr)
+        # Rejection must not touch ANY sysctl, including otherwise
+        # restorable entries, when a preexisting conflict is present.
+        self.assertEqual(self.values(),before)
+        self.assertTrue((self.state/guard.JOURNAL).exists())
+        # Once the outside conflict is resolved, recover every entry.
+        (self.sysroot/conflict).write_text(guard.PARAMETERS[conflict]+"\n")
+        recovered=self.run_guard("recover")
+        self.assertEqual(recovered.returncode,0,recovered.stderr)
+        self.assertEqual(self.values(),baseline)
+        self.assertFalse((self.state/guard.JOURNAL).exists())
+
+    def test_missing_late_parameter_does_not_partially_restore_others(self):
+        guard.safe_dir(self.state)
+        baseline=guard.snapshot(self.sysroot)
+        guard.persist(self.state,str(uuid.UUID(self.boot.read_text())),baseline)
+        for rel,target in guard.PARAMETERS.items():
+            (self.sysroot/rel).write_text(target+"\n")
+        missing=sorted(guard.PARAMETERS)[0]
+        (self.sysroot/missing).unlink()
+        prior={
+            rel:(self.sysroot/rel).read_text().strip()
+            for rel in guard.PARAMETERS if rel != missing
+        }
+        failed=self.run_guard("recover")
+        self.assertEqual(failed.returncode,75,failed.stdout+failed.stderr)
+        self.assertIn("RECOVERY_UNRESOLVED",failed.stderr)
+        self.assertEqual({
+            rel:(self.sysroot/rel).read_text().strip()
+            for rel in guard.PARAMETERS if rel != missing
+        },prior)
+        self.assertTrue((self.state/guard.JOURNAL).exists())
+        (self.sysroot/missing).write_text(guard.PARAMETERS[missing]+"\n")
+        self.assertEqual(self.run_guard("recover").returncode,0)
+        self.assertEqual(self.values(),baseline)
+
+    def test_external_change_between_preflight_and_write_is_not_overwritten(self):
+        guard.safe_dir(self.state)
+        baseline=guard.snapshot(self.sysroot)
+        guard.persist(self.state,str(uuid.UUID(self.boot.read_text())),baseline)
+        for rel,target in guard.PARAMETERS.items():
+            (self.sysroot/rel).write_text(target+"\n")
+        # persist() uses JSON sort_keys=True, hence recover() iterates
+        # reverse LEXICOGRAPHICAL journal order, not dict insertion order.
+        first=sorted(guard.PARAMETERS)[-1]
+        expected=guard.PARAMETERS.copy()
+        actual_read=guard.read_parameter
+        read_counts={}
+        def inject_concurrent_change(root,rel):
+            read_counts[rel]=read_counts.get(rel,0)+1
+            if rel==first and read_counts[rel]==2:
+                (root/rel).write_text("9\n")
+            return actual_read(root,rel)
+        with mock.patch.object(guard,"read_parameter",side_effect=inject_concurrent_change):
+            with self.assertRaisesRegex(guard.GuardFailure,"RECOVERY_UNRESOLVED"):
+                guard.recover(self.state,self.sysroot,str(uuid.UUID(self.boot.read_text())))
+        expected[first]="9"
+        self.assertEqual(self.values(),expected)
+        self.assertTrue((self.state/guard.JOURNAL).exists())
+        (self.sysroot/first).write_text(guard.PARAMETERS[first]+"\n")
+        self.assertEqual(self.run_guard("recover").returncode,0)
+        self.assertEqual(self.values(),baseline)
+
     def test_old_boot_journal_archived_no_cross_boot_writes(self):
         _, childpid = self.spawn_guard()
         parent = self.parents[-1]

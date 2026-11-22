@@ -167,6 +167,68 @@ def main():
                 "archive collision created a repeating restart loop")
         print("CSQTT_USER_SYSTEMD_STALE_ARCHIVE_COLLISION_FAILCLOSED_PASS",
               flush=True)
+
+        # Valid SAME-boot journal with one later-detected ownership conflict:
+        # a service upgrade/restart MUST NOT partially restore unrelated
+        # fake sysctl values before refusing the startup.
+        source.unlink()
+        guard.persist(state,new_boot,new_sysctl)
+        conflict=sorted(guard.PARAMETERS)[0]
+        for rel,target in guard.PARAMETERS.items():
+            (root/rel).write_text(target+"\n")
+        (root/conflict).write_text("9\n")
+        before_conflict=lab.values(root,guard.PARAMETERS)
+        require(before_conflict[conflict]=="9","invalid conflict fixture")
+        marker2="CSQTT_VALID_JOURNAL_CONFLICT_"+secrets.token_hex(4)
+        with logfile.open("a") as stream:
+            stream.write("\n"+marker2+"\n")
+        lab.cmd("systemctl","--user","reset-failed",unit,check=False)
+        lab.cmd("systemctl","--user","start",unit,check=False)
+        lab.wait_until(
+            lambda: "CORE8_GUARD_FAILED:RECOVERY_UNRESOLVED:" in
+                    logfile.read_text().split(marker2,1)[-1],
+            timeout=9,what="valid journal external sysctl ownership conflict")
+        time.sleep(2.4)
+        require(lab.values(root,guard.PARAMETERS)==before_conflict,
+                "sysctls partially overwritten despite an existing conflict")
+        require(len(lab.read_pids(launches))==1,
+                "systemd launched a new child with an unresolved conflict")
+        require(source.exists() and guard.read_journal(state)["boot_id"]==new_boot,
+                "unresolved valid journal not retained")
+        require(archive.read_bytes()==old_bytes,"previous boot archive was modified")
+        require(logfile.read_text().split(marker2,1)[-1].count("CORE8_GUARD_FAILED:")<=2,
+                "a valid-but-conflicted journal caused a restart loop")
+        print("CSQTT_USER_SYSTEMD_VALID_CONFLICT_ZERO_PARTIAL_RESTORE_PASS",
+              flush=True)
+
+        # An authorized operator fixes ONLY the externally conflicting
+        # test value; the very next systemd start must recover the prior
+        # journal, snapshot fresh current baseline and run successfully.
+        (root/conflict).write_text(guard.PARAMETERS[conflict]+"\n")
+        lab.cmd("systemctl","--user","reset-failed",unit,check=False)
+        lab.cmd("systemctl","--user","start",unit)
+        second=lab.wait_until(
+            lambda: lab.read_pids(launches)[1:2],
+            timeout=12,what="synthetic child after resolving sysctl conflict")
+        second_pid=second[0]
+        require(second_pid!=pid and lab.alive(second_pid),
+                "new synthetic Core8 not started after conflict repair")
+        lab.wait_until(lambda: lab.values(root,guard.PARAMETERS)==guard.PARAMETERS,
+                       timeout=8,what="new child applies fake target parameters")
+        new_after_repair=guard.read_journal(state)
+        require(new_after_repair is not None
+                and new_after_repair["boot_id"]==new_boot
+                and new_after_repair["values"]==new_sysctl,
+                "recovered journal failed to capture new boot baseline")
+        lab.cmd("systemctl","--user","stop",unit)
+        lab.wait_until(lambda: lab.values(root,new_sysctl)==new_sysctl,
+                       timeout=8,what="restored values after repaired startup")
+        lab.wait_until(lambda: not lab.alive(second_pid),
+                       timeout=8,what="repaired run child reaped")
+        require(not source.exists() and archive.read_bytes()==old_bytes,
+                "repaired startup did not clear journal or damaged old audit")
+        print("CSQTT_USER_SYSTEMD_CONFLICT_RESOLVED_RESTART_RESTORES_PASS",
+              flush=True)
     finally:
         lab.cmd("systemctl","--user","stop",unit,check=False)
         lab.cmd("systemctl","--user","reset-failed",unit,check=False)
