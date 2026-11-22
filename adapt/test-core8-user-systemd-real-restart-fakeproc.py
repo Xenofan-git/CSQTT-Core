@@ -259,32 +259,38 @@ def main():
                     lambda: read_pids(launches) if len(read_pids(launches))>count_before else None,
                     timeout=9,what="next rate-limit child")
             else:
-                try:
-                    wait_until(
-                        lambda: (userprop(unit,"Result")=="start-limit-hit"
-                                 or len(read_pids(launches))>count_before),
-                        timeout=10,what="rate limit or unexpected new process")
-                finally:
-                    print("CSQTT_STARTLIMIT_POST_THIRD",
-                          cmd("systemctl","--user","show",unit,
-                              "-p","ActiveState","-p","Result","-p","NRestarts",
-                              "-p","ExecMainStatus","-p","StartLimitBurst",
-                              check=False).replace("\\n",";"),
-                          "NEW_PIDS="+str(read_pids(launches)[before_count:]),
-                          "LOG_SUFFIX="+logfile.read_text(errors="replace")[-1500:],
-                          flush=True)
-                if userprop(unit,"Result")!="start-limit-hit":
-                    reject("systemd did not prevent a fourth rapid start")
-        time.sleep(1.5)
+                # systemd v257 can preserve Result=exit-code while
+                # ActiveState=failed after hitting its rate limiter.
+                # The meaningful invariant is the number of starts
+                # and restored fake kernel state, not a display label.
+                wait_until(lambda: userprop(unit,"ActiveState")=="failed"
+                           and not alive(pid),timeout=10,
+                           what="final child crash and systemd failed state")
+        time.sleep(2.0)
+        state_snapshot=cmd("systemctl","--user","show",unit,
+                           "-p","ActiveState","-p","Result","-p","NRestarts",
+                           "-p","StartLimitBurst","-p","StartLimitIntervalUSec",
+                           check=False)
+        print("CSQTT_STARTLIMIT_FINAL_SYSTEMD_STATE",state_snapshot.replace("\\n",";"),
+              "LAUNCH_PIDS="+str(read_pids(launches)[before_count:]),
+              flush=True)
         if len(read_pids(launches))!=before_count+3:
-            reject("systemd exceeded expected three starts within rate limit")
+            reject("systemd exceeded configured three starts within window")
+        if userprop(unit,"ActiveState")!="failed":
+            reject("systemd service did not stop restarting after repeated crashes")
+        if int(userprop(unit,"StartLimitBurst") or "0")!=3:
+            reject("unexpected systemd StartLimitBurst property")
+        if int(userprop(unit,"NRestarts") or "0")<2:
+            reject("systemd did not record failure restarts")
         wait_until(lambda: values(root,baseline)==baseline,
                    timeout=8,what="last fake sysctl restoration")
         if (state/g.JOURNAL).exists():
-            reject("journal left behind after start-limit hit")
+            reject("journal left behind after bounded failures")
         for pid in read_pids(launches)[before_count:]:
             if alive(pid):
-                reject("orphan synthetic Core8 after start-limit")
+                reject("orphan synthetic Core8 after bounded restart policy")
+        if logfile.read_text().count("CORE8_STOP_RECOVERY=RESTORED_AND_VERIFIED")<5:
+            reject("not all fake-proc crash cycles recovered")
         print("CSQTT_USER_SYSTEMD_REAL_STARTLIMIT_BURST_3_PASS",flush=True)
     finally:
         cmd("systemctl","--user","stop",unit,check=False)

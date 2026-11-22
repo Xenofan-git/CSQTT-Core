@@ -71,6 +71,20 @@ guest test still remains a release gate.
 Additional negative coverage now exercises real systemd
 StartLimitBurst=3 per 25sec by SIGKILL-ing three consecutive fake
 Core8 children after resetting the *test-only* unit failure counter.
-It requires systemd Result=start-limit-hit, no fourth launch,
+It requires systemd to stop restarting after three launches, no fourth launch,
 full restoration of the fake kernel values and no orphan.
 The follow-up CI result must be verified before claiming PASS.
+
+## Real systemd StartLimit diagnostic — important observed difference
+
+GitHub ARM64 run 45048812019 was intentionally left red because
+the test demanded Result=start-limit-hit after three crashes. Actual
+systemd user manager reported StartLimitBurst=3, interval25s,
+NRestarts=3 and ActiveState=failed, but Result=exit-code, with
+exactly three synthetic process PIDs and no fourth process.
+This is not evidence of an unsafe restart loop. The updated
+assertion requires the **actual bounded process count**, a failed
+inactive unit, expected configured rate limits, and restoration
+of every fake sysctl value, an empty durable journal, and no orphans.
+It does NOT accept unlimited relaunches or skip journal checks.
+A new GitHub run must confirm this outcome independently.
