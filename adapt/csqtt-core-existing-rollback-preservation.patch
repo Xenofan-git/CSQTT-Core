@@ -1,0 +1,320 @@
+--- a/server-assets/deploy-csqtt-core-250.sh
++++ b/server-assets/deploy-csqtt-core-250.sh
+@@ -52,6 +52,252 @@
+ DEPLOY_PHASE="initial"
+ DOCKER_CONTEXT_DIR=""
+ CSQTT_DOCKER_CANDIDATE_IMAGE=""
++ROLLBACK_DIR=""
++ROLLBACK_ARMED=0
++ROLLBACK_WAS_ACTIVE=0
++ROLLBACK_WAS_ENABLED=0
++
++# Only a snapshot created by our own mktemp path may be discarded here.
++# Never delete an armed recovery snapshot, even if cleaning failed earlier.
++discard_unarmed_systemd_snapshot() {
++    [ "$ROLLBACK_ARMED" -eq 0 ] || return 1
++    if [ -n "$ROLLBACK_DIR" ] && [ -d "$ROLLBACK_DIR" ]; then
++        rm -rf -- "$ROLLBACK_DIR" || {
++            log_error "Cannot delete incomplete CSQTT recovery copy: $ROLLBACK_DIR"
++            return 1
++        }
++    fi
++    ROLLBACK_DIR=""
++}
++
++snapshot_existing_systemd() {
++    [ "$DEPLOY_MODE" = systemd ] || return 0
++    local old_binary=/usr/local/bin/csqtt-core
++    local old_unit=/etc/systemd/system/csqtt-core.service
++    # Reject unsafe pre-existing paths BEFORE cp -a creates any snapshot.
++    # If config is a symlink, the SQLite-exclusion rm inside the saved copy
++    # would traverse the link and could delete a LIVE source csqtt.db.
++    # A helper symlink or non-directory also prevents reliable rollback.
++    if [ -L "$CSQTT_CONFIG_DIR" ] ||
++       { [ -e "$CSQTT_CONFIG_DIR" ] && [ ! -d "$CSQTT_CONFIG_DIR" ]; }; then
++        log_error "Previous CSQTT-Core config path is symlinked or not a directory; refusing install"
++        return 1
++    fi
++    if [ -L /usr/local/lib/csqtt-core ] ||
++       { [ -e /usr/local/lib/csqtt-core ] && [ ! -d /usr/local/lib/csqtt-core ]; }; then
++        log_error "Previous CSQTT-Core helper path is symlinked or not a directory; refusing install"
++        return 1
++    fi
++    # Fresh install is safe only when BOTH prior runtime paths are absent.
++    # A half-installed runtime or symlink cannot be upgraded without an
++    # unambiguous rollback snapshot. Fail before cutover, never fail-open.
++    if [ ! -e "$old_binary" ] && [ ! -L "$old_binary" ] &&
++       [ ! -e "$old_unit" ] && [ ! -L "$old_unit" ]; then
++        return 0
++    fi
++    if [ ! -f "$old_binary" ] || [ -L "$old_binary" ] ||
++       [ ! -f "$old_unit" ] || [ -L "$old_unit" ]; then
++        log_error "Previous CSQTT-Core systemd runtime is incomplete or symlinked; refusing upgrade without rollback snapshot"
++        return 1
++    fi
++    ROLLBACK_DIR="$(mktemp -d /tmp/csqtt-core-rollback.XXXXXXXX)" || return 1
++    # Before the rollback lease is armed, a failed cp can leave a partial
++    # credentials/SQLite copy under /tmp. Explicitly clean every partial
++    # snapshot, including when this function is called from an if-condition
++    # (where Bash's implicit errexit is disabled).
++    if ! chmod 700 "$ROLLBACK_DIR"; then
++        discard_unarmed_systemd_snapshot
++        return 1
++    fi
++    systemctl is-active --quiet csqtt-core && ROLLBACK_WAS_ACTIVE=1 || true
++    systemctl is-enabled --quiet csqtt-core && ROLLBACK_WAS_ENABLED=1 || true
++    if ! cp -a /usr/local/bin/csqtt-core "$ROLLBACK_DIR/binary" ||
++       ! cp -a /etc/systemd/system/csqtt-core.service "$ROLLBACK_DIR/unit"; then
++        discard_unarmed_systemd_snapshot
++        return 1
++    fi
++    if [ -d "$CSQTT_CONFIG_DIR" ]; then
++        if ! cp -a "$CSQTT_CONFIG_DIR" "$ROLLBACK_DIR/config"; then
++            discard_unarmed_systemd_snapshot
++            return 1
++        fi
++        # Persistent SQLite/credentials are preserved in place by csqtt_cleanup.
++        # Never overwrite a live WAL database from a non-transactional copy.
++        if ! rm -f "$ROLLBACK_DIR/config/csqtt.db" "$ROLLBACK_DIR/config/csqtt.db-wal" "$ROLLBACK_DIR/config/csqtt.db-shm"; then
++            discard_unarmed_systemd_snapshot
++            return 1
++        fi
++    fi
++    if [ -d /usr/local/lib/csqtt-core ] &&
++       ! cp -a /usr/local/lib/csqtt-core "$ROLLBACK_DIR/helpers"; then
++        discard_unarmed_systemd_snapshot
++        return 1
++    fi
++    # Verify the exact previous ELF/unit later, before stopping any service.
++    # Relative paths allow sha256sum -c to work inside the private snapshot.
++    if ! (cd "$ROLLBACK_DIR" && sha256sum binary unit > SHA256SUMS); then
++        discard_unarmed_systemd_snapshot
++        return 1
++    fi
++    ROLLBACK_ARMED=1
++    log_info "Резервная копия предыдущего systemd runtime подготовлена"
++}
++
++# Verify the RESTORED runtime, never the failed candidate's WEB_PORT or
++# CSQTT_WEB_SECRET_PATH. Bind exclusively to loopback and do not log secrets.
++verify_rollback_web_panel() {
++    local unit=/etc/systemd/system/csqtt-core.service
++    local line old_port="" secret_path="" code attempt port_matches=0
++    [ -f "$unit" ] && [ ! -L "$unit" ] || return 1
++    while IFS= read -r line; do
++        case "$line" in
++            ExecStart=*)
++                if [[ "$line" =~ (^|[[:space:]])--web-port[[:space:]]+([0-9]{1,5})($|[[:space:]]) ]]; then
++                    old_port="${BASH_REMATCH[2]}"
++                    port_matches=$((port_matches + 1))
++                fi
++                ;;
++        esac
++    done < "$unit"
++    if [ "$port_matches" -ne 1 ] || [ "$old_port" -lt 1 ] || [ "$old_port" -gt 65535 ]; then
++        log_error "Cannot determine unique previous CSQTT web port from restored systemd unit"
++        return 1
++    fi
++
++    # Read the old secret path only AFTER restoring its saved env file. The
++    # candidate's process environment may point to a different login URL.
++    if [ -f "$CSQTT_CONFIG_DIR/csqtt-core.env" ]; then
++        secret_path="$(grep -m1 -E '^[[:space:]]*(export[[:space:]]+)?CSQTT_WEB_SECRET_PATH=' "$CSQTT_CONFIG_DIR/csqtt-core.env" 2>/dev/null | cut -d= -f2- | tr -d "\"'" | tr -d '[:space:]' || true)"
++    fi
++    while [ "${secret_path#/}" != "$secret_path" ]; do secret_path="${secret_path#/}"; done
++    while [ "${secret_path%/}" != "$secret_path" ]; do secret_path="${secret_path%/}"; done
++    case "$secret_path" in
++        *..*|*[!a-zA-Z0-9_./~-]*)
++            log_error "Invalid previous CSQTT secret-path format; refusing false-positive rollback health check"
++            return 1 ;;
++    esac
++    local health_url="https://127.0.0.1:${old_port}/${secret_path}"
++    [ -z "$secret_path" ] || health_url="${health_url}/"
++    for attempt in 1 2 3 4 5; do
++        code="$(curl --silent --insecure --noproxy '*' --output /dev/null --write-out '%{http_code}' \
++            --connect-timeout 1 --max-time 2 "$health_url" 2>/dev/null || true)"
++        case "$code" in
++            200|301|302|401)
++                log_info "Previous CSQTT HTTPS panel restored (HTTP $code)"
++                return 0 ;;
++        esac
++        sleep 1
++    done
++    log_error "Previous CSQTT HTTPS panel unavailable after rollback"
++    return 1
++}
++
++verify_rollback_snapshot_integrity() {
++    [ "$ROLLBACK_ARMED" -eq 1 ] || return 1
++    [ -d "$ROLLBACK_DIR" ] && [ ! -L "$ROLLBACK_DIR" ] || return 1
++    [ -f "$ROLLBACK_DIR/binary" ] && [ ! -L "$ROLLBACK_DIR/binary" ] || return 1
++    [ -f "$ROLLBACK_DIR/unit" ] && [ ! -L "$ROLLBACK_DIR/unit" ] || return 1
++    [ -f "$ROLLBACK_DIR/SHA256SUMS" ] && [ ! -L "$ROLLBACK_DIR/SHA256SUMS" ] || return 1
++    # Do not trust partial or modified snapshots; verify before stopping the
++    # currently running service, not during restoration after the cutover.
++    (cd "$ROLLBACK_DIR" && sha256sum --check --status SHA256SUMS)
++}
++
++restore_previous_systemd() {
++    [ "$ROLLBACK_ARMED" -eq 1 ] || return 0
++    if ! verify_rollback_snapshot_integrity; then
++        log_error "Previous CSQTT-Core ELF/unit snapshot failed SHA-256 verification; recovery copy preserved"
++        return 1
++    fi
++    # Preserve the rollback lease until every restoration step has succeeded.
++    log_warn "Ошибка обновления: восстанавливаем предыдущий systemd runtime"
++    systemctl stop csqtt-core >/dev/null 2>&1 || true
++    install -m 755 "$ROLLBACK_DIR/binary" /usr/local/bin/csqtt-core || return 1
++    cp -a "$ROLLBACK_DIR/unit" /etc/systemd/system/csqtt-core.service || return 1
++    # Detect successful-but-corrupted writes before trying to restart the old unit.
++    cmp -s "$ROLLBACK_DIR/binary" /usr/local/bin/csqtt-core || return 1
++    cmp -s "$ROLLBACK_DIR/unit" /etc/systemd/system/csqtt-core.service || return 1
++    # The previous runtime may not have had a config directory. Reconcile
++    # candidate-only files regardless, keeping SQLite, WAL, legacy state and
++    # unrelated data untouched. Refuse symlinked config directories.
++    [ ! -L "$CSQTT_CONFIG_DIR" ] || return 1
++    if [ -d "$CSQTT_CONFIG_DIR" ]; then
++        local rollback_managed_file
++        for rollback_managed_file in \
++            csqtt-core.env deploy-overrides.json \
++            web_cert.pem web_key.pem letsencrypt-ip.env; do
++            if [ ! -e "$ROLLBACK_DIR/config/$rollback_managed_file" ] &&
++               [ ! -L "$ROLLBACK_DIR/config/$rollback_managed_file" ]; then
++                rm -f -- "$CSQTT_CONFIG_DIR/$rollback_managed_file" || return 1
++            fi
++        done
++    fi
++    if [ -d "$ROLLBACK_DIR/config" ]; then
++        mkdir -p "$CSQTT_CONFIG_DIR" || return 1
++        cp -a "$ROLLBACK_DIR/config/." "$CSQTT_CONFIG_DIR/" || return 1
++    fi
++    # Revert candidate helper scripts even if the previous runtime had no
++    # helper directory. Never remove other files in the shared parent directory.
++    [ ! -L /usr/local/lib/csqtt-core ] || return 1
++    if [ -d /usr/local/lib/csqtt-core ]; then
++        local rollback_helper
++        for rollback_helper in network-up.sh tun-recover.sh docker-prereq.sh; do
++            if [ ! -e "$ROLLBACK_DIR/helpers/$rollback_helper" ] &&
++               [ ! -L "$ROLLBACK_DIR/helpers/$rollback_helper" ]; then
++                rm -f -- "/usr/local/lib/csqtt-core/$rollback_helper" || return 1
++            fi
++        done
++    fi
++    if [ -d "$ROLLBACK_DIR/helpers" ]; then
++        mkdir -p /usr/local/lib/csqtt-core || return 1
++        cp -a "$ROLLBACK_DIR/helpers/." /usr/local/lib/csqtt-core/ || return 1
++    fi
++    systemctl daemon-reload || return 1
++    # The cutover disables the old unit. A rollback must also restore its
++    # original boot-enabled state, not only restart the running process.
++    if [ "$ROLLBACK_WAS_ENABLED" -eq 1 ]; then
++        systemctl enable csqtt-core >/dev/null 2>&1 || return 1
++    else
++        systemctl disable csqtt-core >/dev/null 2>&1 || return 1
++    fi
++    if [ "$ROLLBACK_WAS_ACTIVE" -eq 1 ]; then
++        systemctl restart csqtt-core || return 1
++        local attempt ready=0
++        for attempt in 1 2 3 4 5 6 7 8 9 10; do
++            if systemctl is-active --quiet csqtt-core && ip link show "$CSQTT_IFACE" >/dev/null 2>&1; then
++                ready=1
++                break
++            fi
++            sleep 1
++        done
++        [ "$ready" -eq 1 ] || return 1
++        # A running unit + TUN is not sufficient: ensure the previous server's
++        # own HTTPS login is reachable before deleting its recovery snapshot.
++        verify_rollback_web_panel || return 1
++    fi
++    log_info "Предыдущий systemd runtime восстановлен"
++    ROLLBACK_ARMED=0
++}
++
++cleanup_rollback_snapshot() {
++    # Do not destroy the only recovery copy on a failed restoration.
++    if [ "$ROLLBACK_ARMED" -eq 1 ]; then
++        return 1
++    fi
++    if [ -n "$ROLLBACK_DIR" ] && [ -d "$ROLLBACK_DIR" ]; then
++        rm -rf -- "$ROLLBACK_DIR"
++    fi
++    ROLLBACK_DIR=""
++}
++
++finish_deploy_rollback() {
++    if restore_previous_systemd; then
++        cleanup_rollback_snapshot
++    else
++        log_error "CRITICAL: automatic rollback failed; recovery files preserved at $ROLLBACK_DIR (mode 0700)"
++        return 1
++    fi
++}
+ 
+ validate_port() {
+     local name="$1" value="$2"
+@@ -102,6 +348,7 @@
+     log_error "$message"
+     printf 'CSQTT_DEPLOY_ERROR|%s|%s\n' "$DEPLOY_PHASE" "$message"
+     cleanup_deploy_uploads
++    finish_deploy_rollback || true
+     exit "$code"
+ }
+ 
+@@ -879,6 +1126,17 @@
+     esac
+     [ "$elf_machine" = "$expected_machine" ] || die "ELF architecture mismatch: host expects $expected_machine, got $elf_machine" "$EXIT_PREFLIGHT_FAILED"
+ 
++    # Fail closed: an uploaded ELF alone does not prove it came from tested Rust sources.
++    # Supply the SHA-256 recorded for the exact verified release binary.
++    local expected_sha actual_sha
++    expected_sha="${CSQTT_CORE_VERIFIED_BINARY_SHA256:-}"
++    [[ "$expected_sha" =~ ^[[:xdigit:]]{64}$ ]] || \
++        die "CSQTT_CORE_VERIFIED_BINARY_SHA256 (64 hex) is required for a verified release" "$EXIT_PREFLIGHT_FAILED"
++    actual_sha="$(sha256sum "$UPLOAD_BINARY" | awk '{print $1}')"
++    [ "${actual_sha,,}" = "${expected_sha,,}" ] || \
++        die "Verified CSQTT binary SHA-256 mismatch" "$EXIT_PREFLIGHT_FAILED"
++    log_info "SHA-256 загруженного бинарника совпадает с проверенным релизом"
++
+     chmod 0755 "$UPLOAD_BINARY" || die "Не удалось подготовить загруженный бинарник csqtt-core" "$EXIT_PREFLIGHT_FAILED"
+     chmod 0600 "$UPLOAD_ENV_FILE" "$UPLOAD_OVERRIDES_FILE" || \
+         die "Не удалось защитить загруженную конфигурацию" "$EXIT_PREFLIGHT_FAILED"
+@@ -2562,6 +2820,7 @@
+     log_error "Неперехваченная ошибка deploy.sh (строка $line, exit=$status)"
+     printf 'CSQTT_DEPLOY_ERROR|%s|Неперехваченная ошибка deploy.sh (строка %s, exit=%s)\n' "$DEPLOY_PHASE" "$line" "$status"
+     cleanup_deploy_uploads
++    finish_deploy_rollback || true
+     case "$DEPLOY_PHASE" in
+         validation) exit "$EXIT_INVALID_ARGUMENT" ;;
+         preflight) exit "$EXIT_PREFLIGHT_FAILED" ;;
+@@ -2623,6 +2882,8 @@
+ 
+             local total_started=$SECONDS
+             detect_os
++            # Verify payload identity before installing packages or changing sysctls.
++            run_timed "проверка upload" prepare_uploaded_release
+             run_timed "зависимости" install_prerequisites
+             require_runtime_tools
+             if [ "$DEPLOY_MODE" = "docker" ]; then
+@@ -2632,11 +2893,11 @@
+             run_timed "sysctl" setup_sysctl
+             run_timed "CPU mitigations" tune_cpu_mitigations
+ 
+-            run_timed "проверка upload" prepare_uploaded_release
+             if [ "$DEPLOY_MODE" = "docker" ]; then
+                 run_timed "Docker preflight" prepare_docker_candidate "$UPLOAD_BINARY"
+             fi
+             run_timed "preflight" run_platform_preflight
++            snapshot_existing_systemd
+             DEPLOY_PHASE="cutover"
+             run_timed "переключение runtime" csqtt_cleanup
+             detect_firewall
+@@ -2653,6 +2914,8 @@
+                 run_timed "systemd unit" setup_csqtt_service
+             fi
+             run_timed "запуск" start_csqtt
++            ROLLBACK_ARMED=0
++            cleanup_rollback_snapshot
+             log_info "Общее время deploy.sh: $((SECONDS - total_started))с"
+             ;;
+         *) die "Неизвестная команда установщика: $action" ;;
