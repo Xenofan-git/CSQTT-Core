@@ -49,3 +49,28 @@ privileged service manager. This is an actual user systemd test with
 a **fake Core8 and fake sysctls**, not real privileged systemd +
 actual Rust Core8 integration. A separate real Core8 root systemd
 guest test still remains a release gate.
+
+## Verified native ARM64 user-manager result
+
+- Initial CI45048454375 stopped before unit creation: the
+  runner-owned /run/user/1001/systemd/user directory did not exist.
+  It had not started any service or modified sysctls.
+- Narrow correction 8c979e0b6e17511d7c18e60be1ba7c04275aab0d
+  creates the directory only when its owner is the unprivileged
+  GitHub runner user, refusing symlinks or foreign-owned paths.
+- Native Ubuntu ARM64 CI45048555703 SUCCESS, real non-root user
+  systemd manager:
+  CSQTT_USER_SYSTEMD_REAL_AUTORESTART_AFTER_SIGKILL_PASS,
+  CSQTT_USER_SYSTEMD_REAL_STOP_MIXED_AND_EXECSTOPPOST_PASS,
+  CSQTT_USER_SYSTEMD_FAILCLOSED_CORRUPT_JOURNAL_PASS,
+  CSQTT_USER_SYSTEMD_UNPRIVILEGED_FAKEPROC_LIFECYCLE_PASS.
+  User systemd really restarted the killed fake Core8 child and
+  recovered only the private fake /tmp sysctl files.
+  No sudo, actual /proc write, production Core8 or network changes.
+
+Additional negative coverage now exercises real systemd
+StartLimitBurst=3 per 25sec by SIGKILL-ing three consecutive fake
+Core8 children after resetting the *test-only* unit failure counter.
+It requires systemd Result=start-limit-hit, no fourth launch,
+full restoration of the fake kernel values and no orphan.
+The follow-up CI result must be verified before claiming PASS.

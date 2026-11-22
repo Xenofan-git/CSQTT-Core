@@ -226,6 +226,45 @@ def main():
         if int(userprop(unit,"NRestarts") or "0") > 1:
             reject("systemd kept retrying after unrecoverable exit 75")
         print("CSQTT_USER_SYSTEMD_FAILCLOSED_CORRUPT_JOURNAL_PASS",flush=True)
+
+        # Independently exercise systemd's actual StartLimitBurst=3 /
+        # StartLimitIntervalSec=25. The already-corrupt journal is
+        # deliberately cleared by this ONLY fake-proc synthetic test.
+        # All three child crashes must restore the fake sysctl state;
+        # the service manager must refuse a fourth rapid start.
+        journal.unlink()
+        cmd("systemctl","--user","reset-failed",unit)
+        before_count=len(read_pids(launches))
+        cmd("systemctl","--user","start",unit)
+        launched=wait_until(
+            lambda: read_pids(launches) if len(read_pids(launches))>before_count else None,
+            timeout=9,what="rate-limit first child")
+        if len(launched)!=before_count+1:
+            reject("unexpected rate-limit first child count")
+        for crash in range(3):
+            count_before=len(read_pids(launches))
+            pid=read_pids(launches)[-1]
+            if not alive(pid):
+                reject("rate-limit candidate exited before deliberate SIGKILL")
+            os.kill(pid,signal.SIGKILL)
+            if crash<2:
+                wait_until(
+                    lambda: read_pids(launches) if len(read_pids(launches))>count_before else None,
+                    timeout=9,what="next rate-limit child")
+            else:
+                wait_until(lambda: userprop(unit,"Result")=="start-limit-hit",
+                           timeout=10,what="systemd start-limit-hit")
+        time.sleep(1.5)
+        if len(read_pids(launches))!=before_count+3:
+            reject("systemd exceeded expected three starts within rate limit")
+        wait_until(lambda: values(root,baseline)==baseline,
+                   timeout=8,what="last fake sysctl restoration")
+        if (state/g.JOURNAL).exists():
+            reject("journal left behind after start-limit hit")
+        for pid in read_pids(launches)[before_count:]:
+            if alive(pid):
+                reject("orphan synthetic Core8 after start-limit")
+        print("CSQTT_USER_SYSTEMD_REAL_STARTLIMIT_BURST_3_PASS",flush=True)
     finally:
         cmd("systemctl","--user","stop",unit,check=False)
         cmd("systemctl","--user","reset-failed",unit,check=False)
