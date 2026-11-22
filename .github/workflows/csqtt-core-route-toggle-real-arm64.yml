@@ -58,8 +58,27 @@ jobs:
           set -euo pipefail
           before4="$(ip -4 route show default)"
           before6="$(ip -6 route show default)"
+          cat > adapt/zz_route_toggle_fixture_linux_test.go <<'GO'
+          //go:build linux
+          package main
+          import ("strings";"testing";"time";"syscall")
+          func shellQuoteForTest(value string) string {
+            return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+          }
+          func waitProcessGone(t *testing.T,pid int) {
+            t.Helper()
+            deadline:=time.Now().Add(3*time.Second)
+            for time.Now().Before(deadline) {
+              err:=syscall.Kill(pid,0)
+              if err==syscall.ESRCH || (err!=nil && err!=syscall.EPERM) {return}
+              time.Sleep(20*time.Millisecond)
+            }
+            t.Fatalf("process %d still alive",pid)
+          }
+          GO
+          trap 'rm -f adapt/zz_route_toggle_fixture_linux_test.go' EXIT
           cd adapt
-          GO111MODULE=off GOTOOLCHAIN=local go test -race -count=1 -timeout=160s -run '^TestSingBoxSystemCardToggleActualTraffic$' -v             singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go             csqtt_core_socks5_linux.go singbox_config_linux_test.go singbox_route_toggle_linux_test.go             | tee "$RUNNER_TEMP/route-toggle.log"
+          GO111MODULE=off GOTOOLCHAIN=local go test -race -count=1 -timeout=160s -run '^TestSingBoxSystemCardToggleActualTraffic$' -v             singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go             csqtt_core_socks5_linux.go singbox_config_linux_test.go singbox_route_toggle_linux_test.go singbox_manager_linux_test.go csqtt_core_socks5_linux_test.go singbox_manager_rollback_linux_test.go singbox_transaction_linux_test.go zz_route_toggle_fixture_linux_test.go             | tee "$RUNNER_TEMP/route-toggle.log"
           grep -q '^--- PASS: TestSingBoxSystemCardToggleActualTraffic' "$RUNNER_TEMP/route-toggle.log"
           test "$(ip -4 route show default)" = "$before4"
           test "$(ip -6 route show default)" = "$before6"
