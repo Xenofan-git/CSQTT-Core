@@ -20,7 +20,14 @@
 #page-route .route-rule-editor h3{font-size:15px;margin:0}
 #page-route .route-rule-editor .field{margin:9px 0}
 #page-route .route-rule-editor textarea{min-height:54px}
-#page-route .route-rule-editor select[multiple]{width:100%;min-height:72px}
+#page-route .route-ruleset-picker input[type=search]{width:100%;box-sizing:border-box}
+#page-route .route-ruleset-options{display:flex;flex-wrap:wrap;gap:8px;max-height:155px;overflow-y:auto;padding:8px 0}
+#page-route .route-ruleset-option{display:flex;align-items:center;gap:7px;max-width:100%;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:10px;cursor:pointer;overflow-wrap:anywhere}
+#page-route .route-ruleset-option[hidden]{display:none}
+#page-route .route-ruleset-option:has(input:checked){border-color:var(--accent);background:rgba(126,87,194,.12)}
+#page-route .route-ruleset-option input{accent-color:var(--accent)}
+#page-route .route-ruleset-option span{min-width:0}
+#page-route .route-ruleset-option em{opacity:.75;font-size:12px}
 
 #page-route .route-rule{padding:12px 16px;border-radius:20px;margin:8px 0;box-shadow:none}
 #page-route .route-rule .route-rule-summary{display:flex;align-items:center;gap:10px;min-height:42px}
@@ -397,7 +404,14 @@ function renderRouteRuleEditor(){
  const selectedSystem=selected.ID==='system-direct'?'direct':selected.ID==='system-csqtt'?'csqtt':'';
  const enabled=(selected.Enabled??selected.enabled)!==false;
  const selectedOut=selected.Outbound||'csqtt';
- const editor='<section class="card route-rule-editor" data-editor-rule="'+esc(selectedRouteRuleId)+'"><div class="row" style="align-items:center;justify-content:space-between"><h3>'+(selectedSystem==='direct'?'DIRECT — условия':selectedSystem==='csqtt'?'CSQTT — условия':'Правило — '+esc(selected.ID||''))+'</h3><label><input type="checkbox" data-field="Enabled" '+(enabled?'checked':'')+' '+(selectedSystem==='csqtt'&&!$('singboxCsqtt').value.trim()?'disabled':'')+'> Включено</label></div><div class="field"><label>Rule Set</label><select data-field="RuleSets" multiple size="'+Math.max(2,Math.min(4,tags.length||2))+'">'+tags.map(t=>'<option value="'+esc(t)+'" '+((selected.RuleSets||[]).includes(t)?'selected':'')+'>'+esc(t)+'</option>').join('')+'</select><small class="muted">Можно выбрать несколько наборов.</small></div>'+field('Domains','Домены (точное совпадение)')+field('DomainSuffixes','Доменные суффиксы')+field('DomainKeywords','Ключевые слова домена')+field('DomainRegexes','Регулярные выражения домена')+field('IPCIDRs','IP / CIDR')+(selectedSystem==='direct'?'':selectedSystem==='csqtt'?'<div class="notice">Outbound: CSQTT (фиксированный)</div>':'<div class="field"><label>Outbound</label><select data-field="Outbound">'+outs.map(t=>'<option value="'+esc(t)+'" '+(selectedOut===t?'selected':'')+' '+(singBoxOutboundUnavailable(t)?'disabled':'')+'>'+esc(t)+'</option>').join('')+'</select></div>')+(selectedSystem?'':'<button type="button" class="danger small" data-delete-selected-rule="1">Удалить правило</button>')+'</section>';
+ const selectedSetTags=Array.isArray(selected.RuleSets)?selected.RuleSets:[];
+ const categoryTags=[...new Set([...selectedSetTags,...tags])];
+ const categoryMarkup=categoryTags.length?categoryTags.map(t=>{
+   const registered=tags.includes(t);
+   return '<label class="route-ruleset-option" data-search="'+esc(t.toLocaleLowerCase())+'"><input type="checkbox" data-ruleset-tag="'+esc(t)+'" '+(selectedSetTags.includes(t)?'checked':'')+'><span>'+esc(t)+(registered?'':' <em>(нет в реестре)</em>')+'</span></label>';
+ }).join(''):'<p class="muted">Нет Rule Sets. Добавьте набор на вкладке Sing-box.</p>';
+ const categoryField='<div class="field route-ruleset-picker"><label>Rule Sets — категории</label><input type="search" data-ruleset-search placeholder="Поиск категории..." autocomplete="off" aria-label="Поиск Rule Set"><div class="route-ruleset-options" data-field="RuleSets" role="group" aria-label="Категории Rule Sets">'+categoryMarkup+'</div><small class="muted">Отметьте нужные наборы. Выбор сохраняется отдельно для каждого правила.</small></div>';
+ const editor='<section class="card route-rule-editor" data-editor-rule="'+esc(selectedRouteRuleId)+'"><div class="row" style="align-items:center;justify-content:space-between"><h3>'+(selectedSystem==='direct'?'DIRECT — условия':selectedSystem==='csqtt'?'CSQTT — условия':'Правило — '+esc(selected.ID||''))+'</h3><label><input type="checkbox" data-field="Enabled" '+(enabled?'checked':'')+' '+(selectedSystem==='csqtt'&&!$('singboxCsqtt').value.trim()?'disabled':'')+'> Включено</label></div>'+categoryField+field('Domains','Домены (точное совпадение)')+field('DomainSuffixes','Доменные суффиксы')+field('DomainKeywords','Ключевые слова домена')+field('DomainRegexes','Регулярные выражения домена')+field('IPCIDRs','IP / CIDR')+(selectedSystem==='direct'?'':selectedSystem==='csqtt'?'<div class="notice">Outbound: CSQTT (фиксированный)</div>':'<div class="field"><label>Outbound</label><select data-field="Outbound">'+outs.map(t=>'<option value="'+esc(t)+'" '+(selectedOut===t?'selected':'')+' '+(singBoxOutboundUnavailable(t)?'disabled':'')+'>'+esc(t)+'</option>').join('')+'</select></div>')+(selectedSystem?'':'<button type="button" class="danger small" data-delete-selected-rule="1">Удалить правило</button>')+'</section>';
  root.innerHTML='<div class="route-rule-list" aria-label="Очередь правил">'+cardHTML+'</div>'+editor;
  root.querySelectorAll('[data-toggle-route-rule]').forEach(input=>input.addEventListener('change',()=>{collectRouteRuleEditor();const rules=routeJSON('singboxRules'),r=rules.find(x=>(x.ID||x.id)===input.dataset.toggleRouteRule);if(!r)return;r.Enabled=input.checked;$('singboxRules').value=JSON.stringify(rules,null,2);renderRouteRuleEditor()}));
  root.querySelectorAll('[data-select-route-rule]').forEach(b=>b.addEventListener('click',()=>{collectRouteRuleEditor();selectedRouteRuleId=b.dataset.selectRouteRule;renderRouteRuleEditor()}));
@@ -412,13 +426,17 @@ function renderRouteRuleEditor(){
   card.addEventListener('dragleave',()=>card.classList.remove('drag-over'));
   card.addEventListener('drop',e=>{e.preventDefault();card.classList.remove('drag-over');const from=dragId,to=card.dataset.ruleId;if(!from||from===to)return;collectRouteRuleEditor();const a=routeJSON('singboxRules'),fi=a.findIndex(x=>(x.ID||x.id)===from),ti=a.findIndex(x=>(x.ID||x.id)===to);if(fi<=0||ti<=0)return;const [item]=a.splice(fi,1);a.splice(ti,0,item);$('singboxRules').value=JSON.stringify(a,null,2);selectedRouteRuleId=from;renderRouteRuleEditor()});
  });
+ root.querySelector('[data-ruleset-search]')?.addEventListener('input',event=>{
+  const query=event.target.value.trim().toLocaleLowerCase();
+  root.querySelectorAll('.route-ruleset-option').forEach(item=>{item.hidden=!item.dataset.search.includes(query)});
+ });
  root.querySelectorAll('.route-rule-editor [data-field]').forEach(el=>el.addEventListener('change',()=>collectRouteRuleEditor()));
 }
 function collectRouteRuleEditor(){
  const root=$('singboxRouteRuleEditor'),editor=root?.querySelector('.route-rule-editor');if(!editor)return;
  const rules=routeJSON('singboxRules'),i=rules.findIndex(r=>(r.ID||r.id)===selectedRouteRuleId);if(i<0)return;
  const get=n=>editor.querySelector('[data-field="'+n+'"]'),lines=n=>(get(n)?.value||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
- const r=rules[i];r.Enabled=!!get('Enabled')?.checked;r.RuleSets=[...(get('RuleSets')?.selectedOptions||[])].map(x=>x.value);
+ const r=rules[i];r.Enabled=!!get('Enabled')?.checked;r.RuleSets=[...(get('RuleSets')?.querySelectorAll('input[data-ruleset-tag]:checked')||[])].map(x=>x.dataset.rulesetTag);
  for(const n of ['Domains','DomainSuffixes','DomainKeywords','DomainRegexes','IPCIDRs'])r[n]=lines(n);
  if(r.ID!=='system-direct'&&r.ID!=='system-csqtt')r.Outbound=get('Outbound')?.value||r.Outbound;
  $('singboxRules').value=JSON.stringify(rules,null,2);

@@ -265,6 +265,40 @@ def main():
             page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").fill("csqtt-route.example")
             assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Outbound\"]").count() == 0, "CSQTT outbound must be fixed"
             assert page.locator('#singboxRouteRuleEditor .route-rule-editor').get_by_text("Outbound: CSQTT (фиксированный)").is_visible()
+            # Route Rule Sets must support independent mobile checkboxes and filtering.
+            catalog = [
+                {"Type":"remote","Tag":"geo-ru","Format":"binary","URL":"https://example.org/geo-ru.srs"},
+                {"Type":"remote","Tag":"geo-foreign","Format":"binary","URL":"https://example.org/geo-foreign.srs"},
+            ]
+            page.evaluate("(catalog) => { document.getElementById('singboxRuleSets').value = JSON.stringify(catalog) }", catalog)
+            page.locator('.route-rule-editor [data-field="Domains"]').evaluate("(el) => el.dispatchEvent(new Event('change', {bubbles:true}))")
+            page.locator("#singboxRenderRouteRules").evaluate("(el) => el.click()")
+            page.locator('.route-rule-editor [data-ruleset-search]').fill("geo-ru")
+            assert page.locator('.route-rule-editor .route-ruleset-option:visible').count() == 1
+            page.locator('.route-rule-editor [data-ruleset-tag="geo-ru"]').check()
+            page.locator('.route-rule-editor [data-ruleset-search]').fill("geo-foreign")
+            assert page.locator('.route-rule-editor .route-ruleset-option:visible').count() == 1
+            page.locator('.route-rule-editor [data-ruleset-tag="geo-foreign"]').check()
+            page.locator('.route-rule-editor [data-ruleset-search]').fill("")
+            assert page.locator('.route-rule-editor [data-ruleset-tag="geo-ru"]').is_checked(), "search filtered away an existing Rule Set selection"
+            route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
+            route_cards.nth(0).locator('[data-select-route-rule]').click()
+            page.locator('.route-rule-editor [data-ruleset-tag="geo-ru"]').check()
+            route_cards.nth(1).locator('[data-select-route-rule]').click()
+            assert page.locator('.route-rule-editor [data-ruleset-tag="geo-ru"]').is_checked()
+            assert page.locator('.route-rule-editor [data-ruleset-tag="geo-foreign"]').is_checked()
+            # Deleted registry entries remain visible as warnings, so opening
+            # the editor never silently discards a referenced Rule Set.
+            page.evaluate("(catalog) => { document.getElementById('singboxRuleSets').value = JSON.stringify(catalog) }", catalog[:1])
+            page.locator("#singboxRenderRouteRules").evaluate("(el) => el.click()")
+            assert page.locator('.route-rule-editor [data-ruleset-tag="geo-foreign"]').is_checked()
+            assert "нет в реестре" in page.locator('.route-rule-editor .route-ruleset-option').filter(has_text="geo-foreign").inner_text()
+            page.evaluate("(catalog) => { document.getElementById('singboxRuleSets').value = JSON.stringify(catalog) }", catalog)
+            page.locator("#singboxRenderRouteRules").evaluate("(el) => el.click()")
+            # Searchable category chips must remain within the phone viewport.
+            page.set_viewport_size({"width":390,"height":844})
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+            page.set_viewport_size(original_viewport)
             # CSQTT starts immediately after DIRECT; priority controls can move it below user rules and restore it.
             route_cards.nth(1).locator("[data-move-route-rule]").last.click()
             route_cards = page.locator("#singboxRouteRuleEditor .route-rule")
@@ -289,6 +323,9 @@ def main():
             assert singbox_saved["Rules"][0]["ID"] == "system-direct" and singbox_saved["Rules"][0]["Domains"] == ["example.ru", "direct-route.example"] and singbox_saved["Rules"][0]["Enabled"] is True
             assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Enabled"] is True and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"], f"saved CSQTT rule mismatch: {json.dumps(singbox_saved.get('Rules', []), ensure_ascii=False)}"
             assert singbox_saved["Rules"][2]["Domains"] == ["user-route.example"] and singbox_saved["Rules"][2]["Outbound"] == "socks-hydra"
+            assert singbox_saved["Rules"][0]["RuleSets"] == ["geo-ru"]
+            assert singbox_saved["Rules"][1]["RuleSets"] == ["geo-ru", "geo-foreign"]
+            assert [x["Tag"] for x in singbox_saved["RuleSets"]] == ["geo-ru", "geo-foreign"]
             page.reload(wait_until="domcontentloaded")
             page.wait_for_function("document.querySelector('#profileList .profile') !== null")
             page.locator('button[data-page="route"]').click()
@@ -301,6 +338,8 @@ def main():
             route_cards.nth(1).locator('[data-select-route-rule]').click()
             assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").is_checked()
             assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").input_value() == "csqtt-route.example"
+            assert page.locator('.route-rule-editor [data-ruleset-tag="geo-ru"]').is_checked()
+            assert page.locator('.route-rule-editor [data-ruleset-tag="geo-foreign"]').is_checked()
             route_cards.nth(2).locator('[data-select-route-rule]').click()
             assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Outbound\"]").input_value() == "socks-hydra"
             assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").input_value() == "user-route.example"

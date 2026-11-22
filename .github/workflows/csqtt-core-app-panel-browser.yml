@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/direct-dnsmasq-dualstack-production
+      - test/csqtt-core-linux-unified-253-20261122
     paths:
       - adapt/csqtt-panel-preview.html
       - adapt/test-csqtt-panel-browser.py
