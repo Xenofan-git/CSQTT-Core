@@ -1,0 +1,32 @@
+# EXPERIMENT ONLY — NOT installed or enabled.
+# Strictly isolated aarch64 guest named csqtt-core8-isolated, with NO IPv4
+# default route; uses loopback-only Core8 bind. Requires human approval before
+# real guest integration. Never use on NanoPi, AMS, Moscow VPS or other hosts.
+[Unit]
+Description=Private isolated Core8 sysctl recovery lab (unapproved template)
+ConditionHost=csqtt-core8-isolated
+ConditionPathExists=/home/csqttlab/core8-arm64
+After=local-fs.target
+# Avoid repeated privileged start/restore loops after persistent failures.
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+Group=root
+# Provision credentials separately using a private mode-0600 file.
+# This sample intentionally carries NO actual secrets.
+EnvironmentFile=/etc/csqtt-core/private-core8.env
+ExecStart=/usr/bin/python3 /usr/local/libexec/core8-private-durable-sysctl-guard.py --state-dir /var/lib/csqtt-core-private/sysctl-guard --sysctl-root /proc/sys --boot-id-file /proc/sys/kernel/random/boot_id --private-guest run -- /home/csqttlab/core8-arm64 --listen 127.0.0.1:46871 --web-port 46872 --config-dir /var/lib/csqtt-core-private/config
+ExecStopPost=/usr/bin/python3 /usr/local/libexec/core8-private-durable-sysctl-guard.py --state-dir /var/lib/csqtt-core-private/sysctl-guard --sysctl-root /proc/sys --boot-id-file /proc/sys/kernel/random/boot_id --private-guest recover
+# The whole cgroup must stop before ExecStopPost tries a same-boot replay.
+KillMode=control-group
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

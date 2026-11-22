@@ -1,0 +1,69 @@
+name: Core8 derived kernel sysctl restore (offline lab)
+on:
+  push:
+    branches:
+      - test/core8-kernel-sysctl-restore-lab-20261121
+    paths:
+      - adapt/patch-core8-kernel-sysctl-restore.py
+      - adapt/test-core8-kernel-sysctl-restore-offline.py
+      - adapt/test-core8-guest-sysctl-restore-offline.py
+      - adapt/patch-core8-tproxy-sysctl-ownership.py
+      - adapt/test-core8-tproxy-sysctl-ownership-offline.py
+      - adapt/test-core8-tproxy-kernel-owner-integration-offline.py
+      - adapt/core8-private-durable-sysctl-guard.py
+      - adapt/test-core8-private-durable-sysctl-guard-offline.py
+      - adapt/test-core8-private-arm64-systemd-restart-failure-fixture.sh
+      - adapt/test-core8-private-arm64-rustpatch-raii-acceptance.py
+      - adapt/test-core8-private-arm64-tproxy-active-policy.py
+      - adapt/test-core8-private-arm64-tproxy-tun-packets.py
+      - adapt/patch-core8-stalled-tcp-dataplane-stop-budget.py
+      - adapt/test-core8-stalled-tcp-dataplane-stop-budget-offline.py
+      - adapt/patch-core8-dataplane-timeout-nonzero.py
+      - adapt/test-core8-dataplane-timeout-nonzero-offline.py
+      - adapt/test-core8-dataplane-timeout-error-chain-offline.py
+      - adapt/test-core8-dataplane-timeout-compiled-offline.py
+      - adapt/test-core8-rust-guard-exit-bridge-offline.py
+      - adapt/csqtt-core8-private-durable-guard.service.example
+      - .github/workflows/csqtt-core8-kernel-sysctl-restore-lab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-local-sysctl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm host Rust toolchain
+        run: rustc --version
+      - name: Strict source-anchor and compiled fake-file kernel restore tests
+        run: |
+          python3 -B adapt/test-core8-kernel-sysctl-restore-offline.py
+          python3 -B adapt/test-core8-guest-sysctl-restore-offline.py
+          python3 -B adapt/test-core8-tproxy-sysctl-ownership-offline.py
+          python3 -B adapt/test-core8-tproxy-kernel-owner-integration-offline.py
+          python3 -B adapt/test-core8-private-durable-sysctl-guard-offline.py
+          python3 -B adapt/test-core8-stalled-tcp-dataplane-stop-budget-offline.py
+          python3 -B adapt/test-core8-dataplane-timeout-nonzero-offline.py
+          python3 -B adapt/test-core8-dataplane-timeout-error-chain-offline.py
+          python3 -B adapt/test-core8-dataplane-timeout-compiled-offline.py
+          python3 -B adapt/test-core8-rust-guard-exit-bridge-offline.py
+      - name: Syntax check opt-in manual private ARM64 restart fixture
+        run: bash -n adapt/test-core8-private-arm64-systemd-restart-failure-fixture.sh
+      - name: Syntax-check manual real ARM64 Rust RAII acceptance harness only
+        run: |
+          python3 -B -c 'import ast; from pathlib import Path; p=Path("adapt/test-core8-private-arm64-rustpatch-raii-acceptance.py"); ast.parse(p.read_text()); print("MANUAL_ARM64_RAII_HARNESS_PARSE_OK")'
+      - name: Syntax-check manual real ARM64 TPROXY policy test only
+        run: |
+          python3 -B -c 'import ast; from pathlib import Path; p=Path("adapt/test-core8-private-arm64-tproxy-active-policy.py"); ast.parse(p.read_text()); print("MANUAL_ARM64_TPROXY_POLICY_HARNESS_PARSE_OK")'
+      - name: Syntax-check manual real ARM64 TUN TCP and UDP packet test only
+        run: |
+          python3 -B -c 'import ast; from pathlib import Path; p=Path("adapt/test-core8-private-arm64-tproxy-tun-packets.py"); ast.parse(p.read_text()); print("PRIVATE_ARM64_TUN_TCP_UDP_HARNESS_PARSE_OK")'
+      - name: Validate private guest systemd template without installation
+        run: |
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          cp adapt/csqtt-core8-private-durable-guard.service.example "$scratch/csqtt-core8-private-durable-guard.service"
+          systemd-analyze verify "$scratch/csqtt-core8-private-durable-guard.service"
