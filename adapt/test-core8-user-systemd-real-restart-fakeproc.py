@@ -71,9 +71,15 @@ def preflight():
         reject("unexpected user manager runtime location or owner")
     if cmd("systemctl","--user","is-system-running",check=False) not in ("running","degraded"):
         reject("real systemd --user manager unavailable; no privilege escalation attempted")
-    directory=runtime/"systemd"/"user"
-    if directory.is_symlink():
-        reject("systemd user runtime unit directory is symlinked")
+    parent=runtime/"systemd"
+    directory=parent/"user"
+    for location in (parent,directory):
+        if location.exists() and (location.is_symlink() or not location.is_dir()
+                                  or location.stat().st_uid!=os.getuid()):
+            reject("unsafe user-systemd runtime directory")
+        location.mkdir(mode=0o700,exist_ok=True)
+        if location.stat().st_uid!=os.getuid():
+            reject("unowned user-systemd runtime directory")
     return directory
 
 def values(root,targets):
