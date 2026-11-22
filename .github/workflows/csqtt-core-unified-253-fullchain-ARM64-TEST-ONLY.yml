@@ -1,0 +1,165 @@
+name: CSQTT Core selective 2.5.3 Core8 real WIRE-3 fullchain ARM64 CI
+on:
+  push:
+    branches: [test/csqtt-core-linux-unified-253-20261122]
+    paths:
+      - adapt/fullchain-fixture/**
+      - adapt/apply-csqtt-core-linux-tun-rawfd.py
+      - .github/workflows/csqtt-core-unified-253-fullchain-ARM64-TEST-ONLY.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  one-wire3-chain:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 75
+    env:
+      CARGO_BUILD_JOBS: "2"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_DEV_OPT_LEVEL: "1"
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.97.1'
+      - name: Retrieve newly verified four-component selective 2.5.3 candidate
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 45038262207
+          name: csqtt-core-linux-arm64-unified-253-four-component-EXPERIMENTAL
+          github-token: ${{ github.token }}
+          path: approved-candidate
+      - name: Provenance gate, NEW selective 2.5.3 Core8 + pinned sing-box
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,hashlib
+          root=Path('approved-candidate')
+          m=json.loads((root/'manifest.json').read_text())
+          assert m['wireProtocol']=='CSQTT-WIRE-3'
+          assert m['fullCombinedRuntimeAcceptance'] is False
+          assert m['globalDefaultRoute'] is False
+          assert m['selective253Core8Commit']=='4211ac5e3d1356699c84057f608035ae669e7cc7'
+          assert m['finalRustTreeSHA256']=='2c03df9581e87fe9e1e9ab0baaa7549dadaa8d2c32f5f62cb180193de2cb605a'
+          assert len(m['files'])==4
+          for n,meta in m['files'].items():
+           p=root/'bin'/n
+           assert hashlib.sha256(p.read_bytes()).hexdigest()==meta['sha256']
+           p.chmod(0o755)
+           print('INPUT_ELF_SHA256_PASS',n,meta['sha256'])
+          assert m['files']['csqtt-core-original-client-250-arm64']['sha256']=='3c76a4323ef784568a38a82e206cecfa7657d93c01b6a69033a2f7a2f44760fa'
+          assert m['files']['csqtt-core-derived-server-250-arm64']['sha256']=='362a27927764e4e728b6327ce3b62a229c376ae3512fdce3359c4d3bd9b8017e'
+          PY
+      - name: Stage pinned original Rust 2.5 source and synthetic TURN fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 --branch v2.5.0 https://github.com/amurcanov/csqtt.git /tmp/csqtt-original-250
+          test "$(git -C /tmp/csqtt-original-250 rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
+          cp /tmp/csqtt-original-250/app/src/main/assets/domains.txt /tmp/csqtt-original-250/domains.txt
+          echo '3783f488db5378a9d91120c43f874bf70cab62bd0a799b6951f7859a492cecd1  /tmp/csqtt-original-250/domains.txt' | sha256sum -c -
+          python3 adapt/fullchain-fixture/inject-test-turn-only.py /tmp/csqtt-original-250
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            /tmp/csqtt-original-250/rust-client/target
+            ~/.cargo/registry
+          key: csqtt-core250-arm64-pinned-v2-synthetic-turn-${{ hashFiles('adapt/fullchain-fixture/inject-test-turn-only.py') }}
+      - name: Compile original-source Rust 2.5 test-only TURN binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/csqtt-original-250/rust-client
+          cargo test --quiet --locked --bin client --no-run --message-format=json > /tmp/fullchain-cargo-tests.jsonl 2>/tmp/fullchain-cargo-tests.err || {
+            echo 'ISOLATED_RUST_COMPILER_DIAGNOSTICS_FROM_JSON_START'
+            python3 - <<'DIAGNOSTICS'
+          import json
+          from pathlib import Path
+          for line in Path('/tmp/fullchain-cargo-tests.jsonl').read_text().splitlines():
+              try: item=json.loads(line)
+              except ValueError: continue
+              if item.get('reason')=='compiler-message':
+                  message=item.get('message',{})
+                  if message.get('level') in ('error','failure-note'):
+                      print((message.get('rendered') or str(message))[:16000])
+          DIAGNOSTICS
+            echo 'ISOLATED_RUST_COMPILER_DIAGNOSTICS_FROM_JSON_END'
+            tail -35 /tmp/fullchain-cargo-tests.err
+            exit 1
+          }
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          binaries=[]
+          for line in Path('/tmp/fullchain-cargo-tests.jsonl').read_text().splitlines():
+           try:v=json.loads(line)
+           except ValueError:continue
+           if v.get('reason')=='compiler-artifact' and v.get('executable') and v.get('profile',{}).get('test'):
+            binaries.append(v['executable'])
+          assert len(binaries)==1,binaries
+          Path('/tmp/csqtt-250-fixture-test-bin.txt').write_text(binaries[0])
+          print('ORIGINAL_SOURCE_LOCAL_TURN_RELAY_TEST_EXECUTABLE',binaries[0])
+          PY
+          cargo build --release --locked --bin client --features isolated_turn_fixture
+          test -x target/release/client
+          file target/release/client | grep -F 'ARM aarch64'
+          sha256sum target/release/client
+          echo "CSQTT_E2E_RUST_CLIENT=$(realpath target/release/client)" >> "$GITHUB_ENV"
+          echo "CSQTT_E2E_TURN_TEST=$(cat /tmp/csqtt-250-fixture-test-bin.txt)" >> "$GITHUB_ENV"
+          echo 'TEST_ONLY_RUST250_SYNTHETIC_TURN_SOURCE_BUILT'
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            /tmp/csqtt-original-250/rust-client/target
+            ~/.cargo/registry
+          key: csqtt-core250-arm64-pinned-v2-synthetic-turn-${{ hashFiles('adapt/fullchain-fixture/inject-test-turn-only.py') }}
+      - name: Reconstruct pinned Go LinuxRunner with unchanged runtime except isolated fixture gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/Endlad2/LaLune.git upstream-lalune
+          git -C upstream-lalune checkout -q --detach e4a6d08b63aef6025bf8ad8f77da660ea552e04b
+          test "$(git -C upstream-lalune rev-parse HEAD)" = e4a6d08b63aef6025bf8ad8f77da660ea552e04b
+          python3 adapt/apply-pinned-original-linux-arm64-policy.py
+          python3 adapt/apply-csqtt-core-linux-tun-rawfd.py
+          python3 adapt/apply-csqtt-core-socks5.py
+          python3 adapt/apply-csqtt-core-250-supervisor-gate.py
+          python3 adapt/patch-csqtt-deploy-ui.py
+          cp adapt/csqtt_core_socks5_linux.go upstream-lalune/Desktop/Linux/
+          cp adapt/csqtt_core_250_client_launch_linux.go adapt/csqtt_core_250_supervisor_gate_linux.go upstream-lalune/Desktop/Linux/
+          cp adapt/singbox_config_linux.go adapt/singbox_manager_linux.go adapt/singbox_transaction_linux.go upstream-lalune/Desktop/Linux/
+          cp adapt/headless_main.go upstream-lalune/Desktop/Linux/
+          cp upstream-lalune/Desktop/Windows/go.mod upstream-lalune/Desktop/Linux/go.mod
+          cp upstream-lalune/Desktop/Windows/go.sum upstream-lalune/Desktop/Linux/go.sum
+          cp upstream-lalune/Core/SmartTunnel.lua upstream-lalune/Desktop/Libs/SmartTunnel.lua
+          ln -s ../Libs upstream-lalune/Desktop/Linux/Libs
+          mv upstream-lalune/Desktop/Linux/app.go upstream-lalune/Desktop/Linux/app_gui.go.disabled
+          mkdir -p upstream-lalune/Desktop/Linux/frontend
+          cp adapt/csqtt-panel-preview.html upstream-lalune/Desktop/Linux/frontend/index.html
+          cp adapt/nanopi.js upstream-lalune/Desktop/Linux/frontend/api.js
+          python3 adapt/fullchain-fixture/patch-test-go-client-hash.py upstream-lalune/Desktop/Linux "$CSQTT_E2E_RUST_CLIENT"
+          grep -Fq "unix.Read(tunFD, buf)" upstream-lalune/Desktop/Linux/app_linux.go
+          grep -Fq "unix.Write(tunFD, buf[:n])" upstream-lalune/Desktop/Linux/app_linux.go
+          grep -Fq 'os.Getenv("CSQTT_TEST_TURN_RELAY_PORT")==""' upstream-lalune/Desktop/Linux/app_linux.go
+          grep -Fq 'result = append(result, "--exact-workers")' upstream-lalune/Desktop/Linux/csqtt_core_250_supervisor_gate_linux.go
+          (cd upstream-lalune/Desktop/Linux && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /tmp/csqtt-fullchain-go-supervisor ./)
+          file /tmp/csqtt-fullchain-go-supervisor | grep -F 'ARM aarch64'
+          echo 'REAL_GO_SUPERVISOR_TEST_ONLY_BRIDGE_COMPILED'
+      - name: One native ARM64 netns path Go HTTP Connect to Rust TURN WIRE-3 Core8 TUN SOCKS sing-box
+        shell: bash
+        env:
+          CSQTT_E2E_GO: /tmp/csqtt-fullchain-go-supervisor
+          CSQTT_E2E_CORE8: ${{ github.workspace }}/approved-candidate/bin/csqtt-core-derived-server-250-arm64
+          CSQTT_E2E_SINGBOX: ${{ github.workspace }}/approved-candidate/bin/csqtt-core-sing-box-arm64
+        run: |
+          set -euo pipefail
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" GITHUB_WORKSPACE="$GITHUB_WORKSPACE" CSQTT_E2E_GO="$CSQTT_E2E_GO" CSQTT_E2E_CORE8="$CSQTT_E2E_CORE8" CSQTT_E2E_SINGBOX="$CSQTT_E2E_SINGBOX" CSQTT_E2E_RUST_CLIENT="$CSQTT_E2E_RUST_CLIENT" CSQTT_E2E_TURN_TEST="$CSQTT_E2E_TURN_TEST" python3 adapt/fullchain-fixture/run-fullchain-arm64.py
