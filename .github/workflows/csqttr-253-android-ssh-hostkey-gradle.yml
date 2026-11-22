@@ -1,0 +1,98 @@
+name: CSQTTR 2.5.3 selective Android SSH confirmation - real Kotlin compile
+on:
+  push:
+    branches:
+      - test/csqttr-253-android-ssh-hostkey-20261122
+    paths:
+      - .github/workflows/csqttr-253-android-ssh-hostkey-gradle.yml
+      - adapt/patch-csqttr-253-android-ssh-change-250.py
+      - adapt/test-csqttr-253-android-ssh-change-offline.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-original-250-with-selective-patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout CSQTT Core experimental patch
+        uses: actions/checkout@v4
+      - name: Checkout exact source tag 2.5.0 (do not upgrade dependencies)
+        uses: actions/checkout@v4
+        with:
+          repository: Afteroid/csqttr
+          ref: fd936ef087c34cc46f26111dc2361f43b8b03c07
+          path: original-250
+          persist-credentials: false
+      - name: Confirm original source identity and full source test
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C original-250 rev-parse HEAD)" = fd936ef087c34cc46f26111dc2361f43b8b03c07
+          python3 -B adapt/test-csqttr-253-android-ssh-change-offline.py --source-root original-250
+          python3 -B adapt/patch-csqttr-253-android-ssh-change-250.py --source-root original-250
+          python3 -B - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          p=Path('original-250/app/src/main/java/com/csqtt/client')
+          expected={
+            'SshHostKeyStore.kt':'ce9b4c3a2bbdb348b3f8b5f89a270c2eaaeba364783db3a8f975b971bccd46bc',
+            'ui/DeployTab.kt':'88cad066b94110f139a1a8774134a663bbc528e9d8e8e1d5da9ceee557a03748'
+          }
+          for f,digest in expected.items():
+              actual=sha256((p/f).read_bytes()).hexdigest()
+              assert actual==digest,(f,actual)
+              print('ACTUAL_250_ANDROID_KOTLIN_PATCH_PASS',f,actual)
+          PY
+      - name: Configure JDK 21 for pinned Gradle 9.4.1 / AGP 9.2.0
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install pinned Android API 37 and build-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;37.0.0"
+          test -f "$ANDROID_HOME/platforms/android-37/android.jar"
+      - name: Compile Kotlin/Compose and run JVM tests against patched 2.5.0
+        shell: bash
+        working-directory: original-250
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --max-workers=2 --console=plain \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=800m -Dfile.encoding=UTF-8" \
+            :app:compileDebugKotlin :app:testDebugUnitTest
+      - name: Build unsigned-for-release debug APK only
+        shell: bash
+        working-directory: original-250
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --max-workers=2 --console=plain \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:MaxMetaspaceSize=800m -Dfile.encoding=UTF-8" \
+            :app:assembleDebug
+          find app/build/outputs/apk/debug -name '*.apk' -type f -printf '%f %s bytes\n'
+      - name: Preserve test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: csqtt-250-android-ssh-compile-reports
+          path: |
+            original-250/app/build/reports/tests/
+            original-250/app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 2
+      - name: Preserve experimental debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: csqtt-250-ssh-confirmation-experimental-debug
+          path: original-250/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 2
+      # Compiling a patch over original 2.5.0 does not mean the entire
+      # CSQTT Core seven-tab/sing-box client has been re-integrated.
