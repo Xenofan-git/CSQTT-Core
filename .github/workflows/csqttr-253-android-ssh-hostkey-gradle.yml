@@ -49,14 +49,22 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Configure Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Configure existing runner Android SDK (avoid obsolete sdkmanager tools package)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="$(printenv ANDROID_HOME || echo /usr/local/lib/android/sdk)"
+          test -d "$sdk/cmdline-tools"
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk" >> "$GITHUB_ENV"
+          echo "$sdk/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
+          echo "Using runner SDK at $sdk"
       - name: Install pinned Android API 37 and build-tools
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-37" "build-tools;37.0.0"
+          test -x "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" --sdk_root="$ANDROID_HOME"             "platforms;android-37" "build-tools;37.0.0"
           test -f "$ANDROID_HOME/platforms/android-37/android.jar"
       - name: Compile Kotlin/Compose and run JVM tests against patched 2.5.0
         shell: bash
