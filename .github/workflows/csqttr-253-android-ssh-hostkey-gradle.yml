@@ -67,8 +67,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "$SDKMANAGER_BIN" --sdk_root="$ANDROID_HOME"             "platforms;android-37" "build-tools;37.0.0"
-          test -f "$ANDROID_HOME/platforms/android-37/android.jar"
+          "$SDKMANAGER_BIN" --sdk_root="$ANDROID_HOME"             "platforms;android-37.0" "build-tools;37.0.0"
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
       - name: Compile Kotlin/Compose and run JVM tests against patched 2.5.0
         shell: bash
         working-directory: original-250
