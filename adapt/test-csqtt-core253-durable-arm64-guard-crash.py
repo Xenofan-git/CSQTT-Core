@@ -117,8 +117,13 @@ def supervise_one(binary: Path, work: Path, state: Path, credential_env: dict[st
     result=logpath.read_text(encoding="utf8",errors="replace")
     if "CORE8_RECOVERY=" not in result or "CORE8_STOP_RECOVERY=RESTORED_AND_VERIFIED" not in result:
         safety.fail(f"guard did not durably restore after {phase}: "+result[-1800:])
-    if status==0:
-        safety.fail("test child signal unexpectedly reported successful clean zero exit")
+    # SIGKILL must not look like a clean exit. The Rust server, however,
+    # intentionally handles SIGTERM as an orderly shutdown and may return 0.
+    # A successful graceful exit is the expected production behavior.
+    if phase == "sigkill" and status == 0:
+        safety.fail("SIGKILL was incorrectly reported as a clean zero exit")
+    if phase == "term" and status != 0:
+        safety.fail("gracefully stopped Core8 returned unexpected code " + str(status))
     if (state/"pending-sysctls-v1.json").exists():
         safety.fail("durable sysctl journal was not cleared after child death")
     verify_no_listener()
