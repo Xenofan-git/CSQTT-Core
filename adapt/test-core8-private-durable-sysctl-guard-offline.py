@@ -298,6 +298,41 @@ class DurableGuardTests(unittest.TestCase):
         self.assertEqual(r.returncode, 75)
         self.assertIn("must be private", r.stderr)
 
+    def test_optional_missing_kernel_parameter_records_only_existing(self):
+        optional = self.sysroot/"net/core/default_qdisc"
+        optional.unlink()
+        original = guard.snapshot(self.sysroot, allow_optional_missing=True)
+        self.assertNotIn("net/core/default_qdisc", original)
+        self.assertTrue(guard.REQUIRED_PARAMETERS.issubset(original))
+        guard.safe_dir(self.state)
+        guard.persist(self.state, str(uuid.UUID(self.boot.read_text())), original)
+        # Core8 would change only existing kernel parameters.
+        for rel, configured in guard.PARAMETERS.items():
+            if rel in original:
+                (self.sysroot/rel).write_text(configured+"\n")
+        r = self.run_guard()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("RESTORED_AND_VERIFIED", r.stdout)
+        for rel, before in original.items():
+            self.assertEqual((self.sysroot/rel).read_text().strip(), before)
+        self.assertFalse(optional.exists())
+        self.assertFalse((self.state/guard.JOURNAL).exists())
+
+    def test_required_kernel_parameter_never_optional(self):
+        (self.sysroot/"net/ipv6/conf/all/forwarding").unlink()
+        with self.assertRaises(FileNotFoundError):
+            guard.snapshot(self.sysroot, allow_optional_missing=True)
+
+    def test_partial_journal_missing_required_forwarding_fails_closed(self):
+        self.state.mkdir(mode=0o700)
+        snapshot = guard.snapshot(self.sysroot)
+        snapshot.pop("net/ipv6/conf/all/forwarding")
+        guard.persist(self.state, str(uuid.UUID(self.boot.read_text())), snapshot)
+        r = self.run_guard()
+        self.assertEqual(r.returncode, 75)
+        self.assertIn("journal has wrong sysctl inventory", r.stderr)
+        self.assertTrue((self.state/guard.JOURNAL).exists())
+
     def test_missing_sysctl_prevents_child_start(self):
         missing = self.sysroot/"net/ipv4/ip_forward"
         missing.unlink()

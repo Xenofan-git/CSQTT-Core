@@ -5,6 +5,8 @@ on:
       - test/csqtt-core-linux-unified-253-20261122
     paths:
       - adapt/test-csqtt-core253-durable-arm64-guard-crash.py
+      - adapt/core8-private-durable-sysctl-guard.py
+      - adapt/test-core8-private-durable-sysctl-guard-offline.py
       - .github/workflows/csqtt-core-253-arm64-durable-sigkill-recovery.yml
   workflow_dispatch:
 permissions:
@@ -39,6 +41,12 @@ jobs:
             /tmp/csqtt-core-253-host-negative.log
           rm -f /tmp/csqtt-core-253-host-negative.log
           echo CSQTT_CORE253_GUARD_REFUSES_HOST_CONTEXT_PASS
+      - name: Offline fake sysctl safety and optional-kernel-knob regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B adapt/test-core8-private-durable-sysctl-guard-offline.py
+          echo CSQTT_CORE253_DURABLE_GUARD_OFFLINE_21_TESTS_PASS
       - name: Real Core8 SIGKILL, durable journal restoration and restart, NET+UTS private
         shell: bash
         run: |

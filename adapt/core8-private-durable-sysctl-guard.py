@@ -39,6 +39,15 @@ PARAMETERS = {
     "net/ipv4/tcp_fastopen": "3",
     "net/ipv4/tcp_slow_start_after_idle": "0",
 }
+# The Core8 Rust install routine explicitly skips unavailable kernel knobs.
+# Forwarding and rp_filter, however, are essential for its real dataplane
+# and can NEVER be silently omitted by the external durable journal.
+REQUIRED_PARAMETERS = frozenset({
+    "net/ipv4/ip_forward",
+    "net/ipv6/conf/all/forwarding",
+    "net/ipv4/conf/all/rp_filter",
+    "net/ipv4/conf/default/rp_filter",
+})
 JOURNAL = "pending-sysctls-v1.json"
 LOCK = "kernel-owner.lock"
 VALUE = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
@@ -184,7 +193,9 @@ def read_journal(state: Path):
     except (ValueError, AttributeError, TypeError) as exc:
         raise GuardFailure("journal boot-id invalid") from exc
     vals = obj["values"]
-    if not isinstance(vals, dict) or set(vals) != set(PARAMETERS):
+    if (not isinstance(vals, dict)
+            or not REQUIRED_PARAMETERS.issubset(vals)
+            or not set(vals).issubset(PARAMETERS)):
         raise GuardFailure("journal has wrong sysctl inventory")
     for rel, original in vals.items():
         if not isinstance(original, str) or not VALUE.fullmatch(original):
@@ -259,8 +270,23 @@ def recover(state: Path, root: Path, boot: str) -> str:
     return "RESTORED_AND_VERIFIED"
 
 
-def snapshot(root: Path) -> dict[str, str]:
-    return {rel: read_parameter(root, rel) for rel in PARAMETERS}
+def snapshot(root: Path, *, allow_optional_missing: bool = False) -> dict[str, str]:
+    values = {}
+    for rel in PARAMETERS:
+        try:
+            values[rel] = read_parameter(root, rel)
+        except FileNotFoundError:
+            # A Linux kernel need not expose optional tuning knobs such as
+            # net/core/default_qdisc. The Rust Core8 setter also skips them;
+            # do not prevent valid minimal-kernel configurations from running.
+            # In tests with a synthetic proc tree, absence remains an error
+            # unless the test explicitly exercises this special behavior.
+            if not allow_optional_missing or rel in REQUIRED_PARAMETERS:
+                raise
+            print("CORE8_OPTIONAL_SYSCTL_UNAVAILABLE=" + rel, flush=True)
+    if not REQUIRED_PARAMETERS.issubset(values):
+        raise GuardFailure("required Core8 forwarding sysctl missing")
+    return values
 
 
 def run_child(cmd: list[str], lock: int) -> int:
@@ -316,7 +342,10 @@ def main() -> int:
         print("CORE8_RECOVERY=" + status, flush=True)
         if a.action == "recover":
             return 0
-        prior = snapshot(a.sysctl_root)
+        prior = snapshot(
+            a.sysctl_root,
+            allow_optional_missing=a.sysctl_root.resolve() == Path("/proc/sys"),
+        )
         persist(state, boot, prior)
         code = 1
         try:
