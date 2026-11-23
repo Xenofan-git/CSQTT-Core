@@ -63,7 +63,7 @@ jobs:
           package main
           import ("strings";"testing";"time";"syscall")
           func shellQuoteForTest(value string) string {
-            return "'" + strings.ReplaceAll(value, "'", "'\''") + "'"
+            return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
           }
           func waitProcessGone(t *testing.T,pid int) {
             t.Helper()
