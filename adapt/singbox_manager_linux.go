@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"syscall"
 	"time"
@@ -37,6 +38,7 @@ type SingBoxManager struct {
 	lastError string
 	starting bool
 	configuring bool
+	applying bool // exclusive live-apply transition, CSQTT Core is never touched
 	// Test seam: production always uses os.Rename. It must not be changed
 	// while SaveConfig is active.
 	renameOverride func(string, string) error
@@ -170,6 +172,9 @@ func stageConfigRollback(path string) (backupPath string, hadOld bool, err error
 }
 
 func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
+ return m.saveConfig(input, false)
+}
+func (m *SingBoxManager) saveConfig(input singBoxConfigInput, internalApply bool) error {
 	if m.configPath == "" || m.binary == "" { return fmt.Errorf("sing-box binary and config path are required") }
 	if err := m.normalizeRuleSetCachePath(&input); err != nil { return err }
 	encoded, err := buildSingBoxConfig(input)
@@ -179,9 +184,9 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 		return fmt.Errorf("unsafe sing-box inbound: %w", err)
 	}
 	m.mu.Lock()
-	if m.cmd != nil || m.starting || m.configuring {
+	if m.cmd != nil || m.starting || m.configuring || (m.applying && !internalApply) {
 		m.mu.Unlock()
-		return fmt.Errorf("cannot save sing-box config while running, starting, or configuring")
+		return fmt.Errorf("cannot save sing-box config while running, starting, or configuring, or applying another config")
 	}
 	m.configuring = true
 	m.mu.Unlock()
@@ -287,10 +292,13 @@ func (m *SingBoxManager) SaveConfig(input singBoxConfigInput) error {
 }
 
 func (m *SingBoxManager) Start(ctx context.Context) error {
+ return m.start(ctx, false)
+}
+func (m *SingBoxManager) start(ctx context.Context, internalApply bool) error {
 	m.mu.Lock()
-	if m.cmd != nil || m.starting || m.configuring {
+	if m.cmd != nil || m.starting || m.configuring || (m.applying && !internalApply) {
 		m.mu.Unlock()
-		return fmt.Errorf("sing-box is already running, starting, or stopping")
+		return fmt.Errorf("sing-box is already running, starting, stopping, or applying another config")
 	}
 	checkCtx, cancel := context.WithCancel(ctx)
 	startDone := make(chan struct{})
@@ -365,8 +373,15 @@ func (m *SingBoxManager) Start(ctx context.Context) error {
 	return nil
 }
 func (m *SingBoxManager) Stop() error {
+ return m.stop(false)
+}
+func (m *SingBoxManager) stop(internalApply bool) error {
 	for {
 		m.mu.Lock()
+        if m.applying && !internalApply {
+            m.mu.Unlock()
+            return fmt.Errorf("cannot stop sing-box while applying config")
+        }
 		if m.starting {
 			startDone, cancel := m.startDone, m.startCancel
 			m.mu.Unlock()
@@ -401,6 +416,129 @@ func (m *SingBoxManager) Stop() error {
 		}
 	}
 }
+// ApplyConfig preserves the ordinary SaveConfig semantics for a stopped engine.
+// With a running sing-box it prevalidates, restarts ONLY sing-box, probes its
+// local SOCKS handshake, then either commits the new active process or restores
+// the last known good config/panel pair with the existing durable SaveConfig
+// transaction. This is a bounded restart, NOT zero-downtime hot reload.
+func (m *SingBoxManager) ApplyConfig(input singBoxConfigInput) (applied bool, err error) {
+ m.mu.Lock()
+ if m.applying || m.configuring || m.starting {
+  m.mu.Unlock()
+  return false, fmt.Errorf("sing-box busy: cannot apply concurrent config")
+ }
+ m.applying=true
+ wasRunning:=m.cmd!=nil
+ m.mu.Unlock()
+ defer func(){m.mu.Lock();m.applying=false;m.mu.Unlock()}()
+ if !wasRunning {
+  return false,m.saveConfig(input,true)
+ }
+ // Read the validated old sidecar before stopping the existing engine. Never
+ // reconstruct rollback state from an untrusted/inconsistent disk pair.
+ oldInput,err:=m.LoadConfig()
+ if err!=nil {return false,fmt.Errorf("refusing live apply without valid previous config: %w",err)}
+ oldBytes,hadOld,err:=readSingBoxRegular(m.configPath)
+ if err!=nil{return false,err}
+ panelBytes,hadPanel,err:=readSingBoxRegular(m.panelStatePath())
+ if err!=nil{return false,err}
+ if !hadOld || !hadPanel {return false,fmt.Errorf("live apply requires a managed config/panel checkpoint; previous sing-box kept running")}
+ if err:=validateSingBoxOldPanel(oldBytes,hadOld,panelBytes,hadPanel);err!=nil{return false,err}
+ // Preflight rule/path security AND actual sing-box "check" BEFORE touching
+ // the old running listener. No external routes or Core process are changed.
+ if err:=m.normalizeRuleSetCachePath(&input);err!=nil{return false,err}
+ candidate,err:=buildSingBoxConfig(input)
+ if err!=nil{return false,fmt.Errorf("validate new sing-box routes: %w",err)}
+ if err:=m.validateRuleSetPaths(input.RuleSets);err!=nil{return false,err}
+ if err:=validateSingBoxListenAddress(input.ListenAddress);err!=nil{return false,err}
+ if err:=m.validateRuleSetCachePath(input);err!=nil{return false,err}
+ if string(candidate)==string(oldBytes) && reflect.DeepEqual(oldInput,input) {
+  return true,nil // unchanged; do not interrupt any established connection
+ }
+ if err:=os.MkdirAll(filepath.Dir(m.configPath),0700);err!=nil{return false,err}
+ preflight,err:=os.CreateTemp(filepath.Dir(m.configPath),".sing-box-live-preflight-*.json")
+ if err!=nil{return false,err}
+ preflightPath:=preflight.Name()
+ defer os.Remove(preflightPath)
+ if err:=preflight.Chmod(0600);err!=nil{_ = preflight.Close();return false,err}
+ if _,err:=preflight.Write(candidate);err!=nil{_ = preflight.Close();return false,err}
+ if err:=preflight.Sync();err!=nil{_ = preflight.Close();return false,err}
+ if err:=preflight.Close();err!=nil{return false,err}
+ if err:=m.checkConfigPath(context.Background(),preflightPath);err!=nil{
+  return false,fmt.Errorf("new sing-box config rejected before restart; old process remains running: %w",err)
+ }
+ // Only the sing-box process is stopped; the independent CSQTT SOCKS5
+ // listener and Linux routing remain untouched throughout.
+ if err:=m.stop(true);err!=nil{return false,fmt.Errorf("stop old sing-box for apply: %w",err)}
+ // Any error after stopping old sing-box must attempt a durable rollback.
+ rollback:=func(problem error)(bool,error){
+  _=m.stop(true)
+  if restoreErr:=m.saveConfig(oldInput,true);restoreErr!=nil{
+   failure:=fmt.Errorf("sing-box apply failed (%v); CRITICAL rollback transaction FAILED: %w",problem,restoreErr)
+   m.mu.Lock();m.lastError=failure.Error();m.mu.Unlock()
+   return false,failure
+  }
+  restoredConfig,configErr:=os.ReadFile(m.configPath)
+  restoredPanel,panelErr:=os.ReadFile(m.panelStatePath())
+  if configErr!=nil || panelErr!=nil || !reflect.DeepEqual(restoredConfig,oldBytes) || !reflect.DeepEqual(restoredPanel,panelBytes) {
+   failure:=fmt.Errorf("sing-box apply failed (%v); CRITICAL rollback state differs from original",problem)
+   m.mu.Lock();m.lastError=failure.Error();m.mu.Unlock()
+   return false,failure
+  }
+  if startErr:=m.start(context.Background(),true);startErr!=nil{
+   failure:=fmt.Errorf("sing-box apply failed (%v); old configuration restored but restart FAILED: %w",problem,startErr)
+   m.mu.Lock();m.lastError=failure.Error();m.mu.Unlock()
+   return false,failure
+  }
+  if readyErr:=m.waitSOCKSReady(oldInput.ListenAddress);readyErr!=nil{
+   failure:=fmt.Errorf("sing-box apply failed (%v); old config restored but listener unhealthy: %w",problem,readyErr)
+   m.mu.Lock();m.lastError=failure.Error();m.mu.Unlock()
+   return false,failure
+  }
+  failure:=fmt.Errorf("sing-box apply failed; previous config and SOCKS5 listener restored: %w",problem)
+  m.mu.Lock();m.lastError=failure.Error();m.mu.Unlock()
+  return false,failure
+ }
+ if err:=m.saveConfig(input,true);err!=nil{return rollback(fmt.Errorf("activate candidate: %w",err))}
+ if err:=m.start(context.Background(),true);err!=nil{return rollback(fmt.Errorf("start candidate: %w",err))}
+ if err:=m.waitSOCKSReady(input.ListenAddress);err!=nil{return rollback(fmt.Errorf("candidate SOCKS5 listener not healthy: %w",err))}
+ return true,nil
+}
+
+// waitSOCKSReady verifies a real local SOCKS5 handshake, not just a PID.
+// It intentionally does not connect to any external site or routed destination.
+func (m *SingBoxManager) waitSOCKSReady(address string) error {
+ timeout:=m.checkTimeout
+ if timeout<=0 {timeout=10*time.Second}
+ deadline:=time.Now().Add(timeout)
+ var lastErr error
+ for time.Now().Before(deadline) {
+  if !m.Status().Running {return fmt.Errorf("sing-box process exited before SOCKS5 listener became ready")}
+  c,err:=net.DialTimeout("tcp",address,250*time.Millisecond)
+  if err==nil {
+   _=c.SetDeadline(time.Now().Add(500*time.Millisecond))
+   _,err=c.Write([]byte{5,1,0})
+   if err==nil {
+    var reply [2]byte
+    _,err=io.ReadFull(c,reply[:])
+    if err==nil && reply==[2]byte{5,0} {
+     _=c.Close()
+     // Avoid declaring success for a short-lived process that exits
+     // immediately after accepting the initial connection.
+     time.Sleep(150*time.Millisecond)
+     if m.Status().Running {return nil}
+     return fmt.Errorf("sing-box exited during listener health confirmation")
+    }
+    if err==nil {err=fmt.Errorf("unexpected SOCKS greeting %v",reply)}
+   }
+   _=c.Close()
+  }
+  lastErr=err
+  time.Sleep(75*time.Millisecond)
+ }
+ return fmt.Errorf("SOCKS5 listener %s did not become ready: %v",address,lastErr)
+}
+
 func (m *SingBoxManager) Status() SingBoxStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()

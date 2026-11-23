@@ -502,8 +502,9 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
             decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
             decoder.DisallowUnknownFields()
             if err := decoder.Decode(&input); err != nil { http.Error(w, "invalid sing-box config request", http.StatusBadRequest); return }
-            if err := singBox.SaveConfig(input); err != nil { http.Error(w, err.Error(), http.StatusUnprocessableEntity); return }
-            writeJSON(w, map[string]bool{"ok": true})
+            applied, err := singBox.ApplyConfig(input)
+            if err != nil { http.Error(w, err.Error(), http.StatusUnprocessableEntity); return }
+            writeJSON(w, map[string]bool{"ok": true, "applied": applied})
         default:
             w.Header().Set("Allow", "GET, PUT")
             http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -1,0 +1,87 @@
+name: CSQTT Core native ARM64 Sing-box live apply and rollback acceptance
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/singbox_live_apply_linux_test.go
+      - adapt/singbox_manager_linux.go
+      - adapt/headless_main.go
+      - adapt/csqtt-panel-preview.html
+      - .github/workflows/csqtt-core-live-apply-arm64.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  live-apply-rollback-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 45038262207
+          name: csqtt-core-linux-arm64-unified-253-four-component-EXPERIMENTAL
+          github-token: ${{ github.token }}
+          path: verified-bundle
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.10'
+      - name: Verify native ARM64 architecture and pinned Sing-box SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          python3 -B - <<'PY'
+          import json,hashlib
+          from pathlib import Path
+          root=Path('verified-bundle')
+          manifest=json.loads((root/'manifest.json').read_text())
+          assert manifest['status']=='experimental-not-approved-for-production'
+          assert manifest['globalDefaultRoute'] is False
+          assert len(manifest['files']) == 4
+          for name,item in manifest['files'].items():
+              binary=root/'bin'/name
+              assert binary.is_file() and not binary.is_symlink()
+              assert hashlib.sha256(binary.read_bytes()).hexdigest()==item['sha256']
+          print('CSQTT_ARM64_LIVE_APPLY_PINNED_PROVENANCE_PASS')
+          PY
+          chmod 0755 verified-bundle/bin/csqtt-core-sing-box-arm64
+          verified-bundle/bin/csqtt-core-sing-box-arm64 version | grep -Fx 'sing-box version 1.14.4'
+      - name: Real loopback TCP live apply, preflight rejection and runtime rollback with race detector
+        shell: bash
+        env:
+          CSQTT_SING_BOX_BINARY: ${{ github.workspace }}/verified-bundle/bin/csqtt-core-sing-box-arm64
+        run: |
+          set -euo pipefail
+          before4="$(ip -4 route show default)"
+          before6="$(ip -6 route show default)"
+          cat > adapt/zz_csqtt_live_apply_fixture_linux_test.go <<'GO'
+          //go:build linux
+          package main
+          import ("strings";"testing";"time";"syscall")
+          func shellQuoteForTest(value string) string {
+            return "'" + strings.ReplaceAll(value, "'", "'\''") + "'"
+          }
+          func waitProcessGone(t *testing.T,pid int) {
+            t.Helper()
+            deadline:=time.Now().Add(3*time.Second)
+            for time.Now().Before(deadline) {
+              err:=syscall.Kill(pid,0)
+              if err==syscall.ESRCH || (err!=nil && err!=syscall.EPERM) {return}
+              time.Sleep(20*time.Millisecond)
+            }
+            t.Fatalf("process %d still alive",pid)
+          }
+          GO
+          trap 'rm -f adapt/zz_csqtt_live_apply_fixture_linux_test.go' EXIT
+          cd adapt
+          GO111MODULE=off GOTOOLCHAIN=local go test -race -count=1 -timeout=160s             -run '^TestSingBoxLiveApplyNativeARM64WithRollback$' -v             singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go             csqtt_core_socks5_linux.go             singbox_config_linux_test.go singbox_manager_linux_test.go             singbox_live_apply_linux_test.go zz_csqtt_live_apply_fixture_linux_test.go             | tee "$RUNNER_TEMP/singbox-live-apply.log"
+          grep -q '^--- PASS: TestSingBoxLiveApplyNativeARM64WithRollback' "$RUNNER_TEMP/singbox-live-apply.log"
+          grep -q '^CSQTT_CORE_REAL_ARM64_LIVE_APPLY_ROLLBACK_PASS$' "$RUNNER_TEMP/singbox-live-apply.log"
+          test "$(ip -4 route show default)" = "$before4"
+          test "$(ip -6 route show default)" = "$before6"
+          echo CSQTT_CORE_ARM64_SINGBOX_LIVE_APPLY_ROLLBACK_RACE_PASS
+# No system route/firewall/sysctl changes, NanoPi, live Core8 or VK TURN.

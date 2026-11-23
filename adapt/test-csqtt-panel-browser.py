@@ -117,7 +117,7 @@ def main():
                 body = {"configured": False}
         elif path == "/singbox/config" and method == "PUT":
             singbox_saved.update(json.loads(request.post_data or "{}"))
-            body = {"ok": True}
+            body = {"ok": True, "applied": True}
         elif path == "/singbox/logs":
             body = "fixture sing-box log"
         elif path == "/singbox/start" and method == "POST":
@@ -319,7 +319,7 @@ def main():
             toggle.uncheck()
             toggle.check()
             page.locator("#singboxSave").click()
-            page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('Конфигурация проверена sing-box и сохранена')")
+            page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('Конфигурация применена: SOCKS5 sing-box проверен.')")
             assert singbox_saved["Rules"][0]["ID"] == "system-direct" and singbox_saved["Rules"][0]["Domains"] == ["example.ru", "direct-route.example"] and singbox_saved["Rules"][0]["Enabled"] is True
             assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Enabled"] is True and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"], f"saved CSQTT rule mismatch: {json.dumps(singbox_saved.get('Rules', []), ensure_ascii=False)}"
             assert singbox_saved["Rules"][2]["Domains"] == ["user-route.example"] and singbox_saved["Rules"][2]["Outbound"] == "socks-hydra"
@@ -375,7 +375,7 @@ def main():
             page.locator('#singboxRouteRuleEditor .route-rule-editor [data-field="Domains"]').fill("example.ru\napi.example.ru")
             page.locator('button[data-page="singbox"]').click()
             page.locator("#singboxSaveEngine").click()
-            page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')")
+            page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('SOCKS5 sing-box проверен')")
             assert any(method == "PUT" and path == "/singbox/config" for method, path, _ in calls)
             assert "CSQTTEnabled" not in singbox_saved and "CSQTTExplicitlyDisabled" not in singbox_saved
             assert singbox_saved.get("CSQTTAddress") == "127.0.0.1:12500"
@@ -435,7 +435,7 @@ def main():
                 "el => { el.textContent='Ожидание ответа'; el.className='notice' }")
             page.locator("#singboxSaveEngine").click()
             page.wait_for_function(
-                "() => document.querySelector('#singboxConfigMessage').textContent.includes('проверена sing-box')"
+                "() => document.querySelector('#singboxConfigMessage').textContent.includes('SOCKS5 sing-box проверен')"
             )
             assert page.locator("#routeConfigMessage").evaluate(
                 "el => el.classList.contains('success')")
