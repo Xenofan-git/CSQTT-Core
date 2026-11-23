@@ -21,7 +21,7 @@ body::after{width:340px;height:340px;bottom:-225px;left:-110px}
 .brand{font-size:21px;letter-spacing:-.8px;font-weight:830;line-height:1.1;color:var(--blue)}
 .brand span{color:#111215}
 .brand-sub{font-size:11px;color:var(--muted);letter-spacing:1.2px;font-weight:730;margin-top:4px;text-transform:uppercase}
-h1{font-size:29px;letter-spacing:-1.15px;font-weight:790;text-align:center;margin:0 0 9px;line-height:1.2}
+h1{font-size:29px;letter-spacing:-1.15px;font-weight:790;text-align:center;margin:0 0 6px;line-height:1.2}
 .subtitle{margin:0 0 20px;text-align:center;color:var(--muted);font-size:14px;line-height:1.55}
 form{margin:0}
 .field{margin:0 0 19px}
@@ -40,6 +40,14 @@ input[type=password],input[type=text].password{padding-right:88px}
 .submit:hover{background:linear-gradient(115deg,#226ee2,#1759c7);transform:translateY(-1px);box-shadow:0 12px 24px #2874e64a}
 .submit:active{transform:translateY(0)}
 .submit svg{width:19px;height:19px}
+/* The arrow travels right in an infinite loop while the button is hovered. */
+@keyframes csqtt-login-arrow-right{
+  0%{transform:translateX(-3px);opacity:0}
+  18%{opacity:1}
+  76%{opacity:1}
+  100%{transform:translateX(9px);opacity:0}
+}
+.submit:hover svg{animation:csqtt-login-arrow-right .95s linear infinite}
 .note{display:flex;align-items:center;justify-content:center;gap:7px;margin:23px 0 0;color:#8692a4;font-size:12px;line-height:1.5;text-align:center}
 .note svg{width:15px;height:15px;flex:0 0 15px;color:#5d9bdc}
 .foot{position:absolute;top:100%;left:0;right:0;text-align:center;color:#8995a6;font-size:12px;margin:23px 0 0;letter-spacing:.15px}
