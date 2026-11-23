@@ -420,14 +420,24 @@ main{width:100%;max-width:100%}
   .field select{background-position:right 13px center;background-size:18px 18px;padding-right:44px!important}
 }
 
-/* Unified slightly rounded form fields (12px) across all seven tabs.
-   Keep toggle switches, range sliders, buttons and round icons unchanged. */
+/* Unified slightly rounded, fine-stroke form fields across all seven tabs.
+   Leave toggle switches, range sliders, buttons and icon borders unchanged. */
 :root{--csqtt-field-radius:12px}
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not(.password-inline input),
 select,
 textarea,
 .password-inline{
   border-radius:var(--csqtt-field-radius)!important;
+  border-width:1px!important;
+}
+/* A password field already has its own framed wrapper: no double border. */
+.password-inline input{border:0!important}
+:where(input,select,textarea):focus-visible{
+  outline:1px solid var(--blue)!important;
+  outline-offset:1px!important;
+}
+.field input:focus,.field select:focus,.field textarea:focus{
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--blue) 13%,transparent);
 }
 
 </style>

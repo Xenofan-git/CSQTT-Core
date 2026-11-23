@@ -195,6 +195,12 @@ def main():
                     formRadii: [...new Set([...document.querySelectorAll(
                       'input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]),select,textarea,.password-inline'
                     )].map(el=>getComputedStyle(el).borderTopLeftRadius))],
+                    formBorders: [...document.querySelectorAll(
+                      'input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not(.password-inline input),select,textarea,.password-inline'
+                    )].map(el=>({id:el.id,width:getComputedStyle(el).borderTopWidth})),
+                    passwordInnerBorder: getComputedStyle(document.querySelector('.password-inline input')).borderTopWidth,
+                    passwordOuterBorder: getComputedStyle(document.querySelector('.password-inline')).borderTopWidth,
+                    focusedFieldOutline: (() => {const field=document.querySelector('#vkHashes');field.focus();return getComputedStyle(field).outlineWidth;})(),
                     fieldCount: document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]),select,textarea,.password-inline').length,
                     switchRadius: getComputedStyle(toggle).borderTopLeftRadius,
                     sliderRadius: getComputedStyle(document.querySelector('#workers')).borderTopLeftRadius
@@ -204,6 +210,10 @@ def main():
                 assert controls["tunnelAppearance"] == "none" and controls["tunnelChevron"], controls
                 assert controls["minWorkers"] == "4", controls
                 assert controls["fieldCount"] >= 40 and controls["formRadii"] == ["12px"], controls
+                assert all(field["width"] == "1px" or (field["id"] == "panelLink" and field["width"] == "0px")
+                           for field in controls["formBorders"]), controls
+                assert controls["passwordInnerBorder"] == "0px" and controls["passwordOuterBorder"] == "1px", controls
+                assert controls["focusedFieldOutline"] == "1px", controls
                 assert controls["switchRadius"] != "12px" and controls["sliderRadius"] != "12px", controls
                 assert controls["toggleLeftOfDescription"], controls
                 assert controls["palette"] == ("#4195ff" if theme == "dark" else "#1e73e8"), controls
