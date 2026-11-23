@@ -218,6 +218,9 @@ jobs:
           cp adapt/csqtt_core_socks5_linux.go upstream-lalune/Desktop/Linux/csqtt_core_socks5_linux.go
           cp adapt/csqtt_core_socks5_linux_test.go upstream-lalune/Desktop/Linux/csqtt_core_socks5_linux_test.go
           python3 adapt/patch-csqtt-deploy-ui.py
+          python3 -B adapt/test-csqtt-min-workers-four.py
+          python3 -B adapt/patch-csqtt-min-workers-four.py upstream-lalune/Desktop/Libs/common.go
+          cp adapt/csqtt_min_workers_four_test.go upstream-lalune/Desktop/Libs/
       - name: Build and package CSQTT panel for NanoPi
         working-directory: upstream-lalune/Frontend/Core
         run: |
@@ -342,7 +345,7 @@ jobs:
           cp adapt/favicon.ico upstream-lalune/Desktop/Linux/frontend/favicon.ico
           cp adapt/apple-touch-icon.png upstream-lalune/Desktop/Linux/frontend/apple-touch-icon.png
           test -s upstream-lalune/Desktop/Linux/frontend/index.html
-          grep -Fq 'CSQTT Core · NanoPi' upstream-lalune/Desktop/Linux/frontend/index.html
+          grep -Fq 'CSQTT Core · Linux ARM64' upstream-lalune/Desktop/Linux/frontend/index.html
           test -s upstream-lalune/Desktop/Linux/frontend/api.js
           grep -Fq 'go:embed frontend' upstream-lalune/Desktop/Linux/headless_main.go
           grep -Fq 'const headlessListen = "127.0.0.1:1062"' upstream-lalune/Desktop/Linux/headless_main.go

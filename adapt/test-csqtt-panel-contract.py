@@ -98,6 +98,21 @@ for token in (
     if token not in html:
         raise SystemExit("CSQTT 2.5.0 visual token missing: " + token)
 
+# Visual/functional minimum for this project's ARM64 web frontend.
+for token in (
+    'id="workers" type="range" min="4" max="127"',
+    "s.workers=Math.max(4,Math.min(127,Number.parseInt($('workers').value,10)||9))",
+    "set('workers',Math.max(4,Math.min(127,Number(s.workers)||9)))",
+    ".field select{",
+    "appearance:none;",
+    "#page-settings #allowHashRedistribution,",
+    "#page-settings #validateVkHashes{",
+    "--csqtt-accent:#4195ff",
+    "--bg:#101720",
+):
+    if token not in html:
+        raise SystemExit("CSQTT visual/min workers token missing: " + token)
+
 # Preserve CSQTT's two independent authentication selectors. The core accepts
 # legacy/vkcalls/auto_js for credential acquisition; CSQTT Core captchaMode remains
 # a separate automatic/manual challenge policy.

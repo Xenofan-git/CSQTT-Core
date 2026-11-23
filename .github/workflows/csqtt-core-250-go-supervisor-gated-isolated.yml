@@ -57,6 +57,9 @@ jobs:
           python3 adapt/apply-csqtt-core-socks5.py
           python3 adapt/apply-csqtt-core-250-supervisor-gate.py
           python3 adapt/patch-csqtt-deploy-ui.py
+          python3 -B adapt/test-csqtt-min-workers-four.py
+          python3 -B adapt/patch-csqtt-min-workers-four.py upstream-lalune/Desktop/Libs/common.go
+          cp adapt/csqtt_min_workers_four_test.go upstream-lalune/Desktop/Libs/
           cp adapt/csqtt_core_socks5_linux.go adapt/csqtt_core_socks5_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/csqtt_core_250_client_launch_linux.go adapt/csqtt_core_250_client_launch_linux_test.go upstream-lalune/Desktop/Linux/
           cp adapt/csqtt_core_250_client_launch_real_elf_linux_test.go upstream-lalune/Desktop/Linux/

@@ -168,6 +168,37 @@ def main():
             assert page.locator("#topHeart").count() == 1 and page.locator("#topSwitch").count() == 1 and page.locator("#topSettings").count() == 1
             assert page.locator("#topQr, #qrImage").count() == 0, "QR controls must remain absent"
 
+            # Regression for the real tunnel/profile UI controls.
+            # CSS must make a single chevron visible instead of OS-native
+            # double scrollbar/dropdown controls, including dark theme.
+            for theme in ("light", "dark"):
+                page.evaluate("(theme) => document.documentElement.dataset.theme = theme", theme)
+                controls = page.evaluate("""() => {
+                  const first = document.querySelector('#newProtocol');
+                  const tunnel = document.querySelector('#authMode');
+                  const toggle = document.querySelector('#allowHashRedistribution');
+                  const text = toggle.closest('label').querySelector('span');
+                  const arrow = getComputedStyle(tunnel);
+                  const rt = toggle.getBoundingClientRect(), rl = text.getBoundingClientRect();
+                  return {
+                    profileAppearance: getComputedStyle(first).appearance,
+                    profileChevron: getComputedStyle(first).backgroundImage.includes('svg'),
+                    tunnelAppearance: arrow.appearance,
+                    tunnelChevron: arrow.backgroundImage.includes('svg'),
+                    minWorkers: document.querySelector('#workers').min,
+                    toggleLeftOfDescription: rt.right < rl.left,
+                    palette: getComputedStyle(document.documentElement).getPropertyValue('--csqtt-accent').trim()
+                  };
+                }""")
+                assert controls["profileAppearance"] == "none" and controls["profileChevron"], controls
+                assert controls["tunnelAppearance"] == "none" and controls["tunnelChevron"], controls
+                assert controls["minWorkers"] == "4", controls
+                assert controls["toggleLeftOfDescription"], controls
+                assert controls["palette"] == ("#4195ff" if theme == "dark" else "#1e73e8"), controls
+            page.evaluate("document.documentElement.dataset.theme = 'light'")
+            assert [page.locator('#newProtocol option').nth(i).get_attribute('value')
+                    for i in range(5)] == ['CSQTT','FreeTurn','OlcRTC','OpenFlux','ToTS']
+
             click_events = []
             page.evaluate("""() => {
                 window.__tabClickEvents = [];
