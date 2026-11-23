@@ -440,34 +440,56 @@ def main():
             assert page.locator("#routeConfigMessage").evaluate(
                 "el => el.classList.contains('success')")
 
-            # The agreed design is a fixed 390px native-phone canvas on every
-            # device. Desktop must center that same canvas; it must not stretch,
-            # reflow, or switch to a desktop layout at wider viewport sizes.
+            # A responsive app is essential: desktop uses a wide shell and
+            # full-width seven-tab dock; phones fit the real viewport with
+            # legible navigation and no clipped labels or horizontal scroll.
             for width in WIDTHS:
                 page.set_viewport_size({"width": width, "height": 850})
-                page.wait_for_timeout(40)
+                page.wait_for_timeout(70)
                 dimensions = page.evaluate("""() => {
                   const body = document.body.getBoundingClientRect();
                   const nav = document.querySelector('.tabs').getBoundingClientRect();
+                  const hero = document.querySelector('.connect-hero').getBoundingClientRect();
+                  const header = document.querySelector('.top').getBoundingClientRect();
+                  const brand = document.querySelector('.brand').getBoundingClientRect();
+                  const actions = document.querySelector('.top-actions').getBoundingClientRect();
+                  const tabs = [...document.querySelectorAll('.tabs .tab')].map(tab => {
+                    const r = tab.getBoundingClientRect();
+                    return {left:r.left,right:r.right,client:tab.clientWidth,
+                            scroll:tab.scrollWidth};
+                  });
                   return {
-                    viewport: innerWidth,
-                    body: {left: body.left, width: body.width, right: body.right},
-                    nav: {left: nav.left, width: nav.width, right: nav.right}
+                    viewport: document.documentElement.clientWidth,
+                    overflow: document.documentElement.scrollWidth-document.documentElement.clientWidth,
+                    body: {left:body.left,width:body.width,right:body.right},
+                    nav: {left:nav.left,width:nav.width,right:nav.right},
+                    hero: {left:hero.left,width:hero.width,right:hero.right},
+                    header: {left:header.left,right:header.right},
+                    brand: {right:brand.right},actions: {left:actions.left},
+                    tabs
                   };
                 }""")
-                expected_left = (width - 390) / 2
-                assert abs(dimensions["body"]["width"] - 390) <= 1, (
-                    f"phone canvas changed width at {width}px: {dimensions}"
-                )
-                assert abs(dimensions["body"]["left"] - expected_left) <= 1, (
-                    f"phone canvas is not centered at {width}px: {dimensions}"
-                )
-                assert abs(dimensions["nav"]["width"] - 370) <= 1, (
-                    f"bottom navigation changed width at {width}px: {dimensions}"
-                )
-                assert abs(dimensions["nav"]["left"] - (width - 370) / 2) <= 1, (
-                    f"bottom navigation is not centered at {width}px: {dimensions}"
-                )
+                vw = dimensions["viewport"]
+                assert dimensions["overflow"] <= 1, (
+                    f"horizontal overflow at viewport {width}: {dimensions}")
+                target = min(1080, vw)
+                assert abs(dimensions["body"]["width"] - target) <= 1, (
+                    f"body width is not responsive at {width}: {dimensions}")
+                assert abs(dimensions["body"]["left"] - (vw-target)/2) <= 1, (
+                    f"body not centered at {width}: {dimensions}")
+                assert dimensions["nav"]["width"] >= min(300,vw-50), (
+                    f"floating nav collapsed at {width}: {dimensions}")
+                assert dimensions["nav"]["left"] >= 0 and dimensions["nav"]["right"] <= vw+1, (
+                    f"nav outside screen at {width}: {dimensions}")
+                assert dimensions["hero"]["left"] >= 0 and dimensions["hero"]["right"] <= vw+1, (
+                    f"connection card outside screen at {width}: {dimensions}")
+                assert dimensions["brand"]["right"] <= dimensions["actions"]["left"]+2, (
+                    f"header actions overlap brand at {width}: {dimensions}")
+                assert len(dimensions["tabs"]) == 7, (
+                    f"lost one of seven tabs at {width}: {dimensions}")
+                for tab in dimensions["tabs"]:
+                    assert tab["scroll"] <= tab["client"]+2, (
+                        f"tab label is clipped at {width}: {tab}")
 
             # Selecting another profile must round-trip through the API and refresh
             # the profile-specific hash shown on the Tunnel page.

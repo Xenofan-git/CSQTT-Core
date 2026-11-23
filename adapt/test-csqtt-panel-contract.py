@@ -88,10 +88,12 @@ for token in (
     "border-radius:32px",
     "border:2px solid #92949b",
     "width:min(900px,calc(100% - 34px))",
-    "v2.1.9",
-    "CSQTT Core · NanoPi ARM64",
+    "Core · Linux ARM64",
+    "CSQTT Core · Linux ARM64",
     "Автоматическое получение VK-токена реализовано отдельным компонентом.",
-    "width:390px;min-width:390px;max-width:390px",
+    "body{width:100%;min-width:0;max-width:1080px",
+    "grid-template-columns:repeat(7,minmax(0,1fr))",
+    "CSQTT Core · Linux ARM64",
 ):
     if token not in html:
         raise SystemExit("CSQTT 2.5.0 visual token missing: " + token)

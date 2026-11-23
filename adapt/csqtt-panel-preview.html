@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark"><title>CSQTT Core · NanoPi</title>
+<meta name="color-scheme" content="light dark"><title>CSQTT Core · Панель управления</title>
 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32" type="image/x-icon">
 <link rel="icon" href="/favicon.svg" sizes="any" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -141,15 +141,15 @@ button.small{min-height:40px;padding:8px 14px;font-size:14px}
 
 .logs-card .log-line{white-space:pre-wrap;overflow-wrap:anywhere;margin:0 0 8px;color:#d2d5dc}.logs-card .log-ok{display:inline-block;color:#42d987;background:#06351f;border:1px solid #0d653b;border-radius:20px;padding:0 8px;margin-right:10px}.logs-card .log-turn{display:inline-block;color:#36b7ff;background:#102d49;border:1px solid #145b91;border-radius:20px;padding:0 8px;margin-right:10px}.logs-card .log-count{float:right;color:#36b7ff;border:1px solid #145b91;border-radius:20px;padding:0 8px}
 
-/* Fixed native-phone canvas on every device: desktop previews the same 390px
-   CSQTT screen instead of stretching or reflowing the interface. */
-html{min-width:390px}
-body{width:390px;min-width:390px;max-width:390px;margin-left:auto;margin-right:auto;padding-left:0;padding-right:0}
-main{width:100%;max-width:100%}
-.top{width:100%;padding-left:2px;padding-right:2px}
-.tabs{width:370px;max-width:none;left:50%;transform:translateX(-50%)}
-.route-page.active{padding-left:10px;padding-right:10px}
-.route-dialog{width:370px;max-width:none}
+/* Adaptive web shell: desktop receives a proper workspace, while the
+   original phone-like controls are retained at small viewport widths. */
+html{min-width:0}
+body{width:100%;min-width:0;max-width:1080px;margin-inline:auto;padding-inline:clamp(14px,2.8vw,32px)}
+main{width:100%;min-width:0;max-width:100%}
+.top{width:100%;padding-inline:4px}
+.tabs{width:min(860px,calc(100% - 40px));max-width:none;left:50%;transform:translateX(-50%)}
+.route-page.active{padding-inline:clamp(12px,3vw,24px)}
+.route-dialog{width:min(780px,100%);max-width:100%}
 .api-indicator{display:none}.top-actions{display:flex;align-items:center;gap:9px}.top-icon{width:36px;height:40px;display:grid;place-items:center;padding:0;background:transparent;color:var(--text);font-size:27px;line-height:1;border-radius:50%;box-shadow:none}.top-icon:hover{background:var(--surface2);filter:none}.top-icon svg{width:27px;height:27px;display:block;fill:currentColor}.top-icon .top-heart-icon{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.vk-session-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:28px;margin:12px 0 16px}.vk-session-copy{display:grid;gap:4px;min-width:0}.vk-session-copy small{font-size:11px;line-height:1.35}.profile-manager-modal{width:370px;max-width:100%;max-height:78dvh;overflow:auto;border-radius:38px;padding:22px}.profile-manager-modal .modal-title{display:flex;align-items:center;justify-content:space-between}.profile-manager-modal #profileList{max-height:38dvh;overflow:auto}.profile-manager-modal .profile{border-radius:24px}.profile-manager-actions{margin-top:12px}.profile-add-form{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.vk-session-row .statusline{min-width:0}.block-button{width:100%;border-radius:32px;min-height:54px}.tunnel-main-card .field{margin:12px 0}.tunnel-main-card .field input,.tunnel-main-card .field select{border-radius:28px;min-height:52px;padding:12px 18px}.tunnel-main-card input[type=range]{padding:0;min-height:28px}.tunnel-main-card #editTunnelAuth{margin-top:12px}.tunnel-main-card #vkLogin{border-radius:28px;min-width:130px}.tunnel-main-card h2{font-size:20px;margin-bottom:12px}
 
 /* CSQTT 2.5.0 final seven-tab navigation geometry */
@@ -222,10 +222,149 @@ main{width:100%;max-width:100%}
 .top-logout .top-logout-button{display:grid;place-items:center;width:38px;height:38px;min-width:38px;min-height:38px;border-radius:12px;padding:5px;color:var(--muted);background:transparent}
 .top-logout .top-logout-button:hover{background:var(--surface2);color:var(--blue)}
 .top-logout .top-logout-button svg{width:23px;height:23px;fill:none}
+
+/* CSQTT Core 2.5.x — genuinely responsive desktop and mobile shell.
+   Keep the approved seven tabs; never force a 390px body on desktop. */
+body{
+  min-height:100dvh;
+  background:var(--bg);
+  padding-bottom:calc(122px + env(safe-area-inset-bottom,0px));
+}
+.top{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:16px;min-height:90px;
+  padding:19px 6px 14px;
+  border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);
+}
+.brand{
+  flex:0 0 auto;
+  font-size:35px;line-height:1.05;letter-spacing:-1.4px;
+  color:var(--blue);
+}
+.brand small{display:block;margin-top:5px;font-size:12px;letter-spacing:.1px;font-weight:600;color:var(--muted)}
+.top-actions{margin-left:auto;display:flex;align-items:center;justify-content:flex-end;gap:12px;flex:0 0 auto}
+.top-icon,.top-logout .top-logout-button{
+  display:grid;place-items:center;flex:0 0 42px;
+  width:42px;height:42px;min-width:42px;min-height:42px;
+  padding:7px;background:transparent;color:var(--text);
+  border-radius:14px;transition:background-color .15s,color .15s;
+}
+.top-icon svg,.top-logout .top-logout-button svg{width:23px;height:23px}
+.top-icon:hover,.top-logout .top-logout-button:hover{
+  background:var(--surface2);color:var(--blue);filter:none;
+}
+.api-indicator{
+  position:static;display:inline-flex;align-items:center;justify-content:center;
+  opacity:1;pointer-events:auto;flex:0 0 auto;min-width:95px;
+  padding:8px 12px;margin-left:2px;border-radius:999px;
+  background:color-mix(in srgb,var(--green) 13%,var(--surface));
+  color:var(--green);font-size:12px;line-height:1.25;font-weight:700;
+}
+main{width:100%;max-width:100%}
+#page-connect.active{
+  display:flex;align-items:center;justify-content:center;
+  min-height:calc(100dvh - 230px);
+  padding:15px 0 22px;
+}
+#page-connect .connect-hero{
+  width:min(480px,100%);
+  min-height:clamp(390px,51vh,505px);
+  margin:10px auto 20px;
+  padding:30px 24px 35px;
+  border:1px solid color-mix(in srgb,var(--line) 70%,transparent);
+  border-radius:28px;
+  box-shadow:0 16px 56px color-mix(in srgb,var(--text) 8%,transparent);
+}
+#page-connect .power{
+  width:126px;height:126px;min-height:126px;
+  border-radius:36px;font-size:87px;line-height:1;font-weight:800;
+  color:#fff;
+  background:linear-gradient(145deg,#418cff,#2366da);
+  box-shadow:0 14px 30px rgba(33,103,223,.2);
+  transition:transform .17s,box-shadow .17s;
+}
+#page-connect .power:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 18px 35px rgba(33,103,223,.3)}
+#page-connect .power.on{
+  color:#fff;
+  background:linear-gradient(145deg,#40bd8b,#158a5f);
+  box-shadow:0 14px 30px rgba(21,138,95,.19);
+}
+#page-connect .bigstate{margin-top:29px;font-size:23px;line-height:1.35}
+#page-connect .connect-timer{margin-top:9px;font-size:16px;font-variant-numeric:tabular-nums}
+.tabs{
+  width:min(850px,calc(100% - 40px));
+  padding:8px;
+  gap:6px;
+  bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  border-radius:28px;
+  grid-template-columns:repeat(7,minmax(0,1fr));
+}
+.tabs .tab{
+  min-width:0;overflow:visible;padding:10px 5px 8px;
+  border-radius:20px;gap:5px;font-size:12px;line-height:1.25;
+  font-weight:650;white-space:nowrap;text-align:center;
+}
+.tabs .tab .ico{font-size:22px;line-height:26px}
+.tabs .tab .ico svg{width:23px;height:23px}
+.tab-label-compact{display:none}
+#page-settings>.card,#page-deploy>.card,#page-logs>.card,#page-route>.card,
+#page-singbox>.card{max-width:880px;margin-left:auto;margin-right:auto}
+.profile-manager-modal{width:min(620px,100%);max-width:100%}
+.route-dialog{width:min(780px,100%);max-width:100%}
+@media (max-width:700px){
+  body{padding-inline:14px}
+  .top{
+    min-height:95px;display:grid;grid-template-columns:minmax(0,1fr) auto;
+    gap:6px 10px;padding:15px 1px 11px;
+  }
+  .brand{font-size:29px;letter-spacing:-1px}
+  .brand small{font-size:10px;margin-top:4px}
+  .top-actions{gap:4px;grid-column:2;grid-row:1}
+  .top-icon,.top-logout .top-logout-button{
+    flex-basis:36px;width:36px;height:36px;min-width:36px;min-height:36px;
+    padding:6px;border-radius:12px;
+  }
+  .top-icon svg,.top-logout .top-logout-button svg{width:22px;height:22px}
+  .api-indicator{
+    grid-column:1/-1;grid-row:2;justify-self:end;
+    font-size:11px;min-width:0;padding:4px 10px;margin:0;
+  }
+  #page-connect.active{min-height:calc(100dvh - 224px);padding:12px 0 18px}
+  #page-connect .connect-hero{
+    width:min(440px,100%);min-height:clamp(350px,49vh,460px);
+    margin:4px auto 18px;padding:28px 17px;border-radius:24px;
+  }
+  #page-connect .power{
+    width:112px;height:112px;min-height:112px;font-size:76px;border-radius:31px;
+  }
+  #page-connect .bigstate{margin-top:24px;font-size:20px}
+  .tabs{width:calc(100% - 16px);padding:6px;gap:2px;border-radius:23px;bottom:calc(8px + env(safe-area-inset-bottom,0px))}
+  .tabs .tab{
+    font-size:10px;letter-spacing:-.3px;line-height:1.12;
+    padding:9px 1px 8px;gap:3px;border-radius:16px;
+  }
+  .tabs .tab .ico{line-height:23px;font-size:20px}
+  .tabs .tab .ico svg{width:21px;height:21px}
+  .tab-label-full{display:none}
+  .tab-label-compact{display:inline}
+  .route-dialog{width:100%;max-width:100%;border-radius:26px}
+  .profile-manager-modal{width:100%;max-width:100%;border-radius:25px}
+  .card{padding:18px;border-radius:23px}
+}
+@media(max-width:370px){
+  body{padding-inline:12px;padding-bottom:calc(180px + env(safe-area-inset-bottom,0px))}
+  .tabs{grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;max-width:345px}
+  .tabs .tab{padding:6px 2px;font-size:11px}
+  #page-connect.active{min-height:calc(100dvh - 286px)}
+}
+@media(prefers-reduced-motion:reduce){
+  #page-connect .power{transition:none!important}
+}
+
 </style>
 </head>
 <body>
-<header class="top"><div class="brand">CSQTT<small>v2.1.9</small></div><div class="top-actions" aria-label="Быстрые действия"><button type="button" class="top-icon" aria-label="Поддержать проект" id="topHeart"><svg class="top-heart-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6c-1.5-1.6-4.1-1.6-5.6 0L12 7.8 8.8 4.6c-1.5-1.6-4.1-1.6-5.6 0-1.7 1.8-1.7 4.6 0 6.3L12 20l8.8-9.1c1.7-1.7 1.7-4.5 0-6.3z"/></svg></button><button type="button" class="top-icon" aria-label="Профили подключения" id="topSwitch"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3 5 7h3v7h2V7h3L9 3z"/></svg></button><button type="button" class="top-icon" aria-label="Настройки" id="topSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m19.14 12.94.03-.94-.03-.94 2.03-1.58-2-3.46-2.39.96a7.2 7.2 0 0 0-1.63-.95L14.79 3h-4l-.36 2.03c-.59.22-1.13.54-1.63.95l-2.39-.96-2 3.46 2.03 1.58-.03.94.03.94-2.03 1.58 2 3.46 2.39-.96c.5.41 1.04.73 1.63.95L10.79 21h4l.36-2.03c.59-.22 1.13-.54 1.63-.95l2.39.96 2-3.46-2.03-1.58zM12.79 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></button><form class="top-logout" action="/auth/logout" method="post"><button type="submit" class="top-icon top-logout-button" title="Выйти" aria-label="Выйти из CSQTT Core"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5M15 7l5 5-5 5M8 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form></div><span id="apiStatus" class="badge api-indicator" role="status" aria-live="polite">Проверка API…</span></header>
+<header class="top"><div class="brand">CSQTT<small>Core · Linux ARM64</small></div><div class="top-actions" aria-label="Быстрые действия"><button type="button" class="top-icon" aria-label="Поддержать проект" id="topHeart"><svg class="top-heart-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6c-1.5-1.6-4.1-1.6-5.6 0L12 7.8 8.8 4.6c-1.5-1.6-4.1-1.6-5.6 0-1.7 1.8-1.7 4.6 0 6.3L12 20l8.8-9.1c1.7-1.7 1.7-4.5 0-6.3z"/></svg></button><button type="button" class="top-icon" aria-label="Профили подключения" id="topSwitch"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3 5 7h3v7h2V7h3L9 3z"/></svg></button><button type="button" class="top-icon" aria-label="Настройки" id="topSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m19.14 12.94.03-.94-.03-.94 2.03-1.58-2-3.46-2.39.96a7.2 7.2 0 0 0-1.63-.95L14.79 3h-4l-.36 2.03c-.59.22-1.13.54-1.63.95l-2.39-.96-2 3.46 2.03 1.58-.03.94.03.94-2.03 1.58 2 3.46 2.39-.96c.5.41 1.04.73 1.63.95L10.79 21h4l.36-2.03c.59-.22 1.13-.54 1.63-.95l2.39.96 2-3.46-2.03-1.58zM12.79 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></button><form class="top-logout" action="/auth/logout" method="post"><button type="submit" class="top-icon top-logout-button" title="Выйти" aria-label="Выйти из CSQTT Core"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5M15 7l5 5-5 5M8 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form></div><span id="apiStatus" class="badge api-indicator" role="status" aria-live="polite">Проверка API…</span></header>
 <main>
 <section class="page active" id="page-connect">
  <div class="card hero connect-hero"><button id="power" class="power" aria-label="Подключить" aria-pressed="false">C</button><div id="connState" class="bigstate">Проверка состояния…</div><div id="connMessage" class="muted connect-timer">00:00:00</div><div class="metrics" aria-hidden="true"><div class="metric"><strong id="profileCount">—</strong><span>Профили</span></div><div class="metric"><strong id="workerCount">—</strong><span>Потоки</span></div><div class="metric"><strong id="vkBadge">—</strong><span>VK</span></div></div></div>
@@ -259,7 +398,7 @@ main{width:100%;max-width:100%}
  <div class="card"><h2>CAPTCHA</h2><div id="captchaStatus" class="muted">Ожидание запросов CAPTCHA…</div><div id="captchaInline" class="hidden"><div class="notice">Если CSQTT запросил подтверждение, откройте страницу проверки и затем отправьте ответ в активную сессию.</div><button id="openCaptcha" class="secondary">Открыть CAPTCHA</button><div class="field"><label>Ответ / результат CAPTCHA</label><input id="captchaAnswer" autocomplete="off" placeholder="Введите результат проверки"></div><div class="row"><button id="submitCaptcha">Отправить</button><button class="secondary" id="cancelCaptcha">Отменить</button></div></div></div>
  
  <div class="card"><h2>Оформление CSQTT</h2><div class="field"><label for="themeMode">Тема приложения</label><select id="themeMode"><option value="system">Как в системе</option><option value="light">Светлая</option><option value="dark">Тёмная</option></select></div><p class="muted">Оформление CSQTT Core на основе CSQTT 2.5.0.</p></div>
- <div class="card"><h2>Система и версия</h2><div class="statusline"><span class="dot ok"></span><span>CSQTT Core · NanoPi ARM64</span></div><p class="muted">CSQTT Core — клиент и сервер для ARM64. Автоматическое получение VK-токена реализовано отдельным компонентом.</p><div class="row"><div><div class="muted">Backend</div><strong id="backendVersion">—</strong></div></div><div class="row" style="margin-top:12px"><button class="secondary" id="checkCoreUpdate">Проверить ядро</button><button id="updateCore">Обновить ядро</button></div><div id="updateMessage" class="notice hidden"></div></div>
+ <div class="card"><h2>Система и версия</h2><div class="statusline"><span class="dot ok"></span><span>CSQTT Core · Linux ARM64</span></div><p class="muted">CSQTT Core — клиент и сервер для ARM64. Автоматическое получение VK-токена реализовано отдельным компонентом.</p><div class="row"><div><div class="muted">Backend</div><strong id="backendVersion">—</strong></div></div><div class="row" style="margin-top:12px"><button class="secondary" id="checkCoreUpdate">Проверить ядро</button><button id="updateCore">Обновить ядро</button></div><div id="updateMessage" class="notice hidden"></div></div>
 </section>
 <section class="page route-page" id="page-direct"><div class="route-backdrop"></div><div class="route-dialog"><div class="route-title"><h2><span>◎</span> Direct</h2><button type="button" id="routeClose" class="modal-close" aria-label="Закрыть">×</button></div><div class="route-direct-label">Direct</div><div class="field route-list-field"><label for="directDomains">Direct — домены (по одному в строке)</label><textarea id="directDomains" placeholder="example.com&#10;cdn.example.com"></textarea></div><div class="field route-list-field"><label for="directIPs">Direct — IP-адреса IPv4 / IPv6 (по одному в строке)</label><textarea id="directIPs" placeholder="192.0.2.10&#10;2001:db8::10"></textarea></div><div class="route-footer"><span id="directCount">Распознано: 0</span><button id="saveDirectRules">Готово</button></div><div id="routeMessage" class="notice hidden"></div></div></section>
 <section class="page" id="page-deploy">
@@ -314,7 +453,7 @@ main{width:100%;max-width:100%}
 <section class="page" id="page-logs"><label class="mode logs-toggle"><span><b>Активное логирование</b></span><input type="checkbox" id="logsActive" checked></label><div class="card logs-card"><pre id="logs" class="console">Загрузка…</pre><div class="logs-actions"><button class="secondary" id="copyLogs" aria-label="Копировать журнал">▢</button><button class="secondary" id="clearLogs" aria-label="Очистить журнал">▤</button></div></div></section>
 
 </main>
-<nav class="tabs" aria-label="Основная навигация"><button class="tab active" data-page="connect" aria-current="page"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.99 19 9.91 19 12a7 7 0 1 1-14 0c0-2.09 1.01-4.01 2.59-5.41L6.17 5.17A8.96 8.96 0 0 0 3 12a9 9 0 1 0 18 0 8.96 8.96 0 0 0-3.17-6.83z"/></svg></span>Подключение</button><button class="tab" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.65 10A6 6 0 1 0 12 12l2 0v3h3v3h3v-6h-8.35zM6 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg></span>Туннель</button><button class="tab" data-page="deploy"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.35 10.04A7.49 7.49 0 0 0 5 8.2 5.5 5.5 0 0 0 5.5 19h13a4.5 4.5 0 0 0 .85-8.96z"/></svg></span>Деплой</button><button class="tab" data-page="logs"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 19H4V5h16v14zM6 7l4 5-4 5 1.5 1.5L13 12 7.5 5.5 6 7zm8 9h4v-2h-4z"/></svg></span>Логи</button><button class="tab" data-page="direct"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v2H3zm0 6h12v2H3zm0 6h6v2H3z"/></svg></span>Директ</button><button class="tab" data-page="route"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v2H3zm0 6h12v2H3zm0 6h6v2H3z"/></svg></span>Маршрут</button><button class="tab" data-page="singbox"><span class="ico">▤</span>Sing-Box</button></nav>
+<nav class="tabs" aria-label="Основная навигация"><button class="tab active" data-page="connect" aria-current="page" aria-label="Подключение"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.99 19 9.91 19 12a7 7 0 1 1-14 0c0-2.09 1.01-4.01 2.59-5.41L6.17 5.17A8.96 8.96 0 0 0 3 12a9 9 0 1 0 18 0 8.96 8.96 0 0 0-3.17-6.83z"/></svg></span><span class="tab-label-full">Подключение</span><span class="tab-label-compact" aria-hidden="true">Связь</span></button><button class="tab" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.65 10A6 6 0 1 0 12 12l2 0v3h3v3h3v-6h-8.35zM6 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg></span>Туннель</button><button class="tab" data-page="deploy"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.35 10.04A7.49 7.49 0 0 0 5 8.2 5.5 5.5 0 0 0 5.5 19h13a4.5 4.5 0 0 0 .85-8.96z"/></svg></span>Деплой</button><button class="tab" data-page="logs"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 19H4V5h16v14zM6 7l4 5-4 5 1.5 1.5L13 12 7.5 5.5 6 7zm8 9h4v-2h-4z"/></svg></span>Логи</button><button class="tab" data-page="direct"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v2H3zm0 6h12v2H3zm0 6h6v2H3z"/></svg></span>Директ</button><button class="tab" data-page="route"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v2H3zm0 6h12v2H3zm0 6h6v2H3z"/></svg></span>Маршрут</button><button class="tab" data-page="singbox"><span class="ico">▤</span>Sing-Box</button></nav>
 <div id="profileManagerOverlay" class="overlay hidden"><div class="modal profile-manager-modal"><div class="modal-title"><h2>Профили подключения</h2><button type="button" class="modal-close" id="closeProfiles" aria-label="Закрыть">×</button></div><div id="profileList"><div class="muted">Загрузка профилей…</div></div><div class="row profile-manager-actions"><button class="secondary" id="refreshProfiles">Обновить</button><button id="showAddProfile">＋ Добавить</button></div><div id="addProfile" class="hidden profile-add-form"><div class="field"><label for="newProtocol">Протокол</label><select id="newProtocol"><option>CSQTT</option><option>FreeTurn</option><option>OlcRTC</option><option>OpenFlux</option><option>ToTS</option></select></div><div class="field"><label for="newLink">Ссылка подключения</label><textarea id="newLink" placeholder="csqtt://connect?..." autocomplete="off" spellcheck="false"></textarea></div><button id="saveProfile" class="block-button">Сохранить профиль</button></div></div></div><div id="tunnelAuthOverlay" class="overlay hidden"><div class="modal"><h2>🔑 Подключение</h2><div class="field"><label>Пароль туннеля</label><div class="row"><input id="tunnelPassword" type="password" autocomplete="current-password" placeholder="Укажите пароль"><button class="secondary small" id="toggleTunnelPassword" type="button">Показать</button></div></div><div class="row"><button class="secondary" id="cancelTunnelAuth">Отмена</button><button id="saveTunnelAuth">Сохранить</button></div><div id="tunnelAuthMessage" class="notice hidden"></div></div></div><div id="deploySecretsOverlay" class="overlay hidden"><div class="modal deploy-auth-modal"><div class="modal-title"><h2><span>⚿</span> Авторизация</h2><button type="button" class="modal-close" id="cancelDeployAuth" aria-label="Закрыть">×</button></div><p class="muted">Придумайте свои данные — латиница и цифры. Они будут созданы на сервере при установке, искать ничего не нужно.</p><h3>Подключение</h3><div class="field password-field"><label>Пароль туннеля (придумайте)</label><div class="password-inline"><input id="mainPassword" type="password" autocomplete="new-password"><button type="button" class="reveal-password" data-reveal="mainPassword">Показать</button></div></div><hr><h3>Данные доступа к web панели</h3><div class="field"><label>Логин WEB (придумайте)</label><input id="webLogin" autocomplete="username" value="admin"></div><div class="field"><label>Пароль WEB (придумайте)</label><input id="webPassword" type="password" autocomplete="new-password"></div><button id="saveDeployAuth" class="save-auth">Сохранить</button><div id="deployAuthMessage" class="notice hidden"></div></div></div><div id="captchaOverlay" class="overlay hidden"><div class="modal"><h2>🔐 Требуется CAPTCHA VK</h2><p id="captchaModalText" class="muted">CSQTT ожидает подтверждение.</p><button id="openCaptchaModal" class="secondary">Открыть страницу проверки</button><div class="field"><label>Ответ CAPTCHA</label><input id="captchaModalAnswer" autocomplete="off"></div><div class="row"><button id="submitCaptchaModal">Отправить</button><button class="secondary" id="dismissCaptcha">Скрыть</button></div></div></div>
 <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 <script>
