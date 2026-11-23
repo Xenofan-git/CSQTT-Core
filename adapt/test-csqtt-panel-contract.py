@@ -110,6 +110,10 @@ for token in (
     "--csqtt-accent:#4195ff",
     "--bg:#101720",
     "--csqtt-field-radius:12px",
+    "font-weight:500;white-space:nowrap;text-align:center;",
+    "font-size:11px;letter-spacing:-.3px;line-height:1.12;",
+    ".tabs .tab .ico svg{width:26px;height:26px}",
+    ".tabs .tab .ico svg{width:24px;height:24px}",
     "border-radius:var(--csqtt-field-radius)!important;",
     'input:not([type="checkbox"]):not([type="radio"]):not([type="range"])',
 ):

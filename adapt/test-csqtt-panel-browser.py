@@ -502,8 +502,14 @@ def main():
                   const actions = document.querySelector('.top-actions').getBoundingClientRect();
                   const tabs = [...document.querySelectorAll('.tabs .tab')].map(tab => {
                     const r = tab.getBoundingClientRect();
+                    const style=getComputedStyle(tab);
+                    const ico=tab.querySelector('.ico');
+                    const svg=ico.querySelector('svg');
                     return {left:r.left,right:r.right,client:tab.clientWidth,
-                            scroll:tab.scrollWidth};
+                            scroll:tab.scrollWidth, fontSize:parseFloat(style.fontSize),
+                            fontWeight:style.fontWeight,
+                            iconSize:parseFloat(getComputedStyle(ico).fontSize),
+                            svgSize:svg?parseFloat(getComputedStyle(svg).width):null};
                   });
                   return {
                     viewport: document.documentElement.clientWidth,
@@ -537,6 +543,16 @@ def main():
                 for tab in dimensions["tabs"]:
                     assert tab["scroll"] <= tab["client"]+2, (
                         f"tab label is clipped at {width}: {tab}")
+                    assert tab["fontWeight"] == "500", (
+                        f"tab font should be lighter at {width}: {tab}")
+                    expected_label_size = 11 if width <= 700 else 13
+                    assert tab["fontSize"] == expected_label_size, (
+                        f"tab label size unexpected at {width}: {tab}")
+                    assert tab["iconSize"] == (23 if width <= 700 else 25), (
+                        f"tab icon did not grow at {width}: {tab}")
+                    if tab["svgSize"] is not None:
+                        assert tab["svgSize"] == (24 if width <= 700 else 26), (
+                            f"tab svg icon did not grow at {width}: {tab}")
 
             # Selecting another profile must round-trip through the API and refresh
             # the profile-specific hash shown on the Tunnel page.
