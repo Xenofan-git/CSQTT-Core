@@ -117,6 +117,7 @@ func TestSingBoxLiveApplyNativeARM64WithRollback(t *testing.T) {
  applied,err:=m.ApplyConfig(updated)
  if err!=nil||!applied{t.Fatalf("apply candidate failed: applied=%v err=%v",applied,err)}
  if m.Status().PID<=0 || m.Status().PID==originalPID{t.Fatal("sing-box was not restarted after route change")}
+ if _,err:=os.Lstat(m.liveApplyJournalPath());!os.IsNotExist(err){t.Fatalf("successful apply retained uncommitted journal: %v",err)}
  if csqtt.Status().Address!=csqttAddress{t.Fatal("CSQTT Core SOCKS5 was changed by Sing-box apply")}
  persisted,err:=m.LoadConfig()
  if err!=nil || !reflect.DeepEqual(persisted,updated){t.Fatalf("updated routing did not persist: %+v err %v",persisted,err)}
@@ -143,6 +144,7 @@ func TestSingBoxLiveApplyNativeARM64WithRollback(t *testing.T) {
  if m.Status().PID<=0 || m.Status().PID==stablePID {
   t.Fatalf("old Sing-box listener was not restarted after rollback: %+v",m.Status())
  }
+ if _,err:=os.Lstat(m.liveApplyJournalPath());!os.IsNotExist(err){t.Fatalf("successful runtime rollback retained uncommitted journal: %v",err)}
  gotConfig,err:=os.ReadFile(m.configPath);if err!=nil{t.Fatal(err)}
  gotPanel,err:=os.ReadFile(m.panelStatePath());if err!=nil{t.Fatal(err)}
  if !bytes.Equal(oldConfig,gotConfig)||!bytes.Equal(oldPanel,gotPanel) {

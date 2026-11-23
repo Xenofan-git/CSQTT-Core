@@ -7,6 +7,7 @@ on:
       - adapt/singbox_route_toggle_linux_test.go
       - adapt/singbox_config_linux.go
       - adapt/singbox_manager_linux.go
+      - adapt/singbox_transaction_linux.go
       - adapt/csqtt_core_socks5_linux.go
       - .github/workflows/csqtt-core-route-toggle-real-arm64.yml
   workflow_dispatch:
