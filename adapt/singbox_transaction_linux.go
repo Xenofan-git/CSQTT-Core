@@ -293,3 +293,121 @@ func (m *SingBoxManager) recoverPendingTransactionForLoad() error {
 	}
 	return m.recoverPendingTransaction()
 }
+
+// An independent durable journal records the live-apply commit decision.
+// Publishing config/panel does NOT imply that the new listener was healthy.
+const singBoxLiveApplyVersion = 1
+
+type singBoxLiveApplyJournal struct {
+ Version int
+ OldConfig []byte
+ OldPanel []byte
+ OldConfigSHA256 string
+ OldPanelSHA256 string
+ NewConfigSHA256 string
+ NewPanelSHA256 string
+}
+
+func (m *SingBoxManager) liveApplyJournalPath() string { return m.configPath + ".live-apply.json" }
+
+func (m *SingBoxManager) readLiveApplyJournal() (*singBoxLiveApplyJournal,error) {
+ info,err:=os.Lstat(m.liveApplyJournalPath())
+ if errors.Is(err,os.ErrNotExist){return nil,nil}
+ if err!=nil{return nil,err}
+ if !info.Mode().IsRegular() || info.Mode().Perm()&0077!=0 || info.Size()>singBoxTxnMaxJournal {
+  return nil,fmt.Errorf("unsafe sing-box live-apply journal (requires private regular file)")
+ }
+ data,err:=os.ReadFile(m.liveApplyJournalPath())
+ if err!=nil{return nil,err}
+ if len(data)>singBoxTxnMaxJournal{return nil,fmt.Errorf("oversized sing-box live-apply journal")}
+ var j singBoxLiveApplyJournal
+ if err:=json.Unmarshal(data,&j);err!=nil{return nil,fmt.Errorf("invalid sing-box live-apply journal: %w",err)}
+ if j.Version!=singBoxLiveApplyVersion || len(j.OldConfig)>singBoxTxnMaxFile || len(j.OldPanel)>singBoxTxnMaxFile ||
+  j.OldConfigSHA256!=singBoxHash(j.OldConfig) || j.OldPanelSHA256!=singBoxHash(j.OldPanel) {
+  return nil,fmt.Errorf("corrupted sing-box live-apply journal")
+ }
+ if err:=validateSingBoxOldPanel(j.OldConfig,true,j.OldPanel,true);err!=nil{return nil,err}
+ for _,hash:=range []string{j.NewConfigSHA256,j.NewPanelSHA256}{
+  raw,e:=hex.DecodeString(hash)
+  if e!=nil||len(raw)!=32||hex.EncodeToString(raw)!=hash{return nil,fmt.Errorf("invalid live-apply target SHA256")}
+ }
+ return &j,nil
+}
+
+func (m *SingBoxManager) writeLiveApplyJournal(oldConfig,oldPanel,newConfig,newPanel []byte) error {
+ if existing,err:=m.readLiveApplyJournal();err!=nil{return err}else if existing!=nil{
+  return fmt.Errorf("prior uncommitted sing-box live apply requires recovery before starting another")
+ }
+ if len(oldConfig)>singBoxTxnMaxFile||len(oldPanel)>singBoxTxnMaxFile||
+  len(newConfig)>singBoxTxnMaxFile||len(newPanel)>singBoxTxnMaxFile {
+  return fmt.Errorf("sing-box live-apply snapshot exceeds file size limit")
+ }
+ if err:=validateSingBoxOldPanel(oldConfig,true,oldPanel,true);err!=nil{return err}
+ j:=singBoxLiveApplyJournal{Version:singBoxLiveApplyVersion,
+  OldConfig:oldConfig,OldPanel:oldPanel,
+  OldConfigSHA256:singBoxHash(oldConfig),OldPanelSHA256:singBoxHash(oldPanel),
+  NewConfigSHA256:singBoxHash(newConfig),NewPanelSHA256:singBoxHash(newPanel),
+ }
+ payload,err:=json.Marshal(j);if err!=nil{return err}
+ dir:=filepath.Dir(m.configPath)
+ f,err:=os.CreateTemp(dir,".sing-box-live-apply-*.json")
+ if err!=nil{return err}
+ path:=f.Name()
+ defer os.Remove(path)
+ if err=f.Chmod(0600);err!=nil{_ = f.Close();return err}
+ if _,err=f.Write(payload);err!=nil{_ = f.Close();return err}
+ if err=f.Sync();err!=nil{_ = f.Close();return err}
+ if err=f.Close();err!=nil{return err}
+ if err=os.Rename(path,m.liveApplyJournalPath());err!=nil{return err}
+ return syncSingBoxDirectory(dir)
+}
+
+func (m *SingBoxManager) clearLiveApplyJournal() error {
+ if err:=os.Remove(m.liveApplyJournalPath());err!=nil&&!errors.Is(err,os.ErrNotExist){return err}
+ return syncSingBoxDirectory(filepath.Dir(m.configPath))
+}
+
+// Recovery is idempotent and fail-closed; never overwrite a third-party edit.
+// A completely published candidate is still uncommitted until health passes.
+func (m *SingBoxManager) recoverInterruptedLiveApply() error {
+ j,err:=m.readLiveApplyJournal()
+ if err!=nil{return err}
+ if j==nil{return nil}
+ if err=m.recoverPendingTransaction();err!=nil{return fmt.Errorf("recover inner sing-box transaction: %w",err)}
+ config,hasConfig,err:=readSingBoxRegular(m.configPath);if err!=nil{return err}
+ panel,hasPanel,err:=readSingBoxRegular(m.panelStatePath());if err!=nil{return err}
+ if !hasConfig||!hasPanel{return fmt.Errorf("live-apply recovery refuses missing config or panel; journal preserved")}
+ if h:=singBoxHash(config);h!=j.OldConfigSHA256&&h!=j.NewConfigSHA256{
+  return fmt.Errorf("live-apply recovery refuses externally modified config; journal preserved")
+ }
+ if h:=singBoxHash(panel);h!=j.OldPanelSHA256&&h!=j.NewPanelSHA256{
+  return fmt.Errorf("live-apply recovery refuses externally modified panel; journal preserved")
+ }
+ if singBoxHash(config)!=j.OldConfigSHA256 {
+  if err:=writeSingBoxRecoveredFile(m.configPath,j.OldConfig);err!=nil{return fmt.Errorf("restore previous sing-box config: %w",err)}
+ }
+ if singBoxHash(panel)!=j.OldPanelSHA256 {
+  if err:=writeSingBoxRecoveredFile(m.panelStatePath,j.OldPanel);err!=nil{return fmt.Errorf("restore previous sing-box panel: %w",err)}
+ }
+ if err:=syncSingBoxDirectory(filepath.Dir(m.configPath));err!=nil{return err}
+ restoredConfig,_,err:=readSingBoxRegular(m.configPath);if err!=nil{return err}
+ restoredPanel,_,err:=readSingBoxRegular(m.panelStatePath());if err!=nil{return err}
+ if singBoxHash(restoredConfig)!=j.OldConfigSHA256||singBoxHash(restoredPanel)!=j.OldPanelSHA256{
+  return fmt.Errorf("sing-box live-apply rollback verification failed; journal preserved")
+ }
+ return m.clearLiveApplyJournal()
+}
+
+func (m *SingBoxManager) recoverInterruptedLiveApplyForLoad() error {
+ m.mu.Lock()
+ applying,configuring,running:=m.applying,m.configuring,m.cmd!=nil
+ m.mu.Unlock()
+ if applying||configuring{return fmt.Errorf("sing-box apply/save in progress")}
+ if running {
+  if j,err:=m.readLiveApplyJournal();err!=nil{return err}else if j!=nil{
+   return fmt.Errorf("cannot recover incomplete sing-box live apply while engine is running")
+  }
+  return nil
+ }
+ return m.recoverInterruptedLiveApply()
+}

@@ -39,6 +39,8 @@ type SingBoxManager struct {
 	starting bool
 	configuring bool
 	applying bool // exclusive live-apply transition, CSQTT Core is never touched
+    // Test-only crash checkpoint: nil in production and inaccessible to HTTP.
+    applyCheckpointHook func(string)
 	// Test seam: production always uses os.Rename. It must not be changed
 	// while SaveConfig is active.
 	renameOverride func(string, string) error
@@ -191,6 +193,11 @@ func (m *SingBoxManager) saveConfig(input singBoxConfigInput, internalApply bool
 	m.configuring = true
 	m.mu.Unlock()
 	defer func() { m.mu.Lock(); m.configuring = false; m.mu.Unlock() }()
+    // Revert a previously interrupted live apply before unrelated writes.
+    // Internal ApplyConfig writes run while their checkpoint intentionally exists.
+    if !internalApply {
+      if err:=m.recoverInterruptedLiveApply();err!=nil{return fmt.Errorf("recover prior sing-box live apply: %w",err)}
+    }
 	// Complete any transaction interrupted by a previous process exit before
 	// starting another write; never discard its recovery journal.
 	if err := m.recoverPendingTransaction(); err != nil {
@@ -315,7 +322,13 @@ func (m *SingBoxManager) start(ctx context.Context, internalApply bool) error {
 	}
 	fail := func(err error) error { finishStart(err); return err }
 
-	input, loadErr := m.LoadConfig()
+    var input singBoxConfigInput
+    var loadErr error
+    if internalApply {
+       if loadErr=m.recoverPendingTransactionForLoad();loadErr==nil{input,loadErr=m.loadConfigWithoutRecovery()}
+    } else {
+       input,loadErr=m.LoadConfig()
+    }
 	if loadErr != nil { return fail(loadErr) }
 	// Revalidate persisted local Rule Set paths at startup as configs may be
 	// edited outside SaveConfig after they were originally written.
@@ -337,7 +350,7 @@ func (m *SingBoxManager) start(ctx context.Context, internalApply bool) error {
 	if err != nil { return fail(fmt.Errorf("open sing-box log: %w", err)) }
 
 	cmd := exec.Command(m.binary, "run", "-c", m.configPath)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 
 	m.mu.Lock()
@@ -434,9 +447,13 @@ func (m *SingBoxManager) ApplyConfig(input singBoxConfigInput) (applied bool, er
  if !wasRunning {
   return false,m.saveConfig(input,true)
  }
- // Read the validated old sidecar before stopping the existing engine. Never
- // reconstruct rollback state from an untrusted/inconsistent disk pair.
- oldInput,err:=m.LoadConfig()
+ // An earlier incomplete marker must not be overwritten by a new attempt.
+ if j,err:=m.readLiveApplyJournal();err!=nil{return false,err}else if j!=nil{
+  return false,fmt.Errorf("unresolved sing-box live-apply journal; recovery required")
+ }
+ // Read the validated old sidecar before stopping the existing engine.
+ if err:=m.recoverPendingTransactionForLoad();err!=nil{return false,err}
+ oldInput,err:=m.loadConfigWithoutRecovery()
  if err!=nil {return false,fmt.Errorf("refusing live apply without valid previous config: %w",err)}
  oldBytes,hadOld,err:=readSingBoxRegular(m.configPath)
  if err!=nil{return false,err}
@@ -467,9 +484,20 @@ func (m *SingBoxManager) ApplyConfig(input singBoxConfigInput) (applied bool, er
  if err:=m.checkConfigPath(context.Background(),preflightPath);err!=nil{
   return false,fmt.Errorf("new sing-box config rejected before restart; old process remains running: %w",err)
  }
+ // A distinct rollback decision journal must be durable before stop.
+ panelData,err:=json.MarshalIndent(singBoxPanelState{Version:1,
+   ConfigSHA256:singBoxHash(candidate),Config:input},"","  ")
+ if err!=nil{return false,err}
+ if err:=m.writeLiveApplyJournal(oldBytes,panelBytes,candidate,append(panelData,'\n'));err!=nil{
+  return false,fmt.Errorf("write durable sing-box live-apply checkpoint: %w",err)
+ }
+ if m.applyCheckpointHook!=nil {m.applyCheckpointHook("prepared")}
  // Only the sing-box process is stopped; the independent CSQTT SOCKS5
  // listener and Linux routing remain untouched throughout.
- if err:=m.stop(true);err!=nil{return false,fmt.Errorf("stop old sing-box for apply: %w",err)}
+ if err:=m.stop(true);err!=nil{
+   if clearErr:=m.clearLiveApplyJournal();clearErr!=nil{return false,fmt.Errorf("stop old sing-box (%v); journal cleanup: %w",err,clearErr)}
+   return false,fmt.Errorf("stop old sing-box for apply: %w",err)
+ }
  // Any error after stopping old sing-box must attempt a durable rollback.
  rollback:=func(problem error)(bool,error){
   _=m.stop(true)
@@ -495,13 +523,22 @@ func (m *SingBoxManager) ApplyConfig(input singBoxConfigInput) (applied bool, er
    m.mu.Lock();m.lastError=failure.Error();m.mu.Unlock()
    return false,failure
   }
+  if err:=m.clearLiveApplyJournal();err!=nil{
+    return false,fmt.Errorf("old listener recovered but clearing live-apply checkpoint failed: %w",err)
+  }
   failure:=fmt.Errorf("sing-box apply failed; previous config and SOCKS5 listener restored: %w",problem)
   m.mu.Lock();m.lastError=failure.Error();m.mu.Unlock()
   return false,failure
  }
  if err:=m.saveConfig(input,true);err!=nil{return rollback(fmt.Errorf("activate candidate: %w",err))}
+ if m.applyCheckpointHook!=nil {m.applyCheckpointHook("candidate-published")}
  if err:=m.start(context.Background(),true);err!=nil{return rollback(fmt.Errorf("start candidate: %w",err))}
+ if m.applyCheckpointHook!=nil {m.applyCheckpointHook("candidate-started")}
  if err:=m.waitSOCKSReady(input.ListenAddress);err!=nil{return rollback(fmt.Errorf("candidate SOCKS5 listener not healthy: %w",err))}
+ if m.applyCheckpointHook!=nil {m.applyCheckpointHook("candidate-healthy")}
+ if err:=m.clearLiveApplyJournal();err!=nil {
+  return false,fmt.Errorf("new sing-box listener healthy but live-apply commit cleanup failed: %w",err)
+ }
  return true,nil
 }
 
@@ -554,6 +591,9 @@ func (m *SingBoxManager) Status() SingBoxStatus {
 func (m *SingBoxManager) panelStatePath() string { return m.configPath + ".panel.json" }
 
 func (m *SingBoxManager) LoadConfig() (singBoxConfigInput, error) {
+    if err:=m.recoverInterruptedLiveApplyForLoad();err!=nil {
+      return singBoxConfigInput{},fmt.Errorf("recover interrupted sing-box live apply: %w",err)
+    }
 	if err := m.recoverPendingTransactionForLoad(); err != nil {
 		return singBoxConfigInput{}, fmt.Errorf("recover Sing-box interrupted transaction: %w", err)
 	}
