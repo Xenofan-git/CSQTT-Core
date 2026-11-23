@@ -1,0 +1,28 @@
+[Unit]
+Description=CSQTT Core isolated ARM64 QEMU power-loss Sing-box recovery fixture
+After=local-fs.target
+ConditionHost=csqtt-core8-isolated
+ConditionPathExists=/usr/local/libexec/csqtt-powerloss-controller
+StartLimitIntervalSec=45
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=csqttlab
+Group=csqttlab
+Environment=CSQTT_POWERLOSS_LAB=isolated-aarch64-qemu
+Environment=CSQTT_POWERLOSS_STAGE=candidate-published
+ExecStart=/usr/local/libexec/csqtt-powerloss-controller serve
+Restart=on-failure
+RestartSec=2
+RestartPreventExitStatus=75
+TimeoutStopSec=8
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/csqttlab/powerloss
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

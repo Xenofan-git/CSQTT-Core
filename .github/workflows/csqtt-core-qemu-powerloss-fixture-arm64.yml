@@ -1,0 +1,64 @@
+name: CSQTT Core ARM64 disposable power-loss guest fixture build and safety contract
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/arm64-lab/csqtt-singbox-powerloss-guest.go
+      - adapt/arm64-lab/csqtt-core-singbox-powerloss-test.service
+      - adapt/CSQTT-CORE-QEMU-ARM64-POWERLOSS-ACCEPTANCE-2026-11-23.md
+      - .github/workflows/csqtt-core-qemu-powerloss-fixture-arm64.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-arm64-fixture-compile-and-guard:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.10'
+      - name: Compile standalone ARM64 guest from current real manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          test -z "$(gofmt -l adapt/arm64-lab/csqtt-singbox-powerloss-guest.go)"
+          test "$(head -n1 adapt/arm64-lab/csqtt-singbox-powerloss-guest.go)" = '//go:build ignore'
+          cp adapt/arm64-lab/csqtt-singbox-powerloss-guest.go adapt/zz_csqtt_powerloss_guest_main_linux.go
+          trap 'rm -f adapt/zz_csqtt_powerloss_guest_main_linux.go' EXIT
+          cd adapt
+          GO111MODULE=off GOTOOLCHAIN=local go build -trimpath -o "$RUNNER_TEMP/csqtt-powerloss-guest-aarch64" singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go csqtt_core_socks5_linux.go zz_csqtt_powerloss_guest_main_linux.go
+          file "$RUNNER_TEMP/csqtt-powerloss-guest-aarch64" | tee "$RUNNER_TEMP/guest-arch.txt"
+          grep -q 'ARM aarch64' "$RUNNER_TEMP/guest-arch.txt"
+          set +e
+          CSQTT_POWERLOSS_LAB=isolated-aarch64-qemu "$RUNNER_TEMP/csqtt-powerloss-guest-aarch64" diagnose > "$RUNNER_TEMP/non-vm-guard.txt" 2>&1
+          result=$?
+          set -e
+          test "$result" -eq 75
+          grep -q 'POWERLOSS_GUEST_REJECTED' "$RUNNER_TEMP/non-vm-guard.txt"
+          echo CSQTT_CORE_POWERLOSS_GUEST_ARM64_BUILD_AND_VM_GUARD_PASS
+      - name: Verify isolated guest unit restrictions without installing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          import configparser
+          from pathlib import Path
+          p=Path("adapt/arm64-lab/csqtt-core-singbox-powerloss-test.service")
+          c=configparser.ConfigParser(interpolation=None)
+          c.read(p)
+          assert c['Unit']['ConditionHost']=='csqtt-core8-isolated'
+          assert c['Service']['User']=='csqttlab'
+          assert c['Service']['ExecStart']=='/usr/local/libexec/csqtt-powerloss-controller serve'
+          assert c['Service']['Restart']=='on-failure'
+          assert c['Service']['RestartPreventExitStatus']=='75'
+          assert c['Service']['NoNewPrivileges']=='true'
+          assert c['Service']['ProtectSystem']=='strict'
+          assert c['Service']['ReadWritePaths']=='/home/csqttlab/powerloss'
+          assert c['Install']['WantedBy']=='multi-user.target'
+          print("CSQTT_CORE_POWERLOSS_GUEST_SYSTEMD_OFFLINE_CONTRACT_PASS")
+          PY
+# This workflow only compiles and checks fixtures; it never kills a VM.
