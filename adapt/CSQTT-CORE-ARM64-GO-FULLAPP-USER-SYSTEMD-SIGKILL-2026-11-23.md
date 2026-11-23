@@ -32,3 +32,7 @@ This is **real restart of the complete Go headless control plane plus real Sing-
 A live authorized CSQTT 2.5.0 Rust client to Core8/VK TURN, full authenticated seven-tab UI, and physical NanoPi boot/recovery remain independent untested acceptance steps. Existing production hardware and global routes were never changed. The separate disposable QEMU process still exists unless safely shut down by an authorized control method.
 
 Source fixtures and an offline ARM64 safety-contract workflow are retained in the repository to make this acceptance reviewable without storing guest SSH keys, test disk or credentials in Git.
+
+## Subsequent full-VM pre-login/power-cut result (same day)
+
+The pending pre-login full Go boot and subsequent abrupt full-QEMU power-cut gate were later verified separately. See CSQTT-CORE-ARM64-FULLAPP-PRELOGIN-POWERCUT-AND-VK-GATE-2026-11-23.md. The service boot trigger preceded first SSH login; after SIGKILL of the whole VM, full Go app and Sing-box restored real TCP SOCKS5 and preserved SQLite. Genuine authorized VK TURN is still untested because the disposable guest had no test credentials or profiles and external egress remained restricted. The guest was gracefully shut down afterward and linger restored to no.
