@@ -191,12 +191,20 @@ def main():
                     tunnelChevron: arrow.backgroundImage.includes('svg'),
                     minWorkers: document.querySelector('#workers').min,
                     toggleLeftOfDescription: rt.right < rl.left,
-                    palette: getComputedStyle(document.documentElement).getPropertyValue('--csqtt-accent').trim()
+                    palette: getComputedStyle(document.documentElement).getPropertyValue('--csqtt-accent').trim(),
+                    formRadii: [...new Set([...document.querySelectorAll(
+                      'input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]),select,textarea,.password-inline'
+                    )].map(el=>getComputedStyle(el).borderTopLeftRadius))],
+                    fieldCount: document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]),select,textarea,.password-inline').length,
+                    switchRadius: getComputedStyle(toggle).borderTopLeftRadius,
+                    sliderRadius: getComputedStyle(document.querySelector('#workers')).borderTopLeftRadius
                   };
                 }""")
                 assert controls["profileAppearance"] == "none" and controls["profileChevron"], controls
                 assert controls["tunnelAppearance"] == "none" and controls["tunnelChevron"], controls
                 assert controls["minWorkers"] == "4", controls
+                assert controls["fieldCount"] >= 40 and controls["formRadii"] == ["12px"], controls
+                assert controls["switchRadius"] != "12px" and controls["sliderRadius"] != "12px", controls
                 assert controls["toggleLeftOfDescription"], controls
                 assert controls["palette"] == ("#4195ff" if theme == "dark" else "#1e73e8"), controls
             page.evaluate("document.documentElement.dataset.theme = 'light'")

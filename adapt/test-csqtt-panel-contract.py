@@ -109,6 +109,9 @@ for token in (
     "#page-settings #validateVkHashes{",
     "--csqtt-accent:#4195ff",
     "--bg:#101720",
+    "--csqtt-field-radius:12px",
+    "border-radius:var(--csqtt-field-radius)!important;",
+    'input:not([type="checkbox"]):not([type="radio"]):not([type="range"])',
 ):
     if token not in html:
         raise SystemExit("CSQTT visual/min workers token missing: " + token)
