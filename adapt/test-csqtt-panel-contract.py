@@ -100,9 +100,9 @@ for token in (
 
 # Visual/functional minimum for this project's ARM64 web frontend.
 for token in (
-    'id="workers" type="range" min="4" max="127"',
-    "s.workers=Math.max(4,Math.min(127,Number.parseInt($('workers').value,10)||9))",
-    "set('workers',Math.max(4,Math.min(127,Number(s.workers)||9)))",
+    'id="workers" type="range" min="9" max="127"',
+    "s.workers=Math.max(9,Math.min(127,Number.parseInt($('workers').value,10)||9))",
+    "set('workers',Math.max(9,Math.min(127,Number(s.workers)||9)))",
     ".field select{",
     "appearance:none;",
     "#page-settings #allowHashRedistribution,",
@@ -116,6 +116,18 @@ for token in (
     ".tabs .tab .ico svg{width:24px;height:24px}",
     "border-radius:var(--csqtt-field-radius)!important;",
     "border-width:1px!important;",
+    "font-weight:450;",
+    "text-transform:uppercase;",
+    ".tabs .tab .ico svg{width:31px;height:31px;}",
+    "min=\"9\" max=\"127\"",
+    "#page-settings #workers::-webkit-slider-runnable-track{",
+    "#page-settings #allowHashRedistribution::after,",
+    "value=\"firefox\">Firefox",
+    "value=\"chrome\">Chrome",
+    "value=\"safari\">Safari",
+    'class=\"power-symbol\"',
+    'm7 4-4 4 4 4',
+
     ".password-inline input{border:0!important;border-radius:var(--csqtt-field-radius)!important}",
     "outline:1px solid var(--blue)!important;",
     'input:not([type="checkbox"]):not([type="radio"]):not([type="range"])',

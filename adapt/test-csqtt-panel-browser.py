@@ -167,6 +167,11 @@ def main():
             assert page.locator("#page-connect > .card").count() == 1, "Connect must retain the clean 2.5.0 single-card composition"
             assert page.locator("#topHeart").count() == 1 and page.locator("#topSwitch").count() == 1 and page.locator("#topSettings").count() == 1
             assert page.locator("#topQr, #qrImage").count() == 0, "QR controls must remain absent"
+            assert page.locator("#power .power-symbol").count() == 1, "the Connect button must use the power icon, not C"
+            assert page.locator("#power").inner_text().strip() == "", "old C glyph is still visible"
+            navicons = page.locator('.tabs button[data-page="direct"] path').get_attribute("d"), page.locator('.tabs button[data-page="route"] path').get_attribute("d")
+            assert navicons[0] != navicons[1], "Direct and Route must have different symbols"
+
 
             # Regression for the real tunnel/profile UI controls.
             # Switch to the *visible* Tunnel page before measuring element
@@ -208,7 +213,7 @@ def main():
                 }""")
                 assert controls["profileAppearance"] == "none" and controls["profileChevron"], controls
                 assert controls["tunnelAppearance"] == "none" and controls["tunnelChevron"], controls
-                assert controls["minWorkers"] == "4", controls
+                assert controls["minWorkers"] == "9", controls
                 assert controls["fieldCount"] >= 40 and controls["formRadii"] == ["12px"], controls
                 assert all(field["width"] == "1px" or (field["id"] == "panelLink" and field["width"] == "0px")
                            for field in controls["formBorders"]), controls
@@ -216,6 +221,41 @@ def main():
                 assert controls["focusedFieldOutline"] == "1px", controls
                 assert controls["switchRadius"] != "12px" and controls["sliderRadius"] != "12px", controls
                 assert controls["toggleLeftOfDescription"], controls
+                fresh = page.evaluate("""() => {
+                  const r=document.querySelector('#workers'),p=document.querySelector('#fingerprint');
+                  const sw=[...document.querySelectorAll('#allowHashRedistribution,#validateVkHashes')].map(el=>({
+                    width:el.getBoundingClientRect().width,
+                    height:el.getBoundingClientRect().height,
+                    border:getComputedStyle(el).borderTopWidth,
+                    knobWidth:getComputedStyle(el,'::after').width,
+                    knobTop:getComputedStyle(el,'::after').top
+                  }));
+                  const rs=getComputedStyle(r);
+                  const css=[...document.styleSheets].flatMap(sheet=>[...sheet.cssRules])
+                    .filter(rule=>rule.selectorText?.includes('#workers::-webkit-slider'))
+                    .map(rule=>({selector:rule.selectorText,
+                                height:rule.style.height,width:rule.style.width,
+                                marginTop:rule.style.marginTop,
+                                radius:rule.style.borderRadius}));
+                  return {min:r.min,value:r.value,border:rs.borderTopWidth,
+                    appearance:rs.appearance,trackRules:css,
+                    switch:sw,
+                    browsers:[...p.options].map(o=>({value:o.value,text:o.textContent}))};
+                }""")
+                assert fresh["min"] == "9" and int(fresh["value"]) >= 9, fresh
+                assert fresh["border"] == "0px" and fresh["appearance"] == "none", fresh
+                assert any("runnable-track" in rule["selector"] and rule["height"] == "4px"
+                           for rule in fresh["trackRules"]), fresh
+                assert any("slider-thumb" in rule["selector"] and rule["width"] == "20px"
+                           and rule["height"] == "20px" and rule["marginTop"] == "-8px"
+                           and rule["radius"] == "50%"
+                           for rule in fresh["trackRules"]), fresh
+                assert all(s["width"] == 52 and s["height"] == 28 and s["border"] == "1px" and s["knobWidth"] == "20px" for s in fresh["switch"]), fresh
+                assert fresh["browsers"] == [
+                    {"value":"firefox","text":"Firefox"},
+                    {"value":"chrome","text":"Chrome"},
+                    {"value":"safari","text":"Safari"}], fresh
+
                 assert controls["palette"] == ("#4195ff" if theme == "dark" else "#1e73e8"), controls
             page.evaluate("document.documentElement.dataset.theme = 'light'")
             # The original CSQTT option has no explicit value= attribute;
@@ -518,6 +558,7 @@ def main():
                     return {left:r.left,right:r.right,client:tab.clientWidth,
                             scroll:tab.scrollWidth, fontSize:parseFloat(style.fontSize),
                             fontWeight:style.fontWeight,
+                            textTransform:style.textTransform,
                             iconSize:parseFloat(getComputedStyle(ico).fontSize),
                             svgSize:svg?parseFloat(getComputedStyle(svg).width):null};
                   });
@@ -553,15 +594,17 @@ def main():
                 for tab in dimensions["tabs"]:
                     assert tab["scroll"] <= tab["client"]+2, (
                         f"tab label is clipped at {width}: {tab}")
-                    assert tab["fontWeight"] == "500", (
+                    assert tab["textTransform"] == "uppercase", (
+                        f"tab caption is not uppercase at {width}: {tab}")
+                    assert tab["fontWeight"] in ("450", "400"), (
                         f"tab font should be lighter at {width}: {tab}")
-                    expected_label_size = 11 if width <= 700 else 13
+                    expected_label_size = 12 if width <= 700 else 14
                     assert tab["fontSize"] == expected_label_size, (
                         f"tab label size unexpected at {width}: {tab}")
-                    assert tab["iconSize"] == (23 if width <= 700 else 25), (
+                    assert tab["iconSize"] == (27 if width <= 700 else 30), (
                         f"tab icon did not grow at {width}: {tab}")
                     if tab["svgSize"] is not None:
-                        assert tab["svgSize"] == (24 if width <= 700 else 26), (
+                        assert tab["svgSize"] == (28 if width <= 700 else 31), (
                             f"tab svg icon did not grow at {width}: {tab}")
 
             # Selecting another profile must round-trip through the API and refresh
@@ -723,6 +766,12 @@ def main():
 
             # Tunnel settings: changing the worker count must persist through /settings.
             page.locator('button[data-page="settings"]').click()
+
+            page.evaluate("""() => {
+              document.querySelector('#workers').value = '9';
+              document.querySelector('#workers').dispatchEvent(new Event('input',{bubbles:true}));
+            }""")
+            assert page.locator("#workersValue").text_content() == "9"
             page.locator("#workers").evaluate("""el => {
               el.value = "11";
               el.dispatchEvent(new Event("input", {bubbles:true}));
