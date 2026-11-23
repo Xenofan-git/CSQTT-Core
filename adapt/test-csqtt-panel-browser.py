@@ -169,8 +169,12 @@ def main():
             assert page.locator("#topQr, #qrImage").count() == 0, "QR controls must remain absent"
 
             # Regression for the real tunnel/profile UI controls.
+            # Switch to the *visible* Tunnel page before measuring element
+            # geometry. Hidden pages return zero rectangles in Chromium.
             # CSS must make a single chevron visible instead of OS-native
             # double scrollbar/dropdown controls, including dark theme.
+            page.locator('button[data-page="settings"]').click()
+            page.wait_for_function("document.querySelector('#page-settings').classList.contains('active')")
             for theme in ("light", "dark"):
                 page.evaluate("(theme) => document.documentElement.dataset.theme = theme", theme)
                 controls = page.evaluate("""() => {
@@ -198,6 +202,7 @@ def main():
             page.evaluate("document.documentElement.dataset.theme = 'light'")
             assert [page.locator('#newProtocol option').nth(i).get_attribute('value')
                     for i in range(5)] == ['CSQTT','FreeTurn','OlcRTC','OpenFlux','ToTS']
+            page.locator('button[data-page="connect"]').click()
 
             click_events = []
             page.evaluate("""() => {
