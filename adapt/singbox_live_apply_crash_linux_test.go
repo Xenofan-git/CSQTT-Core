@@ -194,3 +194,71 @@ func jsonUnmarshalOldConfig(data []byte,out any) error {
  if len(data)>singBoxTxnMaxFile {return fmt.Errorf("oversized journal old config")}
  return json.Unmarshal(data,out)
 }
+
+// TestSingBoxLiveApplyJournalTamperRefusesRecovery verifies that a suspicious
+// private recovery marker is never accepted, deleted, or used to overwrite
+// existing configuration. This is distinct from the five actual SIGKILL
+// checkpoints above and does not require a running tunnel or global routes.
+func TestSingBoxLiveApplyJournalTamperRefusesRecovery(t *testing.T) {
+ for _,name:=range []string{"symlink","permissive","truncated-json","corrupt-snapshot-hash","external-config-edit"} {
+  t.Run(name,func(t *testing.T) {
+   dir:=t.TempDir()
+   m:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexec sleep 60"),filepath.Join(dir,"config.json"),filepath.Join(dir,"singbox.log"))
+   old:=singBoxConfigInput{ListenAddress:"127.0.0.1:19080"}
+   if err:=m.SaveConfig(old);err!=nil{t.Fatal(err)}
+   priorConfig,err:=os.ReadFile(m.configPath);if err!=nil{t.Fatal(err)}
+   priorPanel,err:=os.ReadFile(m.panelStatePath());if err!=nil{t.Fatal(err)}
+   candidate:=old
+   candidate.DirectDomains=[]string{"different.example"}
+   proposed,err:=buildSingBoxConfig(candidate);if err!=nil{t.Fatal(err)}
+   proposedPanel,err:=json.MarshalIndent(singBoxPanelState{Version:1,ConfigSHA256:singBoxHash(proposed),Config:candidate},"","  ")
+   if err!=nil{t.Fatal(err)}
+   if err:=m.writeLiveApplyJournal(priorConfig,priorPanel,proposed,append(proposedPanel,'\n'));err!=nil{t.Fatal(err)}
+   marker:=m.liveApplyJournalPath()
+   switch name {
+   case "symlink":
+    copyPath:=filepath.Join(dir,"external-owned-marker")
+    before,err:=os.ReadFile(marker);if err!=nil{t.Fatal(err)}
+    if err:=os.WriteFile(copyPath,before,0600);err!=nil{t.Fatal(err)}
+    if err:=os.Remove(marker);err!=nil{t.Fatal(err)}
+    if err:=os.Symlink(copyPath,marker);err!=nil{t.Fatal(err)}
+    t.Cleanup(func(){
+     data,readErr:=os.ReadFile(copyPath)
+     if readErr!=nil || !bytes.Equal(data,before){t.Errorf("external marker target was unexpectedly changed: %v",readErr)}
+    })
+   case "permissive":
+    if err:=os.Chmod(marker,0644);err!=nil{t.Fatal(err)}
+   case "truncated-json":
+    if err:=os.WriteFile(marker,[]byte("{"),0600);err!=nil{t.Fatal(err)}
+   case "corrupt-snapshot-hash":
+    raw,err:=os.ReadFile(marker);if err!=nil{t.Fatal(err)}
+    var j singBoxLiveApplyJournal
+    if err:=json.Unmarshal(raw,&j);err!=nil{t.Fatal(err)}
+    j.OldPanelSHA256=strings.Repeat("0",64)
+    updated,err:=json.Marshal(j);if err!=nil{t.Fatal(err)}
+    if err:=os.WriteFile(marker,updated,0600);err!=nil{t.Fatal(err)}
+   case "external-config-edit":
+    if err:=os.WriteFile(m.configPath,[]byte("{\"outside-change\":true}"),0600);err!=nil{t.Fatal(err)}
+   }
+   currentConfig,err:=os.ReadFile(m.configPath);if err!=nil{t.Fatal(err)}
+   currentPanel,err:=os.ReadFile(m.panelStatePath());if err!=nil{t.Fatal(err)}
+   if _,err:=m.LoadConfig();err==nil {
+    t.Fatal("untrusted live-apply checkpoint was accepted by LoadConfig")
+   }
+   if err:=m.Start(context.Background());err==nil {
+    _=m.Stop()
+    t.Fatal("untrusted live-apply checkpoint allowed Sing-box start")
+   }
+   if err:=m.SaveConfig(candidate);err==nil {
+    t.Fatal("untrusted live-apply checkpoint was overwritten by SaveConfig")
+   }
+   afterConfig,err:=os.ReadFile(m.configPath);if err!=nil{t.Fatal(err)}
+   afterPanel,err:=os.ReadFile(m.panelStatePath());if err!=nil{t.Fatal(err)}
+   if !bytes.Equal(currentConfig,afterConfig)||!bytes.Equal(currentPanel,afterPanel){
+    t.Fatal("untrusted live-apply checkpoint changed config/panel")
+   }
+   if _,err:=os.Lstat(marker);err!=nil {t.Fatalf("untrusted checkpoint was discarded: %v",err)}
+   if m.Status().Running {t.Fatal("sing-box should not start with tampered checkpoint")}
+  })
+ }
+}

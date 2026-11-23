@@ -79,7 +79,8 @@ jobs:
           GO
           trap 'rm -f adapt/zz_csqtt_live_apply_fixture_linux_test.go' EXIT
           cd adapt
-          GO111MODULE=off GOTOOLCHAIN=local go test -race -count=1 -timeout=160s             -run '^TestSingBoxLiveApplyCrashRecoveryNativeARM64$' -v             singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go             csqtt_core_socks5_linux.go             singbox_config_linux_test.go singbox_manager_linux_test.go             singbox_live_apply_crash_linux_test.go zz_csqtt_live_apply_fixture_linux_test.go             | tee "$RUNNER_TEMP/singbox-live-apply.log"
+          GO111MODULE=off GOTOOLCHAIN=local go test -race -count=1 -timeout=160s             -run '^TestSingBoxLiveApply(CrashRecoveryNativeARM64|JournalTamperRefusesRecovery)$' -v             singbox_config_linux.go singbox_manager_linux.go singbox_transaction_linux.go             csqtt_core_socks5_linux.go             singbox_config_linux_test.go singbox_manager_linux_test.go             singbox_live_apply_crash_linux_test.go zz_csqtt_live_apply_fixture_linux_test.go             | tee "$RUNNER_TEMP/singbox-live-apply.log"
+          grep -q '^--- PASS: TestSingBoxLiveApplyJournalTamperRefusesRecovery' "$RUNNER_TEMP/singbox-live-apply.log"
           grep -q '^--- PASS: TestSingBoxLiveApplyCrashRecoveryNativeARM64' "$RUNNER_TEMP/singbox-live-apply.log"
           grep -q '^CSQTT_CORE_NATIVE_ARM64_SIGKILL_LIVE_APPLY_RECOVERY_PASS$' "$RUNNER_TEMP/singbox-live-apply.log"
           test "$(ip -4 route show default)" = "$before4"
