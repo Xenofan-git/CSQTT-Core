@@ -176,6 +176,9 @@ func TestSingBoxLiveApplyCrashRecoveryNativeARM64(t *testing.T) {
    }
    if _,err:=os.Lstat(oldJournal);!errors.Is(err,os.ErrNotExist){t.Fatalf("completed recovery retained marker: %v",err)}
    if _,err:=os.Lstat(newManager.transactionPath());!errors.Is(err,os.ErrNotExist){t.Fatalf("nested transaction remains: %v",err)}
+   if leftover,globErr:=filepath.Glob(filepath.Join(dir,".sing-box-live-preflight-*.json"));globErr!=nil||len(leftover)!=0 {
+    t.Fatalf("private preflight files remained after verified reboot recovery: %v %v",leftover,globErr)
+   }
    if err:=newManager.Start(context.Background());err!=nil{t.Fatalf("restored sing-box start: %v",err)}
    defer newManager.Stop()
    if err:=newManager.waitSOCKSReady(listen);err!=nil{t.Fatal(err)}
@@ -200,7 +203,7 @@ func jsonUnmarshalOldConfig(data []byte,out any) error {
 // existing configuration. This is distinct from the five actual SIGKILL
 // checkpoints above and does not require a running tunnel or global routes.
 func TestSingBoxLiveApplyJournalTamperRefusesRecovery(t *testing.T) {
- for _,name:=range []string{"symlink","permissive","truncated-json","corrupt-snapshot-hash","external-config-edit"} {
+ for _,name:=range []string{"symlink","permissive","truncated-json","corrupt-snapshot-hash","external-config-edit","unsafe-preflight-symlink","unsafe-preflight-mode"} {
   t.Run(name,func(t *testing.T) {
    dir:=t.TempDir()
    m:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexec sleep 60"),filepath.Join(dir,"config.json"),filepath.Join(dir,"singbox.log"))
@@ -239,6 +242,18 @@ func TestSingBoxLiveApplyJournalTamperRefusesRecovery(t *testing.T) {
     if err:=os.WriteFile(marker,updated,0600);err!=nil{t.Fatal(err)}
    case "external-config-edit":
     if err:=os.WriteFile(m.configPath,[]byte("{\"outside-change\":true}"),0600);err!=nil{t.Fatal(err)}
+   case "unsafe-preflight-symlink":
+    sentinel:=filepath.Join(dir,"do-not-remove-outside-preflight")
+    if err:=os.WriteFile(sentinel,[]byte("untouched"),0600);err!=nil{t.Fatal(err)}
+    if err:=os.Symlink(sentinel,filepath.Join(dir,".sing-box-live-preflight-fake.json"));err!=nil{t.Fatal(err)}
+    t.Cleanup(func(){
+     contents,err:=os.ReadFile(sentinel)
+     if err!=nil||string(contents)!="untouched"{t.Errorf("symlink preflight target modified: %v",err)}
+    })
+   case "unsafe-preflight-mode":
+    preflight:=filepath.Join(dir,".sing-box-live-preflight-unsafe.json")
+    if err:=os.WriteFile(preflight,[]byte("{}"),0600);err!=nil{t.Fatal(err)}
+    if err:=os.Chmod(preflight,0644);err!=nil{t.Fatal(err)}
    }
    currentConfig,err:=os.ReadFile(m.configPath);if err!=nil{t.Fatal(err)}
    currentPanel,err:=os.ReadFile(m.panelStatePath());if err!=nil{t.Fatal(err)}

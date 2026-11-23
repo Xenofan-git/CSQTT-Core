@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+ "syscall"
 )
 
 // Transaction contains confidential old configuration and panel data;
@@ -362,6 +363,32 @@ func (m *SingBoxManager) writeLiveApplyJournal(oldConfig,oldPanel,newConfig,newP
  return syncSingBoxDirectory(dir)
 }
 
+// A controller crash can strand the checked candidate's private preflight
+// file. Remove ONLY our regular, private, same-user staging files after the
+// verified old pair has been recovered. Never follow or delete symlinks.
+func (m *SingBoxManager) cleanupRecoveredLivePreflights() error {
+ dir:=filepath.Dir(m.configPath)
+ names,err:=filepath.Glob(filepath.Join(dir,".sing-box-live-preflight-*.json"))
+ if err!=nil{return err}
+ // Fail closed before deleting anything if one entry is unsafe.
+ for _,name:=range names {
+  info,err:=os.Lstat(name)
+  if err!=nil{return fmt.Errorf("inspect Sing-box live preflight: %w",err)}
+  owner,ok:=info.Sys().(*syscall.Stat_t)
+  if !ok || !info.Mode().IsRegular() || info.Mode().Perm()!=0600 ||
+      info.Size()>singBoxTxnMaxFile || owner.Uid!=uint32(os.Geteuid()) {
+   return fmt.Errorf("unsafe orphan Sing-box live preflight; refusing recovery cleanup")
+  }
+ }
+ for _,name:=range names {
+  if err:=os.Remove(name);err!=nil{
+   return fmt.Errorf("remove validated orphan Sing-box live preflight: %w",err)
+  }
+ }
+ if len(names)>0{return syncSingBoxDirectory(dir)}
+ return nil
+}
+
 func (m *SingBoxManager) clearLiveApplyJournal() error {
  if err:=os.Remove(m.liveApplyJournalPath());err!=nil&&!errors.Is(err,os.ErrNotExist){return err}
  return syncSingBoxDirectory(filepath.Dir(m.configPath))
@@ -395,6 +422,7 @@ func (m *SingBoxManager) recoverInterruptedLiveApply() error {
  if singBoxHash(restoredConfig)!=j.OldConfigSHA256||singBoxHash(restoredPanel)!=j.OldPanelSHA256{
   return fmt.Errorf("sing-box live-apply rollback verification failed; journal preserved")
  }
+ if err:=m.cleanupRecoveredLivePreflights();err!=nil{return err}
  return m.clearLiveApplyJournal()
 }
 
