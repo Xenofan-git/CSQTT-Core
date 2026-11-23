@@ -1155,7 +1155,7 @@ func (a *panelSessionAuth) loginPage(w http.ResponseWriter, r *http.Request, fil
 		return
 	}
 	// Login assets are embedded locally: no network dependencies or CDN/fonts.
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 	data, err := fs.ReadFile(files, "login.html")
 	if err != nil {
 		http.Error(w, "login page unavailable", http.StatusServiceUnavailable)
@@ -1243,6 +1243,23 @@ func (a *panelSessionAuth) ui(next http.Handler, files fs.FS) http.Handler {
 	protected := a.protect(next, true)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/favicon.svg", "/favicon.ico", "/apple-touch-icon.png":
+			// Public, non-sensitive brand artwork must load before login.
+			panelSecurityHeaders(w)
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				w.Header().Set("Allow", "GET, HEAD")
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			switch r.URL.Path {
+			case "/favicon.svg":
+				w.Header().Set("Content-Type", "image/svg+xml")
+			case "/favicon.ico":
+				w.Header().Set("Content-Type", "image/x-icon")
+			case "/apple-touch-icon.png":
+				w.Header().Set("Content-Type", "image/png")
+			}
+			http.ServeFileFS(w, r, files, strings.TrimPrefix(r.URL.Path, "/"))
 		case "/login":
 			a.loginPage(w, r, files)
 		case "/auth/login":

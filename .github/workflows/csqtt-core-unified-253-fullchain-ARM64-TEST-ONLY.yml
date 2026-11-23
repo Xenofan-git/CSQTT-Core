@@ -146,6 +146,9 @@ jobs:
           mkdir -p upstream-lalune/Desktop/Linux/frontend
           cp adapt/csqtt-panel-preview.html upstream-lalune/Desktop/Linux/frontend/index.html
           cp adapt/csqtt-login.html upstream-lalune/Desktop/Linux/frontend/login.html
+          cp adapt/favicon.svg upstream-lalune/Desktop/Linux/frontend/favicon.svg
+          cp adapt/favicon.ico upstream-lalune/Desktop/Linux/frontend/favicon.ico
+          cp adapt/apple-touch-icon.png upstream-lalune/Desktop/Linux/frontend/apple-touch-icon.png
           cp adapt/nanopi.js upstream-lalune/Desktop/Linux/frontend/api.js
           python3 adapt/fullchain-fixture/patch-test-go-client-hash.py upstream-lalune/Desktop/Linux "$CSQTT_E2E_RUST_CLIENT"
           grep -Fq "unix.Read(tunFD, buf)" upstream-lalune/Desktop/Linux/app_linux.go

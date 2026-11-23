@@ -891,3 +891,62 @@ func TestCustomLoginLimitsWrongPasswordsAndFailsClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestBrandedFaviconsPublicBeforeLoginAndMethodSafe(t *testing.T) {
+	t.Setenv("LALUNE_PANEL_USER", "admin")
+	t.Setenv("LALUNE_PANEL_PASSWORD", "fixture-panel-secret")
+	auth := newPanelSessionAuth()
+	handler := auth.ui(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}), os.DirFS("frontend"))
+	for _, tc := range []struct {
+		url         string
+		contentType string
+		prefix      string
+	}{
+		{"/favicon.svg", "image/svg+xml", "<svg"},
+		{"/favicon.ico", "image/x-icon", "\x00\x00\x01\x00"},
+		{"/apple-touch-icon.png", "image/png", "\x89PNG\r\n\x1a\n"},
+	} {
+		t.Run(tc.url, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				req := httptest.NewRequest(method, "http://nanopi:1061"+tc.url, nil)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != http.StatusOK {
+					t.Fatalf("%s returned %d instead of HTTP 200 without login", method, rec.Code)
+				}
+				if !strings.HasPrefix(rec.Header().Get("Content-Type"), tc.contentType) {
+					t.Fatalf("unexpected content-type %q", rec.Header().Get("Content-Type"))
+				}
+				if rec.Header().Get("WWW-Authenticate") != "" {
+					t.Fatal("favicon must not trigger browser Basic prompt")
+				}
+				if method == http.MethodGet && !strings.HasPrefix(rec.Body.String(), tc.prefix) {
+					t.Fatalf("asset signature missing for %s", tc.url)
+				}
+				if method == http.MethodHead && rec.Body.Len() != 0 {
+					t.Fatalf("HEAD returned body %s", tc.url)
+				}
+			}
+			bad := httptest.NewRecorder()
+			handler.ServeHTTP(bad, httptest.NewRequest(http.MethodPost,
+				"http://nanopi:1061"+tc.url, nil))
+			if bad.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("favicon POST not rejected: %d", bad.Code)
+			}
+		})
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://nanopi:1061/login", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(),
+		"href=\"/favicon.svg\"") || !strings.Contains(rec.Body.String(),
+		"href=\"/favicon.ico\"") || !strings.Contains(rec.Body.String(),
+		"href=\"/apple-touch-icon.png\"") {
+		t.Fatalf("login page icon links missing: HTTP %d", rec.Code)
+	}
+	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "img-src 'self'") {
+		t.Fatal("login CSP blocks favicon image loading")
+	}
+}

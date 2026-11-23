@@ -338,6 +338,9 @@ jobs:
           # The normal Nginx document root is not replaced by this build step.
           cp adapt/csqtt-panel-preview.html upstream-lalune/Desktop/Linux/frontend/index.html
           cp adapt/csqtt-login.html upstream-lalune/Desktop/Linux/frontend/login.html
+          cp adapt/favicon.svg upstream-lalune/Desktop/Linux/frontend/favicon.svg
+          cp adapt/favicon.ico upstream-lalune/Desktop/Linux/frontend/favicon.ico
+          cp adapt/apple-touch-icon.png upstream-lalune/Desktop/Linux/frontend/apple-touch-icon.png
           test -s upstream-lalune/Desktop/Linux/frontend/index.html
           grep -Fq 'CSQTT Core · NanoPi' upstream-lalune/Desktop/Linux/frontend/index.html
           test -s upstream-lalune/Desktop/Linux/frontend/api.js
@@ -834,6 +837,10 @@ jobs:
           cp adapt/csqtt-panel-preview.html dist/csqtt-panel-preview.html
           mkdir -p dist/web-dist
           cp adapt/csqtt-panel-preview.html dist/web-dist/index.html
+
+          cp adapt/favicon.svg dist/web-dist/favicon.svg
+          cp adapt/favicon.ico dist/web-dist/favicon.ico
+          cp adapt/apple-touch-icon.png dist/web-dist/apple-touch-icon.png
           cp adaptation-source.sha256 dist/
           cp protocols-source.sha256 dist/
           printf '%s\n' 'e4a6d08b63aef6025bf8ad8f77da660ea552e04b' > dist/UPSTREAM_COMMIT
