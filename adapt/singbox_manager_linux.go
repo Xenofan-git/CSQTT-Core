@@ -576,6 +576,29 @@ func (m *SingBoxManager) waitSOCKSReady(address string) error {
  return fmt.Errorf("SOCKS5 listener %s did not become ready: %v",address,lastErr)
 }
 
+// AutoStartConfiguredOnBoot is opt-in. The UI's manual Stop remains the
+// default across reboot unless a systemd administrator explicitly selects
+// CSQTT_SING_BOX_AUTOSTART=1. An invalid value fails closed.
+func (m *SingBoxManager) AutoStartConfiguredOnBoot(ctx context.Context, mode string) error {
+ switch mode {
+ case "", "0":
+  return nil
+ case "1":
+ default:
+  return fmt.Errorf("invalid CSQTT_SING_BOX_AUTOSTART; permitted values are 0 or 1")
+ }
+ if m==nil{return fmt.Errorf("Sing-box manager unavailable")}
+ input,err:=m.LoadConfig()
+ if err!=nil{return fmt.Errorf("cannot autostart Sing-box without validated persisted config: %w",err)}
+ if err:=m.Start(ctx);err!=nil{return fmt.Errorf("Sing-box boot start failed: %w",err)}
+ if err:=m.waitSOCKSReady(input.ListenAddress);err!=nil{
+  stopErr:=m.Stop()
+  if stopErr!=nil{return fmt.Errorf("Sing-box boot listener unhealthy (%v); stop failed: %w",err,stopErr)}
+  return fmt.Errorf("Sing-box boot listener unhealthy and was stopped: %w",err)
+ }
+ return nil
+}
+
 func (m *SingBoxManager) Status() SingBoxStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()

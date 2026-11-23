@@ -168,3 +168,67 @@ func TestSingBoxLiveApplyNativeARM64WithRollback(t *testing.T) {
  if csqtt.Status().Address!=csqttAddress {t.Fatal("CSQTT listener was stopped")}
  fmt.Println("CSQTT_CORE_REAL_ARM64_LIVE_APPLY_ROLLBACK_PASS")
 }
+
+// TestSingBoxBootOptInNativeARM64 verifies explicit opt-in restores actual
+// SOCKS5 connectivity on native AArch64 without touching global routes.
+func TestSingBoxBootOptInNativeARM64(t *testing.T) {
+ binary:=strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+ if binary==""{t.Skip("requires pinned native ARM64 sing-box")}
+ echo,err:=net.Listen("tcp","127.0.0.1:0")
+ if err!=nil{t.Fatal(err)}
+ defer echo.Close()
+ go func(){for {c,err:=echo.Accept();if err!=nil{return};go func(conn net.Conn){defer conn.Close();_,_=io.Copy(conn,conn)}(c)}}()
+ dir:=t.TempDir()
+ m:=NewSingBoxManager(binary,filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
+ m.checkTimeout=8*time.Second
+ defer m.Stop()
+ listen:=reserveSingBoxTestAddress(t)
+ input:=singBoxConfigInput{
+  ListenAddress:listen, CSQTTAddress:"127.0.0.1:12500",
+  FinalOutbound:singBoxDirectTag,
+ }
+ if err:=m.SaveConfig(input);err!=nil{t.Fatal(err)}
+ for _,mode:=range []string{"","0"}{
+  if err:=m.AutoStartConfiguredOnBoot(context.Background(),mode);err!=nil{t.Fatal(err)}
+  if m.Status().Running{t.Fatalf("mode=%q unexpectedly started",mode)}
+ }
+ if err:=m.AutoStartConfiguredOnBoot(context.Background(),"1");err!=nil{t.Fatal(err)}
+ if !m.Status().Running{t.Fatal("opt-in did not start actual sing-box")}
+ target:=echo.Addr().(*net.TCPAddr)
+ conn,err:=net.DialTimeout("tcp",listen,3*time.Second)
+ if err!=nil{t.Fatal(err)}
+ defer conn.Close()
+ _=conn.SetDeadline(time.Now().Add(5*time.Second))
+ if _,err=conn.Write([]byte{5,1,0});err!=nil{t.Fatal(err)}
+ var hello [2]byte
+ if _,err=io.ReadFull(conn,hello[:]);err!=nil{t.Fatal(err)}
+ if hello!=[2]byte{5,0}{t.Fatalf("invalid SOCKS5 greeting: %v",hello)}
+ req:=[]byte{5,1,0,1,127,0,0,1,byte(target.Port>>8),byte(target.Port&255)}
+ if _,err=conn.Write(req);err!=nil{t.Fatal(err)}
+ var reply [4]byte
+ if _,err=io.ReadFull(conn,reply[:]);err!=nil{t.Fatal(err)}
+ if reply[1]!=0{t.Fatalf("real direct SOCKS5 CONNECT denied %d",reply[1])}
+ n:=0
+ switch reply[3] {
+ case 1:n=6
+ case 4:n=18
+ case 3:
+  var length [1]byte
+  if _,err=io.ReadFull(conn,length[:]);err!=nil{t.Fatal(err)}
+  n=int(length[0])+2
+ default:t.Fatalf("invalid SOCKS reply ATYP %d",reply[3])
+ }
+ if _,err=io.CopyN(io.Discard,conn,int64(n));err!=nil{t.Fatal(err)}
+ data:=[]byte("CSQTT real ARM64 safe boot SOCKS5 TCP proof")
+ if _,err=conn.Write(data);err!=nil{t.Fatal(err)}
+ got:=make([]byte,len(data))
+ if _,err=io.ReadFull(conn,got);err!=nil{t.Fatal(err)}
+ if !bytes.Equal(got,data){t.Fatalf("SOCKS5 echo mismatch: %q",got)}
+ if err:=m.Stop();err!=nil{t.Fatal(err)}
+ if m.Status().Running{t.Fatal("stopping Sing-box failed")}
+ persisted,err:=m.LoadConfig()
+ if err!=nil || !reflect.DeepEqual(persisted,input) {
+  t.Fatalf("boot test mutated saved routing: %v %#v",err,persisted)
+ }
+ fmt.Println("CSQTT_NATIVE_ARM64_SINGBOX_BOOT_OPTIN_REAL_SOCKS5_TCP_PASS")
+}

@@ -691,3 +691,45 @@ func TestSingBoxManagerLegacyUDPDNSConfigWithoutPanelState(t *testing.T) {
   t.Fatalf("UDP DNS did not survive legacy load: %#v",loaded)
  }
 }
+
+func TestSingBoxBootAutoStartRequiresExplicitOptIn(t *testing.T) {
+ dir:=t.TempDir()
+ m:=NewSingBoxManager(newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexec sleep 60"),
+  filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
+ for _,mode:=range []string{"","0"} {
+  if err:=m.AutoStartConfiguredOnBoot(context.Background(),mode);err!=nil {
+   t.Fatalf("disabled boot mode %q should not read/create missing state: %v",mode,err)
+  }
+  if m.Status().Running {t.Fatal("Sing-box was unexpectedly launched when opt-in disabled")}
+ }
+ for _,mode:=range []string{"yes","true","enabled","01","2"} {
+  if err:=m.AutoStartConfiguredOnBoot(context.Background(),mode);err==nil {
+   t.Fatalf("unsupported mode %q was accepted",mode)
+  }
+  if m.Status().Running {t.Fatal("invalid mode launched Sing-box")}
+ }
+ if err:=m.AutoStartConfiguredOnBoot(context.Background(),"1");err==nil {
+  t.Fatal("opt-in started without a saved config")
+ }
+ if m.Status().Running {t.Fatal("missing config launched Sing-box")}
+}
+
+func TestSingBoxBootAutoStartStopsListenerlessProcess(t *testing.T) {
+ dir:=t.TempDir()
+ bin:=newFakeSingBox(t,"if [ \"$1\" = check ]; then exit 0; fi\nexec sleep 60")
+ m:=NewSingBoxManager(bin,filepath.Join(dir,"config.json"),filepath.Join(dir,"sing-box.log"))
+ m.checkTimeout=350*time.Millisecond
+ input:=singBoxConfigInput{ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500"}
+ if err:=m.SaveConfig(input);err!=nil{t.Fatal(err)}
+ err:=m.AutoStartConfiguredOnBoot(context.Background(),"1")
+ if err==nil || !strings.Contains(err.Error(),"listener unhealthy"){
+  t.Fatalf("listenerless fake Sing-box did not fail closed: %v",err)
+ }
+ if got:=m.Status();got.Running || got.PID!=0 {
+  t.Fatalf("listenerless boot process not stopped: %+v",got)
+ }
+ loaded,err:=m.LoadConfig()
+ if err!=nil || !reflect.DeepEqual(loaded,input){
+  t.Fatalf("refused boot unexpectedly changed config: %v %#v",err,loaded)
+ }
+}

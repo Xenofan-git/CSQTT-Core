@@ -765,6 +765,12 @@ func main() {
     // The loopback listener is started only after the TUN packet bridge is ready;
     // sing-box connects to it directly, with no extra TCP forwarding process.
     app.startup(context.Background())
+    // Explicit opt-in only: a manually stopped Sing-box must not start
+    // after reboot unless the systemd unit deliberately enables it.
+    if err := defaultSingBoxManager().AutoStartConfiguredOnBoot(
+        context.Background(), strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_AUTOSTART"))); err != nil {
+        app.core.AddLog(fmt.Sprintf("[sing-box] Автозапуск отклонён: %v", err))
+    }
 
     api := apiHandler(app)
     apiRoutes := panelAPIHandler(api)
