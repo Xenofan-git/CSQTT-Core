@@ -1,0 +1,26 @@
+[Unit]
+Description=CSQTT Core disposable ARM64 unprivileged full app/Sing-box boot fixture
+ConditionHost=csqtt-core8-isolated
+ConditionPathExists=/home/csqttlab/powerloss/headless-autostart-arm64
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=exec
+Environment=CSQTT_CORE_250_EXPERIMENT=isolated-only
+Environment=CSQTT_250_ORIGINAL_CLIENT_BINARY=/usr/local/libexec/csqtt-core-client250-arm64
+Environment=CSQTT_SING_BOX_AUTOSTART=1
+Environment=CSQTT_SING_BOX_DATA_DIR=/home/csqttlab/powerloss
+Environment=CSQTT_SING_BOX_BINARY=/usr/local/libexec/csqtt-powerloss-sing-box
+ExecStart=/home/csqttlab/powerloss/headless-autostart-arm64
+ExecStartPost=/usr/bin/python3 -B /home/csqttlab/powerloss/fullapp-noauth-health.py
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=100
+TimeoutStopSec=12
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

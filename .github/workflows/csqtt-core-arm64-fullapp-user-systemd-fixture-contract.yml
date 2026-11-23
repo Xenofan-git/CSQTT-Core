@@ -1,0 +1,69 @@
+name: CSQTT Core ARM64 full Go app user-systemd isolated crash fixture contract
+on:
+  push:
+    branches:
+      - test/csqtt-core-linux-unified-253-20261122
+    paths:
+      - adapt/arm64-lab/csqtt-core-user-fullapp-autostart-test.service
+      - adapt/arm64-lab/csqtt-core-user-fullapp-noauth-health.py
+      - adapt/arm64-lab/csqtt-core-user-fullapp-sigkill-restart.py
+      - adapt/CSQTT-CORE-ARM64-GO-FULLAPP-USER-SYSTEMD-SIGKILL-2026-11-23.md
+      - .github/workflows/csqtt-core-arm64-fullapp-user-systemd-fixture-contract.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guest-only-fixture-safety:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native ARM64 static user-systemd contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          test "$(id -u)" -ne 0
+          python3 -B -m py_compile adapt/arm64-lab/csqtt-core-user-fullapp-noauth-health.py adapt/arm64-lab/csqtt-core-user-fullapp-sigkill-restart.py
+          python3 -B - <<'PY'
+          import configparser
+          from pathlib import Path
+          p=Path('adapt/arm64-lab/csqtt-core-user-fullapp-autostart-test.service')
+          c=configparser.ConfigParser(interpolation=None,strict=False)
+          assert c.read(p)==[str(p)]
+          assert c['Unit']['ConditionHost']=='csqtt-core8-isolated'
+          assert c['Service']['Type']=='exec'
+          assert c['Service']['ExecStart']=='/home/csqttlab/powerloss/headless-autostart-arm64'
+          assert c['Service']['ExecStartPost']=='/usr/bin/python3 -B /home/csqttlab/powerloss/fullapp-noauth-health.py'
+          assert c['Service']['Restart']=='on-failure'
+          assert c['Service']['KillMode']=='control-group'
+          assert c['Service']['NoNewPrivileges']=='true'
+          assert c['Install']['WantedBy']=='default.target'
+          unit=p.read_text()
+          for value in ('CSQTT_SING_BOX_AUTOSTART=1','CSQTT_CORE_250_EXPERIMENT=isolated-only'):
+              assert value in unit
+          assert 'EnvironmentFile=' not in unit
+          assert 'CSQTT_WEB_PASS=' not in unit
+          health=Path('adapt/arm64-lab/csqtt-core-user-fullapp-noauth-health.py').read_text()
+          assert 'response.status!=503' in health
+          assert '127.0.0.1' in health
+          assert 'SSH-2.0-' in health
+          killed=Path('adapt/arm64-lab/csqtt-core-user-fullapp-sigkill-restart.py').read_text()
+          for value in ('--kill-who=main','SIGKILL','NRestarts','hashlib.sha256','socket.gethostname()'):
+              assert value in killed
+          print('CSQTT_CORE_ARM64_GUEST_USER_SYSTEMD_UNIT_AND_GUARDS_CONTRACT_PASS')
+          PY
+      - name: Reject execution of disposable guest fixture on unrelated ARM64 runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          for fixture in adapt/arm64-lab/csqtt-core-user-fullapp-sigkill-restart.py adapt/arm64-lab/csqtt-core-user-fullapp-noauth-health.py; do
+            set +e
+            python3 -B "$fixture" >"$RUNNER_TEMP/guard.txt" 2>&1
+            rc=$?
+            set -e
+            test "$rc" -ne 0
+            grep -Eq 'unexpected host|nonroot disposable guest required' "$RUNNER_TEMP/guard.txt"
+          done
+          echo CSQTT_CORE_ARM64_USER_SYSTEMD_VM_ONLY_RUNTIME_GUARDS_PASS
+# Offline CI only: never kills a runner or changes routes/systemd in GitHub.
