@@ -387,7 +387,7 @@ func (m *SingBoxManager) recoverInterruptedLiveApply() error {
   if err:=writeSingBoxRecoveredFile(m.configPath,j.OldConfig);err!=nil{return fmt.Errorf("restore previous sing-box config: %w",err)}
  }
  if singBoxHash(panel)!=j.OldPanelSHA256 {
-  if err:=writeSingBoxRecoveredFile(m.panelStatePath,j.OldPanel);err!=nil{return fmt.Errorf("restore previous sing-box panel: %w",err)}
+  if err:=writeSingBoxRecoveredFile(m.panelStatePath(),j.OldPanel);err!=nil{return fmt.Errorf("restore previous sing-box panel: %w",err)}
  }
  if err:=syncSingBoxDirectory(filepath.Dir(m.configPath));err!=nil{return err}
  restoredConfig,_,err:=readSingBoxRegular(m.configPath);if err!=nil{return err}
