@@ -116,7 +116,7 @@ for token in (
     ".tabs .tab .ico svg{width:24px;height:24px}",
     "border-radius:var(--csqtt-field-radius)!important;",
     "border-width:1px!important;",
-    ".password-inline input{border:0!important}",
+    ".password-inline input{border:0!important;border-radius:var(--csqtt-field-radius)!important}",
     "outline:1px solid var(--blue)!important;",
     'input:not([type="checkbox"]):not([type="radio"]):not([type="range"])',
 ):
