@@ -48,7 +48,7 @@ jobs:
           import configparser
           from pathlib import Path
           p=Path("adapt/arm64-lab/csqtt-core-singbox-powerloss-test.service")
-          c=configparser.ConfigParser(interpolation=None)
+          c=configparser.ConfigParser(interpolation=None,strict=False)
           c.read(p)
           assert c['Unit']['ConditionHost']=='csqtt-core8-isolated'
           assert c['Service']['User']=='csqttlab'
