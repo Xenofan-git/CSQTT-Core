@@ -200,8 +200,11 @@ def main():
                 assert controls["toggleLeftOfDescription"], controls
                 assert controls["palette"] == ("#4195ff" if theme == "dark" else "#1e73e8"), controls
             page.evaluate("document.documentElement.dataset.theme = 'light'")
-            assert [page.locator('#newProtocol option').nth(i).get_attribute('value')
-                    for i in range(5)] == ['CSQTT','FreeTurn','OlcRTC','OpenFlux','ToTS']
+            # The original CSQTT option has no explicit value= attribute;
+            # option.value is synthesized by the DOM from its text.
+            assert page.locator('#newProtocol option').evaluate_all(
+                "(options) => options.map(option => option.value)"
+            ) == ['CSQTT','FreeTurn','OlcRTC','OpenFlux','ToTS']
             page.locator('button[data-page="connect"]').click()
 
             click_events = []
