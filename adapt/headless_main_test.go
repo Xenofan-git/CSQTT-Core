@@ -19,10 +19,10 @@ import (
 
 func TestAutoApiCallCountAndHashBatchContract(t *testing.T) {
 	cases := []struct {
-		name string
+		name    string
 		workers int
 		perCall int
-		want int
+		want    int
 	}{
 		{name: "one worker group", workers: 1, perCall: 9, want: 1},
 		{name: "exactly one call", workers: 9, perCall: 9, want: 1},
@@ -57,13 +57,20 @@ func TestPanelSecurityUsesInstallerCredentials(t *testing.T) {
 	oldCompatPassword, hadCompatPassword := os.LookupEnv("CSQTT_WEB_PASS")
 	oldCompatUser, hadCompatUser := os.LookupEnv("CSQTT_WEB_USER")
 	t.Cleanup(func() {
-		for key, value := range map[string]struct{ value string; had bool }{
+		for key, value := range map[string]struct {
+			value string
+			had   bool
+		}{
 			"LALUNE_PANEL_PASSWORD": {oldPassword, hadPassword},
-			"LALUNE_PANEL_USER": {oldUser, hadUser},
-			"CSQTT_WEB_PASS": {oldCompatPassword, hadCompatPassword},
-			"CSQTT_WEB_USER": {oldCompatUser, hadCompatUser},
+			"LALUNE_PANEL_USER":     {oldUser, hadUser},
+			"CSQTT_WEB_PASS":        {oldCompatPassword, hadCompatPassword},
+			"CSQTT_WEB_USER":        {oldCompatUser, hadCompatUser},
 		} {
-			if value.had { _ = os.Setenv(key, value.value) } else { _ = os.Unsetenv(key) }
+			if value.had {
+				_ = os.Setenv(key, value.value)
+			} else {
+				_ = os.Unsetenv(key)
+			}
 		}
 	})
 	_ = os.Unsetenv("LALUNE_PANEL_PASSWORD")
@@ -75,7 +82,9 @@ func TestPanelSecurityUsesInstallerCredentials(t *testing.T) {
 	req.SetBasicAuth("installer-user", "installer-secret")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
-	if w.Code != http.StatusNoContent { t.Fatalf("installer credentials status = %d, want 204", w.Code) }
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("installer credentials status = %d, want 204", w.Code)
+	}
 }
 
 func TestPrivateClient(t *testing.T) {
@@ -126,7 +135,6 @@ func TestSelectedConfigJsonClearsEmptySelection(t *testing.T) {
 	}
 }
 
-
 func TestCaptchaRequestIsActive(t *testing.T) {
 	now := time.Unix(1791549509, 0)
 	tests := []struct {
@@ -155,65 +163,65 @@ func TestCaptchaRequestIsActive(t *testing.T) {
 }
 
 func TestRJSManualFallbackSupersedesAutoCaptchaEvent(t *testing.T) {
-    // Simulate the core's event stream after RJS fails: its earlier Auto retry
-    // must not open the Linux overlay, but the later manual fallback must.
-    old := struct {
-        pending bool
-        mode, uri, session, handled string
-        updated time.Time
-    }{}
-    captchaMu.Lock()
-    old.pending, old.mode, old.uri, old.session, old.handled, old.updated =
-        captchaPending, captchaMode, captchaRedirectURI, captchaSessionToken, captchaHandledSession, captchaUpdated
-    captchaPending, captchaMode, captchaRedirectURI, captchaSessionToken, captchaHandledSession = false, "", "", "", ""
-    captchaUpdated = time.Time{}
-    captchaMu.Unlock()
-    t.Cleanup(func() {
-        captchaMu.Lock()
-        captchaPending, captchaMode, captchaRedirectURI, captchaSessionToken, captchaHandledSession, captchaUpdated =
-            old.pending, old.mode, old.uri, old.session, old.handled, old.updated
-        captchaMu.Unlock()
-    })
+	// Simulate the core's event stream after RJS fails: its earlier Auto retry
+	// must not open the Linux overlay, but the later manual fallback must.
+	old := struct {
+		pending                     bool
+		mode, uri, session, handled string
+		updated                     time.Time
+	}{}
+	captchaMu.Lock()
+	old.pending, old.mode, old.uri, old.session, old.handled, old.updated =
+		captchaPending, captchaMode, captchaRedirectURI, captchaSessionToken, captchaHandledSession, captchaUpdated
+	captchaPending, captchaMode, captchaRedirectURI, captchaSessionToken, captchaHandledSession = false, "", "", "", ""
+	captchaUpdated = time.Time{}
+	captchaMu.Unlock()
+	t.Cleanup(func() {
+		captchaMu.Lock()
+		captchaPending, captchaMode, captchaRedirectURI, captchaSessionToken, captchaHandledSession, captchaUpdated =
+			old.pending, old.mode, old.uri, old.session, old.handled, old.updated
+		captchaMu.Unlock()
+	})
 
-    now := time.Unix(1791549509, 0)
-    uri := "https://id.vk.ru/not_robot_captcha?expired_at=1791549600"
-    autoLogs, _ := json.Marshal([]string{"CAPTCHA_SOLVE|auto|" + uri + "|rjs-auto-session"})
-    refreshCaptchaStateFromLogs(string(autoLogs), now)
-    captchaMu.Lock()
-    if captchaPending || captchaMode != "" {
-        t.Fatalf("auto retry unexpectedly opened manual overlay: pending=%v mode=%q", captchaPending, captchaMode)
-    }
-    captchaMu.Unlock()
+	now := time.Unix(1791549509, 0)
+	uri := "https://id.vk.ru/not_robot_captcha?expired_at=1791549600"
+	autoLogs, _ := json.Marshal([]string{"CAPTCHA_SOLVE|auto|" + uri + "|rjs-auto-session"})
+	refreshCaptchaStateFromLogs(string(autoLogs), now)
+	captchaMu.Lock()
+	if captchaPending || captchaMode != "" {
+		t.Fatalf("auto retry unexpectedly opened manual overlay: pending=%v mode=%q", captchaPending, captchaMode)
+	}
+	captchaMu.Unlock()
 
-    fallbackLogs, _ := json.Marshal([]string{
-        "CAPTCHA_SOLVE|auto|" + uri + "|rjs-auto-session",
-        "CAPTCHA_SOLVE|manual|" + uri + "|rjs-manual-session",
-    })
-    refreshCaptchaStateFromLogs(string(fallbackLogs), now.Add(time.Second))
-    captchaMu.Lock()
-    defer captchaMu.Unlock()
-    if !captchaPending {
-        t.Fatal("manual RJS fallback did not create a pending CAPTCHA")
-    }
-    if captchaMode != "manual" {
-        t.Fatalf("fallback mode = %q, want manual", captchaMode)
-    }
-    if captchaSessionToken != "rjs-manual-session" {
-        t.Fatalf("fallback session = %q, want rjs-manual-session", captchaSessionToken)
-    }
-    if captchaRedirectURI != uri {
-        t.Fatalf("fallback redirect URI = %q, want %q", captchaRedirectURI, uri)
-    }
-    if !captchaUpdated.Equal(now.Add(time.Second)) {
-        t.Fatalf("updated = %v, want %v", captchaUpdated, now.Add(time.Second))
-    }
+	fallbackLogs, _ := json.Marshal([]string{
+		"CAPTCHA_SOLVE|auto|" + uri + "|rjs-auto-session",
+		"CAPTCHA_SOLVE|manual|" + uri + "|rjs-manual-session",
+	})
+	refreshCaptchaStateFromLogs(string(fallbackLogs), now.Add(time.Second))
+	captchaMu.Lock()
+	defer captchaMu.Unlock()
+	if !captchaPending {
+		t.Fatal("manual RJS fallback did not create a pending CAPTCHA")
+	}
+	if captchaMode != "manual" {
+		t.Fatalf("fallback mode = %q, want manual", captchaMode)
+	}
+	if captchaSessionToken != "rjs-manual-session" {
+		t.Fatalf("fallback session = %q, want rjs-manual-session", captchaSessionToken)
+	}
+	if captchaRedirectURI != uri {
+		t.Fatalf("fallback redirect URI = %q, want %q", captchaRedirectURI, uri)
+	}
+	if !captchaUpdated.Equal(now.Add(time.Second)) {
+		t.Fatalf("updated = %v, want %v", captchaUpdated, now.Add(time.Second))
+	}
 }
 
 func TestDirectDomainValidation(t *testing.T) {
 	tests := []struct {
-		name string
+		name   string
 		domain string
-		want bool
+		want   bool
 	}{
 		{name: "base domain", domain: "example.com", want: true},
 		{name: "subdomain", domain: "api.example.com", want: true},
@@ -246,9 +254,13 @@ func TestVersionEndpointReportsBuildProvenance(t *testing.T) {
 	r := httptest.NewRequest("GET", "/version", nil)
 	w := httptest.NewRecorder()
 	apiHandler(nil).ServeHTTP(w, r)
-	if w.Code != 200 { t.Fatalf("/version status = %d, want 200", w.Code) }
+	if w.Code != 200 {
+		t.Fatalf("/version status = %d, want 200", w.Code)
+	}
 	var got map[string]any
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil { t.Fatalf("invalid /version JSON: %v", err) }
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid /version JSON: %v", err)
+	}
 	want := map[string]string{
 		"backend": "original-go", "core": "csqtt-server/2.1.9", "ui": "0.6.0",
 		"commit": "commit-test", "buildRun": "run-test", "buildNumber": "42",
@@ -256,16 +268,18 @@ func TestVersionEndpointReportsBuildProvenance(t *testing.T) {
 		"upstreamCommit": "e4a6d08b63aef6025bf8ad8f77da660ea552e04b",
 	}
 	for key, wantValue := range want {
-		if got[key] != wantValue { t.Errorf("/version[%q] = %#v, want %q", key, got[key], wantValue) }
+		if got[key] != wantValue {
+			t.Errorf("/version[%q] = %#v, want %q", key, got[key], wantValue)
+		}
 	}
 }
 
 func TestDirectPlanTransitions(t *testing.T) {
 	tests := []struct {
-		name, domains string
-		wantDomains []string
+		name, domains        string
+		wantDomains          []string
 		wantDNS, wantEnabled bool
-		wantErr bool
+		wantErr              bool
 	}{
 		{name: "multiple domains", domains: "example.com, api.example.com", wantDomains: []string{"example.com", "api.example.com"}, wantDNS: true, wantEnabled: true},
 		{name: "mixed domains and IPv4 IPv6", domains: "example.com, 192.0.2.1, 2001:db8::1", wantDomains: []string{"example.com", "192.0.2.1", "2001:db8::1"}, wantDNS: true, wantEnabled: true},
@@ -278,11 +292,21 @@ func TestDirectPlanTransitions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			domains, needsDNS, err := prepareDirectPlan(tt.domains)
-			if (err != nil) != tt.wantErr { t.Fatalf("prepareDirectPlan error = %v, wantErr %v", err, tt.wantErr) }
-			if tt.wantErr { return }
-			if !slices.Equal(domains, tt.wantDomains) { t.Errorf("domains = %#v, want %#v", domains, tt.wantDomains) }
-			if needsDNS != tt.wantDNS { t.Errorf("needsDNS = %v, want %v", needsDNS, tt.wantDNS) }
-			if (len(domains) > 0) != tt.wantEnabled { t.Errorf("enabled = %v, want %v", len(domains)>0, tt.wantEnabled) }
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("prepareDirectPlan error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if !slices.Equal(domains, tt.wantDomains) {
+				t.Errorf("domains = %#v, want %#v", domains, tt.wantDomains)
+			}
+			if needsDNS != tt.wantDNS {
+				t.Errorf("needsDNS = %v, want %v", needsDNS, tt.wantDNS)
+			}
+			if (len(domains) > 0) != tt.wantEnabled {
+				t.Errorf("enabled = %v, want %v", len(domains) > 0, tt.wantEnabled)
+			}
 		})
 	}
 }
@@ -380,7 +404,10 @@ func TestCaptchaBridgeRoundTripThroughProtectedPanelAPI(t *testing.T) {
 	go func() {
 		buf := make([]byte, len(expected))
 		_, err := io.ReadFull(reader, buf)
-		if err != nil { readErr <- err; return }
+		if err != nil {
+			readErr <- err
+			return
+		}
 		readResult <- string(buf)
 	}()
 
@@ -394,11 +421,17 @@ func TestCaptchaBridgeRoundTripThroughProtectedPanelAPI(t *testing.T) {
 		t.Fatalf("protected same-origin CAPTCHA bridge POST status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var response map[string]bool
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil { t.Fatalf("invalid CAPTCHA response JSON: %v", err) }
-	if !response["ok"] { t.Fatalf("protected panel rejected valid bridge result: %s", rec.Body.String()) }
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("invalid CAPTCHA response JSON: %v", err)
+	}
+	if !response["ok"] {
+		t.Fatalf("protected panel rejected valid bridge result: %s", rec.Body.String())
+	}
 	select {
 	case got := <-readResult:
-		if got != expected { t.Fatalf("core stdin = %q, want %q", got, expected) }
+		if got != expected {
+			t.Fatalf("core stdin = %q, want %q", got, expected)
+		}
 	case err := <-readErr:
 		t.Fatalf("reading core stdin fixture: %v", err)
 	case <-time.After(time.Second):
@@ -450,7 +483,6 @@ func TestCaptchaResultEndpointRequiresPost(t *testing.T) {
 		t.Fatalf("GET /captcha/result Allow = %q, want POST", got)
 	}
 }
-
 
 func TestCaptchaResultEndpointRejectsMalformedJSON(t *testing.T) {
 	setCaptchaTestState(t, "ci-captcha-session")
@@ -530,94 +562,134 @@ func TestCaptchaStateEndpointRequiresGet(t *testing.T) {
 	}
 }
 
-
 func TestPanelListenAddressUsesInstallerPort(t *testing.T) {
-    old, had := os.LookupEnv("CSQTT_LALUNE_WEB_PORT")
-    t.Cleanup(func(){ if had { _ = os.Setenv("CSQTT_LALUNE_WEB_PORT", old) } else { _ = os.Unsetenv("CSQTT_LALUNE_WEB_PORT") } })
-    _ = os.Setenv("CSQTT_LALUNE_WEB_PORT", "47002")
-    got, err := panelListenAddress()
-    if err != nil { t.Fatal(err) }
-    if got != "0.0.0.0:47002" { t.Fatalf("panelListenAddress() = %q, want 0.0.0.0:47002", got) }
-    _ = os.Setenv("CSQTT_LALUNE_WEB_PORT", "70000")
-    if _, err := panelListenAddress(); err == nil { t.Fatal("invalid panel port was accepted") }
+	old, had := os.LookupEnv("CSQTT_LALUNE_WEB_PORT")
+	t.Cleanup(func() {
+		if had {
+			_ = os.Setenv("CSQTT_LALUNE_WEB_PORT", old)
+		} else {
+			_ = os.Unsetenv("CSQTT_LALUNE_WEB_PORT")
+		}
+	})
+	_ = os.Setenv("CSQTT_LALUNE_WEB_PORT", "47002")
+	got, err := panelListenAddress()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "0.0.0.0:47002" {
+		t.Fatalf("panelListenAddress() = %q, want 0.0.0.0:47002", got)
+	}
+	_ = os.Setenv("CSQTT_LALUNE_WEB_PORT", "70000")
+	if _, err := panelListenAddress(); err == nil {
+		t.Fatal("invalid panel port was accepted")
+	}
 }
 
-
 func TestTunnelAuthPasswordPersistenceAndPermissions(t *testing.T) {
-    t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-    const password = "fixture-tunnel-secret-42"
-    if err := saveTunnelAuthPassword(password); err != nil { t.Fatalf("save password: %v", err) }
-    got, err := loadTunnelAuthPassword()
-    if err != nil { t.Fatalf("load password: %v", err) }
-    if got != password { t.Fatalf("loaded password = %q, want exact saved value", got) }
-    path, err := tunnelAuthFile()
-    if err != nil { t.Fatal(err) }
-    info, err := os.Stat(path)
-    if err != nil { t.Fatal(err) }
-    if info.Mode().Perm() != 0600 { t.Fatalf("password file mode = %04o, want 0600", info.Mode().Perm()) }
-    if err := saveTunnelAuthPassword(""); err != nil { t.Fatalf("clear password: %v", err) }
-    if _, err := loadTunnelAuthPassword(); err == nil { t.Fatal("empty password remained configured") }
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	const password = "fixture-tunnel-secret-42"
+	if err := saveTunnelAuthPassword(password); err != nil {
+		t.Fatalf("save password: %v", err)
+	}
+	got, err := loadTunnelAuthPassword()
+	if err != nil {
+		t.Fatalf("load password: %v", err)
+	}
+	if got != password {
+		t.Fatalf("loaded password = %q, want exact saved value", got)
+	}
+	path, err := tunnelAuthFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("password file mode = %04o, want 0600", info.Mode().Perm())
+	}
+	if err := saveTunnelAuthPassword(""); err != nil {
+		t.Fatalf("clear password: %v", err)
+	}
+	if _, err := loadTunnelAuthPassword(); err == nil {
+		t.Fatal("empty password remained configured")
+	}
 }
 
 func TestTunnelAuthRejectsInvalidPassword(t *testing.T) {
-    t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-    for _, password := range []string{"contains space", "line\\nbreak", strings.Repeat("x", 257)} {
-        if err := saveTunnelAuthPassword(password); err == nil {
-            t.Errorf("invalid password %q was accepted", password)
-        }
-    }
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	for _, password := range []string{"contains space", "line\\nbreak", strings.Repeat("x", 257)} {
+		if err := saveTunnelAuthPassword(password); err == nil {
+			t.Errorf("invalid password %q was accepted", password)
+		}
+	}
 }
 
 func TestTunnelAuthAPIReportsOnlyConfiguredState(t *testing.T) {
-    t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-    const password = "api-secret-must-never-be-returned"
-    handler := apiHandler(&App{core: libs.NewAppCore()})
-    put := httptest.NewRequest(http.MethodPut, "/tunnel/auth", strings.NewReader(`{"password":"`+password+`"}`))
-    putRec := httptest.NewRecorder()
-    handler.ServeHTTP(putRec, put)
-    if putRec.Code != http.StatusOK { t.Fatalf("PUT /tunnel/auth status = %d: %s", putRec.Code, putRec.Body.String()) }
-    if strings.Contains(putRec.Body.String(), password) { t.Fatal("PUT response leaked tunnel password") }
-    get := httptest.NewRequest(http.MethodGet, "/tunnel/auth", nil)
-    getRec := httptest.NewRecorder()
-    handler.ServeHTTP(getRec, get)
-    if getRec.Code != http.StatusOK { t.Fatalf("GET /tunnel/auth status = %d", getRec.Code) }
-    var state map[string]bool
-    if err := json.Unmarshal(getRec.Body.Bytes(), &state); err != nil { t.Fatal(err) }
-    if !state["configured"] { t.Fatal("GET /tunnel/auth did not report configured=true") }
-    if strings.Contains(getRec.Body.String(), password) { t.Fatal("GET response leaked tunnel password") }
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	const password = "api-secret-must-never-be-returned"
+	handler := apiHandler(&App{core: libs.NewAppCore()})
+	put := httptest.NewRequest(http.MethodPut, "/tunnel/auth", strings.NewReader(`{"password":"`+password+`"}`))
+	putRec := httptest.NewRecorder()
+	handler.ServeHTTP(putRec, put)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("PUT /tunnel/auth status = %d: %s", putRec.Code, putRec.Body.String())
+	}
+	if strings.Contains(putRec.Body.String(), password) {
+		t.Fatal("PUT response leaked tunnel password")
+	}
+	get := httptest.NewRequest(http.MethodGet, "/tunnel/auth", nil)
+	getRec := httptest.NewRecorder()
+	handler.ServeHTTP(getRec, get)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET /tunnel/auth status = %d", getRec.Code)
+	}
+	var state map[string]bool
+	if err := json.Unmarshal(getRec.Body.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if !state["configured"] {
+		t.Fatal("GET /tunnel/auth did not report configured=true")
+	}
+	if strings.Contains(getRec.Body.String(), password) {
+		t.Fatal("GET response leaked tunnel password")
+	}
 }
 
 func TestVPNConnectAndReconnectRequireTunnelAuth(t *testing.T) {
-    t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-    app := &App{core: libs.NewAppCore()}
-    for _, path := range []string{"/vpn/connect", "/vpn/reconnect"} {
-        req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"id":1}`))
-        rec := httptest.NewRecorder()
-        apiHandler(app).ServeHTTP(rec, req)
-        if rec.Code != http.StatusPreconditionRequired {
-            t.Errorf("POST %s without password status = %d, want 428: %s", path, rec.Code, rec.Body.String())
-        }
-        if !strings.Contains(rec.Body.String(), "пароль туннеля не задан") {
-            t.Errorf("POST %s did not explain missing password: %s", path, rec.Body.String())
-        }
-    }
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	app := &App{core: libs.NewAppCore()}
+	for _, path := range []string{"/vpn/connect", "/vpn/reconnect"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"id":1}`))
+		rec := httptest.NewRecorder()
+		apiHandler(app).ServeHTTP(rec, req)
+		if rec.Code != http.StatusPreconditionRequired {
+			t.Errorf("POST %s without password status = %d, want 428: %s", path, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "пароль туннеля не задан") {
+			t.Errorf("POST %s did not explain missing password: %s", path, rec.Body.String())
+		}
+	}
 }
 
 func TestVPNConnectAndReconnectRequireStableDeviceID(t *testing.T) {
-    t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-    if err := saveTunnelAuthPassword("fixture-valid-password"); err != nil { t.Fatal(err) }
-    app := &App{core: &libs.AppCore{}}
-    for _, path := range []string{"/vpn/connect", "/vpn/reconnect"} {
-        req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"id":1}`))
-        rec := httptest.NewRecorder()
-        apiHandler(app).ServeHTTP(rec, req)
-        if rec.Code != http.StatusPreconditionRequired {
-            t.Errorf("POST %s without device ID status = %d, want 428: %s", path, rec.Code, rec.Body.String())
-        }
-        if !strings.Contains(rec.Body.String(), "ID устройства CSQTT Core не задан") {
-            t.Errorf("POST %s did not explain missing device ID: %s", path, rec.Body.String())
-        }
-    }
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := saveTunnelAuthPassword("fixture-valid-password"); err != nil {
+		t.Fatal(err)
+	}
+	app := &App{core: &libs.AppCore{}}
+	for _, path := range []string{"/vpn/connect", "/vpn/reconnect"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"id":1}`))
+		rec := httptest.NewRecorder()
+		apiHandler(app).ServeHTTP(rec, req)
+		if rec.Code != http.StatusPreconditionRequired {
+			t.Errorf("POST %s without device ID status = %d, want 428: %s", path, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "ID устройства CSQTT Core не задан") {
+			t.Errorf("POST %s did not explain missing device ID: %s", path, rec.Body.String())
+		}
+	}
 }
 
 func TestSingBoxAPIControlsIndependentManager(t *testing.T) {
@@ -633,31 +705,189 @@ func TestSingBoxAPIControlsIndependentManager(t *testing.T) {
 		return rec
 	}
 	config := `{"ListenAddress":"127.0.0.1:19180","CSQTTAddress":"127.0.0.1:19181"}`
-	if got := request(http.MethodPut, "/singbox/config", config); got.Code != http.StatusOK { t.Fatalf("save config status=%d body=%s",got.Code,got.Body.String()) }
+	if got := request(http.MethodPut, "/singbox/config", config); got.Code != http.StatusOK {
+		t.Fatalf("save config status=%d body=%s", got.Code, got.Body.String())
+	}
 	loaded := request(http.MethodGet, "/singbox/config", "")
-	if loaded.Code != http.StatusOK { t.Fatalf("load config status=%d body=%s", loaded.Code, loaded.Body.String()) }
-	var restored struct { Config singBoxConfigInput `json:"config"`; Configured bool `json:"configured"` }
-	if err := json.Unmarshal(loaded.Body.Bytes(), &restored); err != nil { t.Fatalf("decode loaded config: %v", err) }
-	if !restored.Configured || restored.Config.ListenAddress != "127.0.0.1:19180" || restored.Config.CSQTTAddress != "127.0.0.1:19181" { t.Fatalf("loaded config mismatch: %#v", restored) }
-	if got := request(http.MethodPost, "/singbox/start", ""); got.Code != http.StatusOK { t.Fatalf("start status=%d body=%s",got.Code,got.Body.String()) }
-	if got := request(http.MethodGet, "/singbox/status", ""); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"running":true`) { t.Fatalf("status=%d body=%s",got.Code,got.Body.String()) }
-	if got := request(http.MethodGet, "/singbox/logs", ""); got.Code != http.StatusOK && got.Code != http.StatusNoContent { t.Fatalf("logs status=%d body=%s",got.Code,got.Body.String()) }
-	if got := request(http.MethodPost, "/singbox/stop", ""); got.Code != http.StatusOK { t.Fatalf("stop status=%d body=%s",got.Code,got.Body.String()) }
-	if manager.Status().Running { t.Fatal("manager still running after API stop") }
+	if loaded.Code != http.StatusOK {
+		t.Fatalf("load config status=%d body=%s", loaded.Code, loaded.Body.String())
+	}
+	var restored struct {
+		Config     singBoxConfigInput `json:"config"`
+		Configured bool               `json:"configured"`
+	}
+	if err := json.Unmarshal(loaded.Body.Bytes(), &restored); err != nil {
+		t.Fatalf("decode loaded config: %v", err)
+	}
+	if !restored.Configured || restored.Config.ListenAddress != "127.0.0.1:19180" || restored.Config.CSQTTAddress != "127.0.0.1:19181" {
+		t.Fatalf("loaded config mismatch: %#v", restored)
+	}
+	if got := request(http.MethodPost, "/singbox/start", ""); got.Code != http.StatusOK {
+		t.Fatalf("start status=%d body=%s", got.Code, got.Body.String())
+	}
+	if got := request(http.MethodGet, "/singbox/status", ""); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"running":true`) {
+		t.Fatalf("status=%d body=%s", got.Code, got.Body.String())
+	}
+	if got := request(http.MethodGet, "/singbox/logs", ""); got.Code != http.StatusOK && got.Code != http.StatusNoContent {
+		t.Fatalf("logs status=%d body=%s", got.Code, got.Body.String())
+	}
+	if got := request(http.MethodPost, "/singbox/stop", ""); got.Code != http.StatusOK {
+		t.Fatalf("stop status=%d body=%s", got.Code, got.Body.String())
+	}
+	if manager.Status().Running {
+		t.Fatal("manager still running after API stop")
+	}
 }
 
 func TestSingBoxAPIRejectsPublicControlAndUnknownConfigFields(t *testing.T) {
 	dir := t.TempDir()
-	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), filepath.Join(dir,"config.json"), filepath.Join(dir,"log"))
+	manager := NewSingBoxManager(newFakeSingBox(t, "exit 0"), filepath.Join(dir, "config.json"), filepath.Join(dir, "log"))
 	handler := apiHandlerWithSingBox(nil, manager)
 	public := httptest.NewRequest(http.MethodPost, "/singbox/start", nil)
 	public.RemoteAddr = "8.8.8.8:1234"
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, public)
-	if rec.Code != http.StatusForbidden { t.Fatalf("public control status=%d, want 403",rec.Code) }
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("public control status=%d, want 403", rec.Code)
+	}
 	unknown := httptest.NewRequest(http.MethodPut, "/singbox/config", strings.NewReader(`{"ListenAddress":"127.0.0.1:1","CSQTTAddress":"127.0.0.1:2","unexpected":true}`))
 	unknown.RemoteAddr = "192.168.1.2:1234"
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, unknown)
-	if rec.Code != http.StatusBadRequest { t.Fatalf("unknown config field status=%d, want 400",rec.Code) }
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown config field status=%d, want 400", rec.Code)
+	}
+}
+
+func TestCustomLoginFullSessionAndLogoutFlow(t *testing.T) {
+	t.Setenv("LALUNE_PANEL_USER", "admin")
+	t.Setenv("LALUNE_PANEL_PASSWORD", "fixture-panel-secret")
+	a := newPanelSessionAuth()
+	handler := a.ui(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}), os.DirFS("frontend"))
+	request := func(method, path, body string, cookie *http.Cookie, origin string, useBasic bool) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, "http://nanopi:1061"+path, strings.NewReader(body))
+		if method == "POST" {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		if useBasic {
+			r.SetBasicAuth("admin", "fixture-panel-secret")
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w
+	}
+	root := request("GET", "/", "", nil, "", false)
+	if root.Code != http.StatusSeeOther || root.Header().Get("Location") != "/login" {
+		t.Fatalf("expected UI redirect to login, got %d %q", root.Code, root.Header().Get("Location"))
+	}
+	if root.Header().Get("WWW-Authenticate") != "" {
+		t.Fatal("browser native auth challenge forbidden")
+	}
+	// Even a browser holding stale Basic credentials must see the branded login.
+	if rec := request("GET", "/", "", nil, "", true); rec.Code != 303 {
+		t.Fatalf("cached Basic header bypassed the custom UI login: %d", rec.Code)
+	}
+	loginPage := request("GET", "/login", "", nil, "", false)
+	if loginPage.Code != 200 || !strings.Contains(loginPage.Body.String(), "Добро пожаловать") ||
+		!strings.Contains(loginPage.Body.String(), "id=\"u\"") ||
+		!strings.Contains(loginPage.Body.String(), "id=\"p\"") ||
+		!strings.Contains(loginPage.Body.String(), "id=\"submitBtn\"") {
+		t.Fatalf("custom centered login page unavailable, status=%d body=%q",
+			loginPage.Code, loginPage.Body.String()[:min(len(loginPage.Body.String()), 140)])
+	}
+	if !strings.Contains(loginPage.Header().Get("Content-Security-Policy"), "form-action 'self'") {
+		t.Fatal("login page lacks form CSP")
+	}
+	if rec := request("POST", "/auth/login", "username=admin&password=wrong", nil, "http://nanopi:1061", false); rec.Code != 303 || rec.Header().Get("Location") != "/login?error=1" {
+		t.Fatalf("invalid credentials not rejected: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec := request("POST", "/auth/login", "username=admin&password=fixture-panel-secret", nil, "https://attacker.test", false); rec.Code != 403 {
+		t.Fatalf("foreign origin must fail: %d", rec.Code)
+	}
+	if rec := request("POST", "/auth/login", "username=admin&password=fixture-panel-secret", nil, "", false); rec.Code != 403 {
+		t.Fatalf("missing origin must fail: %d", rec.Code)
+	}
+	success := request("POST", "/auth/login", "username=admin&password=fixture-panel-secret", nil, "http://nanopi:1061", false)
+	if success.Code != 303 || success.Header().Get("Location") != "/" {
+		t.Fatalf("login failed %d %s", success.Code, success.Header().Get("Location"))
+	}
+	cookies := success.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one cookie got %d", len(cookies))
+	}
+	cookie := cookies[0]
+	if cookie.Name != "csqtt_core_session" || !cookie.HttpOnly ||
+		cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" ||
+		cookie.MaxAge < 3600 {
+		t.Fatalf("unsafe session cookie %+v", cookie)
+	}
+	if rec := request("GET", "/", "", cookie, "", false); rec.Code != 204 {
+		t.Fatalf("logged in main panel %d", rec.Code)
+	}
+	if rec := request("GET", "/api/ping", "", cookie, "", false); rec.Code != 204 {
+		t.Fatalf("logged in API %d", rec.Code)
+	}
+	if rec := request("GET", "/api/ping", "", nil, "", false); rec.Code != 401 || rec.Header().Get("WWW-Authenticate") != "" {
+		t.Fatalf("no cookie API must be 401 without browser popup %d", rec.Code)
+	}
+	if rec := request("POST", "/api/settings", "", cookie, "http://nanopi:1061", false); rec.Code != 204 {
+		t.Fatalf("same origin API refused: %d", rec.Code)
+	}
+	if rec := request("POST", "/api/settings", "", cookie, "http://attacker.test", false); rec.Code != 403 {
+		t.Fatalf("cross origin API allowed: %d", rec.Code)
+	}
+	if rec := request("POST", "/auth/logout", "", cookie, "http://attacker.test", false); rec.Code != 403 {
+		t.Fatalf("cross origin logout allowed: %d", rec.Code)
+	}
+	logout := request("POST", "/auth/logout", "", cookie, "http://nanopi:1061", false)
+	if logout.Code != 303 || logout.Header().Get("Location") != "/login" {
+		t.Fatalf("logout failed %d %s", logout.Code, logout.Header().Get("Location"))
+	}
+	if rec := request("GET", "/", "", cookie, "", false); rec.Code != 303 {
+		t.Fatalf("logout did not revoke existing session cookie: %d", rec.Code)
+	}
+}
+
+func TestCustomLoginLimitsWrongPasswordsAndFailsClosed(t *testing.T) {
+	t.Setenv("LALUNE_PANEL_USER", "admin")
+	t.Setenv("LALUNE_PANEL_PASSWORD", "fixture-panel-secret")
+	a := newPanelSessionAuth()
+	login := func(password string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest("POST", "http://nanopi:1061/auth/login",
+			strings.NewReader("username=admin&password="+password))
+		r.Header.Set("Origin", "http://nanopi:1061")
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.RemoteAddr = "192.168.4.34:50000"
+		w := httptest.NewRecorder()
+		a.handleLogin(w, r)
+		return w
+	}
+	for i := 0; i < 8; i++ {
+		if rec := login("wrong"); rec.Code != 303 || rec.Header().Get("Location") != "/login?error=1" {
+			t.Fatalf("bad password #%d result %d location=%q", i, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	if rec := login("fixture-panel-secret"); rec.Code != 303 ||
+		rec.Header().Get("Location") != "/login?error=2" || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("rate limiter bypassed: %d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+	t.Setenv("LALUNE_PANEL_PASSWORD", "")
+	app := a.ui(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("unconfigured credentials must fail closed") }), os.DirFS("frontend"))
+	for _, p := range []string{"/", "/login", "/api/ping"} {
+		rec := httptest.NewRecorder()
+		app.ServeHTTP(rec, httptest.NewRequest("GET", "http://nanopi:1061"+p, nil))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("password-less %s status=%d", p, rec.Code)
+		}
+	}
 }

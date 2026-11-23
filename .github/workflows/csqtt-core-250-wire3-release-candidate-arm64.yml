@@ -85,6 +85,7 @@ jobs:
           mv upstream-lalune/Desktop/Linux/app.go upstream-lalune/Desktop/Linux/app_gui.go.disabled
           mkdir -p upstream-lalune/Desktop/Linux/frontend
           cp adapt/csqtt-panel-preview.html upstream-lalune/Desktop/Linux/frontend/index.html
+          cp adapt/csqtt-login.html upstream-lalune/Desktop/Linux/frontend/login.html
           cp adapt/nanopi.js upstream-lalune/Desktop/Linux/frontend/api.js
           grep -Fq 'unix.Read(tunFD, buf)' upstream-lalune/Desktop/Linux/app_linux.go
           grep -Fq 'unix.Write(tunFD, buf[:n])' upstream-lalune/Desktop/Linux/app_linux.go

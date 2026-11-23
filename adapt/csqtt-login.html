@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Вход · CSQTT Core</title>
+<style>
+:root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color-scheme:light;--blue:#2475e6;--blue-hover:#155ed0;--ink:#142039;--muted:#78849a;--stroke:#e2e9f3;--paper:#fff;--field:#f8fafe}
+*{box-sizing:border-box}
+html,body{min-height:100%;margin:0}
+body{min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:34px 18px;background:radial-gradient(ellipse at 14% 8%,#dbeaff 0%,transparent 42%),radial-gradient(ellipse at 89% 92%,#e8e1ff 0%,transparent 40%),linear-gradient(145deg,#f6f9ff,#f2f6fc 55%,#f8f8ff);color:var(--ink)}
+body::before,body::after{content:"";pointer-events:none;position:fixed;border:1px solid #fff9;border-radius:50%}
+body::before{width:470px;height:470px;top:-295px;right:-170px}
+body::after{width:340px;height:340px;bottom:-225px;left:-110px}
+.shell{position:relative;z-index:1;width:min(100%,450px)}
+.card{background:var(--paper);border:1px solid #fff;box-shadow:0 30px 90px #30548c1c,0 10px 35px #30548c10;border-radius:30px;padding:39px 40px 37px;overflow:hidden}
+.logo-row{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:36px}
+.logo{width:52px;height:52px;display:grid;place-items:center;border-radius:16px;background:linear-gradient(135deg,#418cff,#2366da);box-shadow:0 9px 22px #246fe840;color:#fff}
+.logo svg{width:29px;height:29px}
+.brand{font-size:21px;letter-spacing:-.8px;font-weight:830;line-height:1.1;color:var(--blue)}
+.brand span{color:#111215}
+.brand-sub{font-size:11px;color:var(--muted);letter-spacing:1.2px;font-weight:730;margin-top:4px;text-transform:uppercase}
+h1{font-size:29px;letter-spacing:-1.15px;font-weight:790;text-align:center;margin:0 0 9px;line-height:1.2}
+.subtitle{margin:0 0 30px;text-align:center;color:var(--muted);font-size:14px;line-height:1.55}
+form{margin:0}
+.field{margin:0 0 19px}
+label{display:block;color:#485774;font-size:13px;letter-spacing:.02px;font-weight:650;margin-bottom:9px}
+.input-wrap{position:relative}
+input{width:100%;height:53px;border-radius:13px;border:1.5px solid var(--stroke);outline:none;background:var(--field);color:var(--ink);padding:0 15px;font-size:15px;font-weight:500;line-height:1.3;font-family:inherit;transition:border-color .15s,box-shadow .15s,background .15s}
+input::placeholder{color:#9da9ba}
+input:hover{border-color:#b5c8e5}
+input:focus{border-color:var(--blue);box-shadow:none;background:#fff}
+input[type=password],input[type=text].password{padding-right:88px}
+.reveal{position:absolute;top:50%;right:8px;transform:translateY(-50%);border:0;background:transparent;color:#60748e;padding:9px 8px;border-radius:8px;font-size:12px;font-weight:750;cursor:pointer;min-width:73px}
+.reveal:hover,.reveal:focus-visible{background:#e8effb;color:#1c63ca}
+.error{padding:12px 13px;color:#b92f46;background:#fff0f3;border:1px solid #ffcdd6;border-radius:12px;font-size:13px;margin-bottom:20px;line-height:1.4}
+.error[hidden]{display:none}
+.submit{display:flex;justify-content:center;align-items:center;gap:11px;width:100%;min-height:54px;margin-top:26px;padding:13px 18px;background:linear-gradient(115deg,#287ce9,#1d67df);border:0;color:#fff;border-radius:13px;box-shadow:0 9px 19px #2874e633;font-size:16px;font-weight:730;line-height:1.4;font-family:inherit;cursor:pointer;transition:transform .15s,box-shadow .15s,background .15s}
+.submit:hover{background:linear-gradient(115deg,#226ee2,#1759c7);transform:translateY(-1px);box-shadow:0 12px 24px #2874e64a}
+.submit:active{transform:translateY(0)}
+.submit svg{width:19px;height:19px}
+.note{display:flex;align-items:center;justify-content:center;gap:7px;margin:23px 0 0;color:#8692a4;font-size:12px;line-height:1.5;text-align:center}
+.note svg{width:15px;height:15px;flex:0 0 15px;color:#5d9bdc}
+.foot{position:absolute;top:100%;left:0;right:0;text-align:center;color:#8995a6;font-size:12px;margin:23px 0 0;letter-spacing:.15px}
+:focus-visible{outline:3px solid #5999f8;outline-offset:3px}
+/* Preserve a single blue field border without an outer focus ring. */
+input:focus-visible{outline:none}
+@media(max-width:500px){body{padding:16px}.card{border-radius:25px;padding:31px 24px 29px}.logo-row{margin-bottom:29px}h1{font-size:26px}.subtitle{margin-bottom:26px}.foot{margin:18px 0 0}}
+@media(max-height:650px){body{padding:12px}.card{padding-top:22px;padding-bottom:22px}.logo-row{margin-bottom:18px}.subtitle{margin-bottom:18px}.field{margin-bottom:11px}.submit{margin-top:15px}.note{margin-top:15px}.foot{margin-top:10px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+@media(prefers-color-scheme:dark){:root{color-scheme:dark;--ink:#eef3ff;--muted:#a3adc1;--stroke:#364760;--paper:#1b2537;--field:#202e43}
+ body{background:radial-gradient(ellipse at 14% 8%,#1d3861,transparent 46%),radial-gradient(ellipse at 89% 92%,#302b50,transparent 45%),#101725}
+ body::before,body::after{border-color:#ffffff0e}.card{border-color:#35445a;box-shadow:0 30px 90px #0005}
+ .brand span{color:var(--ink)}label{color:#c2cde1}input:focus{background:#263752}.reveal{color:#b5c6e0}.reveal:hover,.reveal:focus-visible{background:#314361;color:#e5f0ff}
+ .error{background:#522a36;border-color:#7d394b;color:#ffb3c3}.note{color:#afbdd1}.foot{color:#a2adc0}
+}
+</style>
+</head>
+<body>
+<main class="shell">
+  <section class="card" aria-labelledby="loginTitle">
+    <div class="logo-row">
+      <div class="logo" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M24.5 10.5a10 10 0 1 0 0 11" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><path d="M21.5 12.5h6m-3-3v6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></div>
+      <div><div class="brand">CSQTT <span>Core</span></div><div class="brand-sub">Linux · ARM64</div></div>
+    </div>
+    <h1 id="loginTitle">Добро пожаловать</h1>
+    <p class="subtitle">Войдите, чтобы управлять подключениями<br>и настройками CSQTT Core</p>
+    <p class="error" id="loginError" role="alert" hidden>Неверное имя пользователя или пароль. Попробуйте ещё раз.</p>
+    <form id="loginForm" action="/auth/login" method="post" autocomplete="on">
+      <div class="field">
+        <label for="u">Имя пользователя</label>
+        <div class="input-wrap"><input id="u" name="username" type="text" placeholder="Введите имя пользователя" autocomplete="username" maxlength="100" autocapitalize="none" spellcheck="false" required autofocus></div>
+      </div>
+      <div class="field">
+        <label for="p">Пароль</label>
+        <div class="input-wrap">
+          <input id="p" name="password" type="password" placeholder="Введите пароль" autocomplete="current-password" maxlength="512" required>
+          <button id="revealPassword" class="reveal" type="button" aria-controls="p" aria-pressed="false">Показать</button>
+        </div>
+      </div>
+      <button class="submit" type="submit" id="submitBtn">Войти в панель <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </form>
+    <div class="note"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 11V8a6 6 0 1 1 12 0v3m-12 0h12v10H6V11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg> Частная панель управления NanoPi</div>
+  </section>
+  <p class="foot">CSQTT Core · Управление соединениями</p>
+</main>
+<script>
+(function(){
+  var toggle=document.getElementById("revealPassword"), password=document.getElementById("p");
+  toggle.addEventListener("click",function(){
+    var visible=password.type==="password";
+    password.type=visible?"text":"password";
+    toggle.textContent=visible?"Скрыть":"Показать";
+    toggle.setAttribute("aria-pressed",String(visible));
+  });
+  var error=new URLSearchParams(location.search).get("error");
+  if(error){
+    var box=document.getElementById("loginError");
+    if(error==="2")box.textContent="Слишком много попыток входа. Повторите через несколько минут.";
+    box.hidden=false;
+  }
+})();
+</script>
+</body>
+</html>

@@ -7,7 +7,7 @@
     vk: '{"hasToken":false,"fetcherOk":false,"fetching":false,"message":"","progress":0}', vkAuto: '{"pending":true}',
     deployLog: '', deploying: false, coreDownloading: false
   };
-  const req = (path, options) => fetch(base + path, options || {}).then(r => r.text());
+  const req = (path, options) => fetch(base + path, options || {}).then(r => { if (r.status === 401) { location.assign('/login'); return ''; } return r.text(); });
   const json = (path, options) => req(path, options).then(x => { try { return JSON.parse(x); } catch (_) { return x; } });
   async function refresh() {
     try { cache.configs = await req('/configs'); } catch (_) {}

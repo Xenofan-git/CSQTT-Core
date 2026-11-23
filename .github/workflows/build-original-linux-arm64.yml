@@ -337,6 +337,7 @@ jobs:
           # The binary's embedded fallback UI uses the CSQTT-style panel preview.
           # The normal Nginx document root is not replaced by this build step.
           cp adapt/csqtt-panel-preview.html upstream-lalune/Desktop/Linux/frontend/index.html
+          cp adapt/csqtt-login.html upstream-lalune/Desktop/Linux/frontend/login.html
           test -s upstream-lalune/Desktop/Linux/frontend/index.html
           grep -Fq 'CSQTT Core · NanoPi' upstream-lalune/Desktop/Linux/frontend/index.html
           test -s upstream-lalune/Desktop/Linux/frontend/api.js

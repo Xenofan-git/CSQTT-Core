@@ -3,28 +3,31 @@
 package main
 
 import (
-    "sync"
-    "crypto/subtle"
-    "context"
-    "errors"
-    "embed"
-    "io"
-    "io/fs"
-    "encoding/json"
-    "fmt"
-    "net"
-    "net/http"
-    "net/url"
-    "os"
-    "path/filepath"
-    "regexp"
-    "os/signal"
-    "strconv"
-    "strings"
-    "syscall"
-    "time"
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"embed"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
 
-    "lalune-desktop/Libs"
+	"lalune-desktop/Libs"
 )
 
 const headlessListen = "127.0.0.1:1062"
@@ -32,122 +35,159 @@ const panelListen = "0.0.0.0:1061"
 
 // Set by the pinned ARM64 build workflow through Go -ldflags.
 var (
-    buildCommit = "unknown"
-    buildRunID = "unknown"
-    buildRunNumber = "unknown"
-    buildDate = "unknown"
-    buildBranch = "unknown"
-    buildUpstreamCommit = "unknown"
+	buildCommit         = "unknown"
+	buildRunID          = "unknown"
+	buildRunNumber      = "unknown"
+	buildDate           = "unknown"
+	buildBranch         = "unknown"
+	buildUpstreamCommit = "unknown"
 )
 
 //go:embed frontend
 var panelAssets embed.FS
 
 type connectBody struct {
-    ID int64 `json:"id"`
+	ID int64 `json:"id"`
 }
 
 type configBody struct {
-    Link     string `json:"link"`
-    Protocol string `json:"protocol"`
+	Link     string `json:"link"`
+	Protocol string `json:"protocol"`
 }
 
 type tunnelAuthBody struct {
-    Password string `json:"password"`
+	Password string `json:"password"`
 }
 
 // The panel and LinuxRunner share a private per-user secret file. It is
 // outside the web root, atomically replaced, and never returned by the API.
 func tunnelAuthFile() (string, error) {
-    dir, err := os.UserConfigDir()
-    if err != nil { return "", err }
-    dir = filepath.Join(dir, "csqtt-lalune")
-    if err := os.MkdirAll(dir, 0700); err != nil { return "", err }
-    return filepath.Join(dir, "tunnel-password"), nil
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "csqtt-lalune")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "tunnel-password"), nil
 }
 
 func loadTunnelAuthPassword() (string, error) {
-    path, err := tunnelAuthFile()
-    if err != nil { return "", err }
-    data, err := os.ReadFile(path)
-    if err != nil { return "", err }
-    password := strings.TrimSpace(string(data))
-    if password == "" { return "", fmt.Errorf("пароль туннеля не задан") }
-    return password, nil
+	path, err := tunnelAuthFile()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	password := strings.TrimSpace(string(data))
+	if password == "" {
+		return "", fmt.Errorf("пароль туннеля не задан")
+	}
+	return password, nil
 }
 
 func saveTunnelAuthPassword(password string) error {
-    password = strings.TrimSpace(password)
-    if password == "" {
-        path, err := tunnelAuthFile()
-        if err != nil { return err }
-        if err := os.Remove(path); err != nil && !os.IsNotExist(err) { return err }
-        return nil
-    }
-    if len(password) > 256 || !regexp.MustCompile(`^[a-zA-Z0-9_.!?:#/-]+$`).MatchString(password) {
-        return fmt.Errorf("недопустимый формат пароля туннеля")
-    }
-    path, err := tunnelAuthFile()
-    if err != nil { return err }
-    f, err := os.CreateTemp(filepath.Dir(path), ".tunnel-password-*")
-    if err != nil { return err }
-    tmp := f.Name()
-    defer os.Remove(tmp)
-    if err := f.Chmod(0600); err != nil { f.Close(); return err }
-    if _, err := f.WriteString(password); err != nil { f.Close(); return err }
-    if err := f.Sync(); err != nil { f.Close(); return err }
-    if err := f.Close(); err != nil { return err }
-    return os.Rename(tmp, path)
+	password = strings.TrimSpace(password)
+	if password == "" {
+		path, err := tunnelAuthFile()
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if len(password) > 256 || !regexp.MustCompile(`^[a-zA-Z0-9_.!?:#/-]+$`).MatchString(password) {
+		return fmt.Errorf("недопустимый формат пароля туннеля")
+	}
+	path, err := tunnelAuthFile()
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".tunnel-password-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err := f.Chmod(0600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.WriteString(password); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func csqttDeviceID(core *libs.AppCore) string {
-    if core == nil { return "" }
-    var settings map[string]any
-    if err := json.Unmarshal([]byte(core.GetSettingsJson()), &settings); err != nil { return "" }
-    id, _ := settings["deviceId"].(string)
-    return strings.TrimSpace(id)
+	if core == nil {
+		return ""
+	}
+	var settings map[string]any
+	if err := json.Unmarshal([]byte(core.GetSettingsJson()), &settings); err != nil {
+		return ""
+	}
+	id, _ := settings["deviceId"].(string)
+	return strings.TrimSpace(id)
 }
 
 // validateTunnelAuth is shared by connect and reconnect so neither API path
 // can bypass the same fail-closed credential and stable-device-ID checks.
 func validateTunnelAuth(app *App) error {
-    if _, err := loadTunnelAuthPassword(); err != nil {
-        return fmt.Errorf("пароль туннеля не задан")
-    }
-    candidate, modeErr := csqtt250CandidateMode()
-    if modeErr != nil { return fmt.Errorf("недопустимый режим клиента CSQTT Core") }
-    if candidate {
-        // The original CSQTT 2.5.0 client authenticates with the tunnel
-        // password only. The old device-id flag is removed in 2.5.0.
-        if app == nil || app.core == nil { return fmt.Errorf("ядро не готово") }
-        return nil
-    }
-    if app == nil || csqttDeviceID(app.core) == "" {
-        return fmt.Errorf("ID устройства CSQTT Core не задан")
-    }
-    return nil
+	if _, err := loadTunnelAuthPassword(); err != nil {
+		return fmt.Errorf("пароль туннеля не задан")
+	}
+	candidate, modeErr := csqtt250CandidateMode()
+	if modeErr != nil {
+		return fmt.Errorf("недопустимый режим клиента CSQTT Core")
+	}
+	if candidate {
+		// The original CSQTT 2.5.0 client authenticates with the tunnel
+		// password only. The old device-id flag is removed in 2.5.0.
+		if app == nil || app.core == nil {
+			return fmt.Errorf("ядро не готово")
+		}
+		return nil
+	}
+	if app == nil || csqttDeviceID(app.core) == "" {
+		return fmt.Errorf("ID устройства CSQTT Core не задан")
+	}
+	return nil
 }
 
 func writeRaw(w http.ResponseWriter, value string) {
-    w.Header().Set("Content-Type", "application/json; charset=utf-8")
-    w.WriteHeader(http.StatusOK)
-    _, _ = w.Write([]byte(value))
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(value))
 }
 
 func mustJSON(value string) string { b, _ := json.Marshal(value); return string(b) }
 
 func writeJSON(w http.ResponseWriter, value any) {
-    w.Header().Set("Content-Type", "application/json; charset=utf-8")
-    _ = json.NewEncoder(w).Encode(value)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 func method(w http.ResponseWriter, r *http.Request, want string) bool {
-    if r.Method != want {
-        w.Header().Set("Allow", want)
-        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        return false
-    }
-    return true
+	if r.Method != want {
+		w.Header().Set("Allow", want)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
 }
 
 // privateClient permits sensitive operations only from a private LAN or the
@@ -155,23 +195,23 @@ func method(w http.ResponseWriter, r *http.Request, want string) bool {
 // directly reachable on the LAN, so a caller could spoof that header. When
 // accessed through a local reverse proxy, RemoteAddr is loopback and is allowed.
 func privateClient(r *http.Request) bool {
-    raw := r.RemoteAddr
-    if host, _, err := net.SplitHostPort(raw); err == nil {
-        raw = host
-    }
-    ip := net.ParseIP(strings.Trim(raw, "[]"))
-    if ip == nil {
-        return false
-    }
-    if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
-        return true
-    }
-    _, tailscaleIPv4, _ := net.ParseCIDR("100.64.0.0/10")
-    if tailscaleIPv4.Contains(ip) {
-        return true
-    }
-    _, tailscaleIPv6, _ := net.ParseCIDR("fd7a:115c:a1e0::/48")
-    return tailscaleIPv6.Contains(ip)
+	raw := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+	ip := net.ParseIP(strings.Trim(raw, "[]"))
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		return true
+	}
+	_, tailscaleIPv4, _ := net.ParseCIDR("100.64.0.0/10")
+	if tailscaleIPv4.Contains(ip) {
+		return true
+	}
+	_, tailscaleIPv6, _ := net.ParseCIDR("fd7a:115c:a1e0::/48")
+	return tailscaleIPv6.Contains(ip)
 }
 
 var captchaMu sync.Mutex
@@ -183,94 +223,114 @@ var captchaHandledSession string
 var captchaUpdated time.Time
 
 func captchaRequestIsActive(mode, redirectURI string, now time.Time) bool {
-    // "selected" is emitted by the pinned core's explicit WBV mode. On Linux
-    // it must use the same browser bridge as the final manual fallback.
-    // "auto" events remain internal retries and must never trigger UI.
-    mode = strings.ToLower(strings.TrimSpace(mode))
-    if mode != "manual" && mode != "selected" {
-        return false
-    }
-    // VK challenge links include an explicit expiry. Do not resurrect an old
-    // challenge from the persistent application log after it has expired.
-    u, err := url.Parse(redirectURI)
-    if err != nil {
-        return false
-    }
-    expires := strings.TrimSpace(u.Query().Get("expired_at"))
-    if expires == "" {
-        return false
-    }
-    unix, err := strconv.ParseInt(expires, 10, 64)
-    if err != nil || unix <= now.Unix() {
-        return false
-    }
-    return true
+	// "selected" is emitted by the pinned core's explicit WBV mode. On Linux
+	// it must use the same browser bridge as the final manual fallback.
+	// "auto" events remain internal retries and must never trigger UI.
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "manual" && mode != "selected" {
+		return false
+	}
+	// VK challenge links include an explicit expiry. Do not resurrect an old
+	// challenge from the persistent application log after it has expired.
+	u, err := url.Parse(redirectURI)
+	if err != nil {
+		return false
+	}
+	expires := strings.TrimSpace(u.Query().Get("expired_at"))
+	if expires == "" {
+		return false
+	}
+	unix, err := strconv.ParseInt(expires, 10, 64)
+	if err != nil || unix <= now.Unix() {
+		return false
+	}
+	return true
 }
 
 func refreshCaptchaStateFromLogs(raw string, now time.Time) {
-    var logs []string
-    if json.Unmarshal([]byte(raw), &logs) != nil { return }
-    captchaMu.Lock()
-    defer captchaMu.Unlock()
-    // The newest CAPTCHA_SOLVE event is authoritative for this moment. This
-    // allows a later manual fallback event to supersede an earlier auto event.
-    for i := len(logs)-1; i >= 0; i-- {
-        parts := strings.SplitN(strings.TrimSpace(logs[i]), "|", 4)
-        if len(parts) != 4 || parts[0] != "CAPTCHA_SOLVE" { continue }
-        session := strings.TrimSpace(parts[3])
-        if session == "" || session == captchaHandledSession {
-            captchaPending = false
-            captchaMode = ""
-            captchaRedirectURI = ""
-            captchaSessionToken = ""
-            captchaUpdated = time.Time{}
-            return
-        }
-        if !captchaRequestIsActive(parts[1], parts[2], now) {
-            captchaPending = false
-            captchaMode = ""
-            captchaRedirectURI = ""
-            captchaSessionToken = ""
-            captchaUpdated = time.Time{}
-            return
-        }
-        if captchaSessionToken != session || !captchaPending {
-            captchaUpdated = now
-        }
-        captchaPending = true
-        captchaMode = strings.TrimSpace(parts[1])
-        captchaRedirectURI = parts[2]
-        captchaSessionToken = session
-        return
-    }
-    // No CAPTCHA event in the current log: clear any in-memory stale state.
-    captchaPending = false
-    captchaMode = ""
-    captchaRedirectURI = ""
-    captchaSessionToken = ""
-    captchaUpdated = time.Time{}
+	var logs []string
+	if json.Unmarshal([]byte(raw), &logs) != nil {
+		return
+	}
+	captchaMu.Lock()
+	defer captchaMu.Unlock()
+	// The newest CAPTCHA_SOLVE event is authoritative for this moment. This
+	// allows a later manual fallback event to supersede an earlier auto event.
+	for i := len(logs) - 1; i >= 0; i-- {
+		parts := strings.SplitN(strings.TrimSpace(logs[i]), "|", 4)
+		if len(parts) != 4 || parts[0] != "CAPTCHA_SOLVE" {
+			continue
+		}
+		session := strings.TrimSpace(parts[3])
+		if session == "" || session == captchaHandledSession {
+			captchaPending = false
+			captchaMode = ""
+			captchaRedirectURI = ""
+			captchaSessionToken = ""
+			captchaUpdated = time.Time{}
+			return
+		}
+		if !captchaRequestIsActive(parts[1], parts[2], now) {
+			captchaPending = false
+			captchaMode = ""
+			captchaRedirectURI = ""
+			captchaSessionToken = ""
+			captchaUpdated = time.Time{}
+			return
+		}
+		if captchaSessionToken != session || !captchaPending {
+			captchaUpdated = now
+		}
+		captchaPending = true
+		captchaMode = strings.TrimSpace(parts[1])
+		captchaRedirectURI = parts[2]
+		captchaSessionToken = session
+		return
+	}
+	// No CAPTCHA event in the current log: clear any in-memory stale state.
+	captchaPending = false
+	captchaMode = ""
+	captchaRedirectURI = ""
+	captchaSessionToken = ""
+	captchaUpdated = time.Time{}
 }
 
 func refreshCaptchaState(app *App) {
-    refreshCaptchaStateFromLogs(app.GetLogsJson(), time.Now())
+	refreshCaptchaStateFromLogs(app.GetLogsJson(), time.Now())
 }
 
 func captchaState(app *App) map[string]any {
-    refreshCaptchaState(app)
-    captchaMu.Lock(); defer captchaMu.Unlock()
-    return map[string]any{"pending": captchaPending, "mode": captchaMode, "redirectUri": captchaRedirectURI, "sessionToken": captchaSessionToken, "updated": captchaUpdated.UnixMilli()}
+	refreshCaptchaState(app)
+	captchaMu.Lock()
+	defer captchaMu.Unlock()
+	return map[string]any{"pending": captchaPending, "mode": captchaMode, "redirectUri": captchaRedirectURI, "sessionToken": captchaSessionToken, "updated": captchaUpdated.UnixMilli()}
 }
 
 func finishCaptcha(app *App, sessionToken, result string) bool {
-    captchaMu.Lock()
-    if !captchaPending || sessionToken == "" || sessionToken != captchaSessionToken { captchaMu.Unlock(); return false }
-    captchaMu.Unlock()
-    result = strings.TrimSpace(result)
-    if result == "" || len(result) > 16384 || strings.ContainsAny(result, "\r\n") { return false }
-    if app.runner == nil || !app.runner.SubmitCaptchaResult(result) { return false }
-    captchaMu.Lock(); captchaHandledSession = sessionToken; captchaPending = false; captchaMode = ""; captchaRedirectURI = ""; captchaSessionToken = ""; captchaUpdated = time.Time{}; captchaMu.Unlock()
-    return true
+	captchaMu.Lock()
+	if !captchaPending || sessionToken == "" || sessionToken != captchaSessionToken {
+		captchaMu.Unlock()
+		return false
+	}
+	captchaMu.Unlock()
+	result = strings.TrimSpace(result)
+	if result == "" || len(result) > 16384 || strings.ContainsAny(result, "\r\n") {
+		return false
+	}
+	if app.runner == nil || !app.runner.SubmitCaptchaResult(result) {
+		return false
+	}
+	captchaMu.Lock()
+	captchaHandledSession = sessionToken
+	captchaPending = false
+	captchaMode = ""
+	captchaRedirectURI = ""
+	captchaSessionToken = ""
+	captchaUpdated = time.Time{}
+	captchaMu.Unlock()
+	return true
 }
+
 var vkAutoMu sync.Mutex
 var vkAutoResult = "{\"pending\":false}"
 var vkAutoRunning bool
@@ -283,7 +343,9 @@ func defaultSingBoxManager() *SingBoxManager {
 		dir := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_DATA_DIR"))
 		if dir == "" || !filepath.IsAbs(dir) {
 			base, err := os.UserConfigDir()
-			if err != nil { base = os.TempDir() }
+			if err != nil {
+				base = os.TempDir()
+			}
 			dir = filepath.Join(base, "csqtt-lalune", "sing-box")
 		}
 		binary := strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
@@ -303,510 +365,989 @@ func defaultSingBoxManager() *SingBoxManager {
 func apiHandler(app *App) http.Handler { return apiHandlerWithSingBox(app, defaultSingBoxManager()) }
 
 func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
-    mux := http.NewServeMux()
+	mux := http.NewServeMux()
 
-    mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeJSON(w, map[string]any{"ok": true})
-    })
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true})
+	})
 
-    mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeJSON(w, map[string]any{
-            "api": 1,
-            "backend": "original-go",
-            "core": csqttCoreSelectedVersionLabel(),
-            "ui": "0.6.0",
-            "commit": buildCommit,
-            "buildRun": buildRunID,
-            "buildNumber": buildRunNumber,
-            "buildDate": buildDate,
-            "buildBranch": buildBranch,
-            "upstreamCommit": buildUpstreamCommit,
-        })
-    })
+	mux.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeJSON(w, map[string]any{
+			"api":            1,
+			"backend":        "original-go",
+			"core":           csqttCoreSelectedVersionLabel(),
+			"ui":             "0.6.0",
+			"commit":         buildCommit,
+			"buildRun":       buildRunID,
+			"buildNumber":    buildRunNumber,
+			"buildDate":      buildDate,
+			"buildBranch":    buildBranch,
+			"upstreamCommit": buildUpstreamCommit,
+		})
+	})
 
-    mux.HandleFunc("/configs", func(w http.ResponseWriter, r *http.Request) {
-        switch r.Method {
-        case http.MethodGet:
-            writeRaw(w, app.GetConfigsJson())
-        case http.MethodPost:
-            var body configBody
-            if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-                http.Error(w, "bad json", http.StatusBadRequest)
-                return
-            }
-            if body.Link == "" {
-                http.Error(w, "link is required", http.StatusBadRequest)
-                return
-            }
-            ok := app.SaveConfigWithProtocol(body.Link, body.Protocol)
-            writeJSON(w, map[string]bool{"ok": ok})
-        default:
-            w.Header().Set("Allow", "GET, POST")
-            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        }
-    })
+	mux.HandleFunc("/configs", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeRaw(w, app.GetConfigsJson())
+		case http.MethodPost:
+			var body configBody
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "bad json", http.StatusBadRequest)
+				return
+			}
+			if body.Link == "" {
+				http.Error(w, "link is required", http.StatusBadRequest)
+				return
+			}
+			ok := app.SaveConfigWithProtocol(body.Link, body.Protocol)
+			writeJSON(w, map[string]bool{"ok": ok})
+		default:
+			w.Header().Set("Allow", "GET, POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 
-    mux.HandleFunc("/configs/selected", func(w http.ResponseWriter, r *http.Request) {
-        switch r.Method {
-        case http.MethodGet:
-            writeRaw(w, app.GetSelectedConfigJson())
-        case http.MethodPut, http.MethodPost:
-            var raw json.RawMessage
-            if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
-                http.Error(w, "bad json", http.StatusBadRequest)
-                return
-            }
-            writeJSON(w, map[string]bool{"ok": app.SetSelectedConfigJson(string(raw))})
-        default:
-            w.Header().Set("Allow", "GET, PUT, POST")
-            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        }
-    })
+	mux.HandleFunc("/configs/selected", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeRaw(w, app.GetSelectedConfigJson())
+		case http.MethodPut, http.MethodPost:
+			var raw json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+				http.Error(w, "bad json", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string]bool{"ok": app.SetSelectedConfigJson(string(raw))})
+		default:
+			w.Header().Set("Allow", "GET, PUT, POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 
-    mux.HandleFunc("/configs/", func(w http.ResponseWriter, r *http.Request) {
-        idText := strings.TrimPrefix(r.URL.Path, "/configs/")
-        id, err := strconv.ParseInt(idText, 10, 64)
-        if err != nil {
-            http.Error(w, "invalid config id", http.StatusBadRequest)
-            return
-        }
-        if !method(w, r, http.MethodDelete) { return }
-        writeJSON(w, map[string]bool{"ok": app.DeleteConfig(id)})
-    })
+	mux.HandleFunc("/configs/", func(w http.ResponseWriter, r *http.Request) {
+		idText := strings.TrimPrefix(r.URL.Path, "/configs/")
+		id, err := strconv.ParseInt(idText, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid config id", http.StatusBadRequest)
+			return
+		}
+		if !method(w, r, http.MethodDelete) {
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": app.DeleteConfig(id)})
+	})
 
-    mux.HandleFunc("/settings", func(w http.ResponseWriter, r *http.Request) {
-        switch r.Method {
-        case http.MethodGet:
-            writeRaw(w, app.GetSettingsJson())
-        case http.MethodPut, http.MethodPost:
-            var raw json.RawMessage
-            if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
-                http.Error(w, "bad json", http.StatusBadRequest)
-                return
-            }
-            writeJSON(w, map[string]bool{"ok": app.SaveSettings(string(raw))})
-        default:
-            w.Header().Set("Allow", "GET, PUT, POST")
-            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        }
-    })
+	mux.HandleFunc("/settings", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			writeRaw(w, app.GetSettingsJson())
+		case http.MethodPut, http.MethodPost:
+			var raw json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+				http.Error(w, "bad json", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string]bool{"ok": app.SaveSettings(string(raw))})
+		default:
+			w.Header().Set("Allow", "GET, PUT, POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 
-    mux.HandleFunc("/settings/reset", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        http.Error(w, "settings reset is not implemented by CSQTT Core backend", http.StatusNotImplemented)
-    })
+	mux.HandleFunc("/settings/reset", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		http.Error(w, "settings reset is not implemented by CSQTT Core backend", http.StatusNotImplemented)
+	})
 
+	mux.HandleFunc("/tunnel/auth", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_, err := loadTunnelAuthPassword()
+			writeJSON(w, map[string]bool{"configured": err == nil})
+		case http.MethodPut, http.MethodPost:
+			var body tunnelAuthBody
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "bad json", http.StatusBadRequest)
+				return
+			}
+			if err := saveTunnelAuthPassword(body.Password); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string]bool{"ok": true, "configured": strings.TrimSpace(body.Password) != ""})
+		default:
+			w.Header().Set("Allow", "GET, PUT, POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 
-    mux.HandleFunc("/tunnel/auth", func(w http.ResponseWriter, r *http.Request) {
-        switch r.Method {
-        case http.MethodGet:
-            _, err := loadTunnelAuthPassword()
-            writeJSON(w, map[string]bool{"configured": err == nil})
-        case http.MethodPut, http.MethodPost:
-            var body tunnelAuthBody
-            if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-                http.Error(w, "bad json", http.StatusBadRequest); return
-            }
-            if err := saveTunnelAuthPassword(body.Password); err != nil {
-                http.Error(w, err.Error(), http.StatusBadRequest); return
-            }
-            writeJSON(w, map[string]bool{"ok": true, "configured": strings.TrimSpace(body.Password) != ""})
-        default:
-            w.Header().Set("Allow", "GET, PUT, POST")
-            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        }
-    })
+	mux.HandleFunc("/vpn/status", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeRaw(w, app.GetStatusJson())
+	})
 
-    mux.HandleFunc("/vpn/status", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeRaw(w, app.GetStatusJson())
-    })
+	mux.HandleFunc("/vpn/connect", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		var body connectBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		if err := validateTunnelAuth(app); err != nil {
+			http.Error(w, err.Error(), http.StatusPreconditionRequired)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": app.Connect(body.ID)})
+	})
 
-    mux.HandleFunc("/vpn/connect", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        var body connectBody
-        if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-            http.Error(w, "bad json", http.StatusBadRequest)
-            return
-        }
-        if err := validateTunnelAuth(app); err != nil { http.Error(w, err.Error(), http.StatusPreconditionRequired); return }
-        writeJSON(w, map[string]bool{"ok": app.Connect(body.ID)})
-    })
+	mux.HandleFunc("/vpn/disconnect", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": app.Disconnect()})
+	})
 
-    mux.HandleFunc("/vpn/disconnect", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        writeJSON(w, map[string]bool{"ok": app.Disconnect()})
-    })
+	mux.HandleFunc("/vpn/reconnect", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		var body connectBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		if err := validateTunnelAuth(app); err != nil {
+			http.Error(w, err.Error(), http.StatusPreconditionRequired)
+			return
+		}
+		_ = app.Disconnect()
+		writeJSON(w, map[string]bool{"ok": app.Connect(body.ID)})
+	})
 
-    mux.HandleFunc("/vpn/reconnect", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        var body connectBody
-        if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-            http.Error(w, "bad json", http.StatusBadRequest)
-            return
-        }
-        if err := validateTunnelAuth(app); err != nil { http.Error(w, err.Error(), http.StatusPreconditionRequired); return }
-        _ = app.Disconnect()
-        writeJSON(w, map[string]bool{"ok": app.Connect(body.ID)})
-    })
+	mux.HandleFunc("/logs", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeRaw(w, app.GetLogsJson())
+	})
 
-    mux.HandleFunc("/logs", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeRaw(w, app.GetLogsJson())
-    })
+	mux.HandleFunc("/logs/tail", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeRaw(w, app.GetLogsJson())
+	})
 
-    mux.HandleFunc("/logs/tail", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeRaw(w, app.GetLogsJson())
-    })
+	mux.HandleFunc("/logs/clear", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": app.ClearLogs()})
+	})
 
-    mux.HandleFunc("/logs/clear", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        writeJSON(w, map[string]bool{"ok": app.ClearLogs()})
-    })
+	mux.HandleFunc("/socks5/status", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "SOCKS5 status is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		if app == nil || app.socks == nil {
+			writeJSON(w, Socks5Status{Interface: "eth1", Protocol: "SOCKS5", Auth: "no-auth"})
+			return
+		}
+		writeJSON(w, app.socks.Status())
+	})
 
-    mux.HandleFunc("/socks5/status", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        if !privateClient(r) {
-            http.Error(w, "SOCKS5 status is available only from LAN or Tailscale", http.StatusForbidden)
-            return
-        }
-        if app == nil || app.socks == nil {
-            writeJSON(w, Socks5Status{Interface: "eth1", Protocol: "SOCKS5", Auth: "no-auth"})
-            return
-        }
-        writeJSON(w, app.socks.Status())
-    })
+	mux.HandleFunc("/singbox/status", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		status := singBox.Status()
+		_, err := os.Stat(singBox.configPath)
+		writeJSON(w, map[string]any{"running": status.Running, "pid": status.PID, "configured": err == nil, "log_path": status.LogPath, "error": status.Error})
+	})
+	mux.HandleFunc("/singbox/config", func(w http.ResponseWriter, r *http.Request) {
+		if !privateClient(r) {
+			http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			input, err := singBox.LoadConfig()
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					writeJSON(w, map[string]any{"configured": false})
+					return
+				}
+				http.Error(w, "unable to load sing-box config: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, map[string]any{"configured": true, "config": input})
+		case http.MethodPut:
+			var input singBoxConfigInput
+			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&input); err != nil {
+				http.Error(w, "invalid sing-box config request", http.StatusBadRequest)
+				return
+			}
+			applied, err := singBox.ApplyConfig(input)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+				return
+			}
+			writeJSON(w, map[string]bool{"ok": true, "applied": applied})
+		default:
+			w.Header().Set("Allow", "GET, PUT")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/singbox/rulesets", func(w http.ResponseWriter, r *http.Request) {
+		if !privateClient(r) {
+			http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		sets, err := singBox.ListRuleSets()
+		if err != nil {
+			http.Error(w, "unable to list Rule Sets: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"rule_sets": sets})
+	})
+	mux.HandleFunc("/singbox/rulesets/", func(w http.ResponseWriter, r *http.Request) {
+		if !privateClient(r) {
+			http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		if !method(w, r, http.MethodDelete) {
+			return
+		}
+		tag := strings.TrimPrefix(r.URL.Path, "/singbox/rulesets/")
+		if tag == "" || strings.Contains(tag, "/") {
+			http.Error(w, "invalid Rule Set tag", http.StatusBadRequest)
+			return
+		}
+		if err := singBox.DeleteRuleSet(tag); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("/singbox/rulesets/upload", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, (16<<20)+(1<<20))
+		if err := r.ParseMultipartForm(16 << 20); err != nil {
+			http.Error(w, "invalid Rule Set upload or file exceeds 16 MiB", http.StatusBadRequest)
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "missing Rule Set file", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		data, err := io.ReadAll(io.LimitReader(file, (16<<20)+1))
+		if err != nil || len(data) > 16<<20 {
+			http.Error(w, "unable to read Rule Set file or file exceeds 16 MiB", http.StatusBadRequest)
+			return
+		}
+		result, err := singBox.UploadRuleSet(strings.TrimSpace(r.FormValue("tag")), header.Filename, data)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		writeJSON(w, result)
+	})
+	mux.HandleFunc("/singbox/start", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		if err := singBox.Start(r.Context()); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("/singbox/stop", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		if err := singBox.Stop(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("/singbox/logs", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "sing-box logs are available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if err := singBox.CopyLogs(w); err != nil {
+			if os.IsNotExist(err) {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			http.Error(w, "unable to read sing-box log", http.StatusInternalServerError)
+		}
+	})
 
-    mux.HandleFunc("/singbox/status", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
-        status := singBox.Status()
-        _, err := os.Stat(singBox.configPath)
-        writeJSON(w, map[string]any{"running": status.Running, "pid": status.PID, "configured": err == nil, "log_path": status.LogPath, "error": status.Error})
-    })
-    mux.HandleFunc("/singbox/config", func(w http.ResponseWriter, r *http.Request) {
-        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
-        switch r.Method {
-        case http.MethodGet:
-            input, err := singBox.LoadConfig()
-            if err != nil {
-                if errors.Is(err, os.ErrNotExist) { writeJSON(w, map[string]any{"configured": false}); return }
-                http.Error(w, "unable to load sing-box config: "+err.Error(), http.StatusInternalServerError); return
-            }
-            writeJSON(w, map[string]any{"configured": true, "config": input})
-        case http.MethodPut:
-            var input singBoxConfigInput
-            decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-            decoder.DisallowUnknownFields()
-            if err := decoder.Decode(&input); err != nil { http.Error(w, "invalid sing-box config request", http.StatusBadRequest); return }
-            applied, err := singBox.ApplyConfig(input)
-            if err != nil { http.Error(w, err.Error(), http.StatusUnprocessableEntity); return }
-            writeJSON(w, map[string]bool{"ok": true, "applied": applied})
-        default:
-            w.Header().Set("Allow", "GET, PUT")
-            http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        }
-    })
-    mux.HandleFunc("/singbox/rulesets", func(w http.ResponseWriter, r *http.Request) {
-        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
-        if !method(w, r, http.MethodGet) { return }
-        sets, err := singBox.ListRuleSets()
-        if err != nil { http.Error(w, "unable to list Rule Sets: "+err.Error(), http.StatusInternalServerError); return }
-        writeJSON(w, map[string]any{"rule_sets": sets})
-    })
-    mux.HandleFunc("/singbox/rulesets/", func(w http.ResponseWriter, r *http.Request) {
-        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
-        if !method(w, r, http.MethodDelete) { return }
-        tag := strings.TrimPrefix(r.URL.Path, "/singbox/rulesets/")
-        if tag == "" || strings.Contains(tag, "/") { http.Error(w, "invalid Rule Set tag", http.StatusBadRequest); return }
-        if err := singBox.DeleteRuleSet(tag); err != nil { http.Error(w, err.Error(), http.StatusConflict); return }
-        writeJSON(w, map[string]bool{"ok": true})
-    })
-    mux.HandleFunc("/singbox/rulesets/upload", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
-        r.Body = http.MaxBytesReader(w, r.Body, (16<<20)+(1<<20))
-        if err := r.ParseMultipartForm(16 << 20); err != nil { http.Error(w, "invalid Rule Set upload or file exceeds 16 MiB", http.StatusBadRequest); return }
-        file, header, err := r.FormFile("file"); if err != nil { http.Error(w, "missing Rule Set file", http.StatusBadRequest); return }; defer file.Close()
-        data, err := io.ReadAll(io.LimitReader(file, (16<<20)+1)); if err != nil || len(data)>16<<20 { http.Error(w, "unable to read Rule Set file or file exceeds 16 MiB", http.StatusBadRequest); return }
-        result, err := singBox.UploadRuleSet(strings.TrimSpace(r.FormValue("tag")), header.Filename, data); if err != nil { http.Error(w, err.Error(), http.StatusUnprocessableEntity); return }
-        writeJSON(w, result)
-    })
-    mux.HandleFunc("/singbox/start", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
-        if err := singBox.Start(r.Context()); err != nil { http.Error(w, err.Error(), http.StatusConflict); return }
-        writeJSON(w, map[string]bool{"ok": true})
-    })
-    mux.HandleFunc("/singbox/stop", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        if !privateClient(r) { http.Error(w, "sing-box control is available only from LAN or Tailscale", http.StatusForbidden); return }
-        if err := singBox.Stop(); err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
-        writeJSON(w, map[string]bool{"ok": true})
-    })
-    mux.HandleFunc("/singbox/logs", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        if !privateClient(r) { http.Error(w, "sing-box logs are available only from LAN or Tailscale", http.StatusForbidden); return }
-        w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-        if err := singBox.CopyLogs(w); err != nil {
-            if os.IsNotExist(err) { w.WriteHeader(http.StatusNoContent); return }
-            http.Error(w, "unable to read sing-box log", http.StatusInternalServerError)
-        }
-    })
+	mux.HandleFunc("/deploy", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "deployment is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		var raw json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": libs.DeployProtocol(string(raw))})
+	})
+	mux.HandleFunc("/deploy/log", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "deployment status is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		writeRaw(w, mustJSON(libs.DeployLog()))
+	})
+	mux.HandleFunc("/deploy/status", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "deployment status is available only from LAN or Tailscale", http.StatusForbidden)
+			return
+		}
+		writeJSON(w, map[string]bool{"deploying": libs.DeployBusy()})
+	})
 
-    mux.HandleFunc("/deploy", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        if !privateClient(r) {
-            http.Error(w, "deployment is available only from LAN or Tailscale", http.StatusForbidden)
-            return
-        }
-        var raw json.RawMessage
-        if err := json.NewDecoder(r.Body).Decode(&raw); err != nil { http.Error(w, "bad json", http.StatusBadRequest); return }
-        writeJSON(w, map[string]bool{"ok": libs.DeployProtocol(string(raw))})
-    })
-    mux.HandleFunc("/deploy/log", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        if !privateClient(r) {
-            http.Error(w, "deployment status is available only from LAN or Tailscale", http.StatusForbidden)
-            return
-        }
-        writeRaw(w, mustJSON(libs.DeployLog()))
-    })
-    mux.HandleFunc("/deploy/status", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        if !privateClient(r) {
-            http.Error(w, "deployment status is available only from LAN or Tailscale", http.StatusForbidden)
-            return
-        }
-        writeJSON(w, map[string]bool{"deploying": libs.DeployBusy()})
-    })
+	mux.HandleFunc("/updates/core", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": app.UpdateCore()})
+	})
+	mux.HandleFunc("/updates/core/wait", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": app.UpdateCoreAndWait()})
+	})
+	mux.HandleFunc("/updates/core/check", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeRaw(w, app.CheckUpdate())
+	})
+	mux.HandleFunc("/updates/core/status", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeJSON(w, map[string]bool{"downloading": app.IsCoreDownloading()})
+	})
+	mux.HandleFunc("/updates/lalune", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeJSON(w, app.CheckLaLuneUpdate())
+	})
+	mux.HandleFunc("/vk/state", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeJSON(w, app.GetVKTokenState())
+	})
+	mux.HandleFunc("/vk/login", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": app.LoginVK()})
+	})
+	mux.HandleFunc("/vk/import", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		if !privateClient(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		var req struct {
+			Token string `json:"token"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(w, map[string]any{"ok": false, "error": "Некорректный запрос"})
+			return
+		}
+		if err := app.core.SaveVKTokenInput(req.Token); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("/vk/delete", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": app.DeleteVKToken()})
+	})
+	mux.HandleFunc("/vk/validate", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeJSON(w, app.ValidateVKToken())
+	})
+	mux.HandleFunc("/vk/auto", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		vkAutoMu.Lock()
+		if vkAutoRunning {
+			vkAutoMu.Unlock()
+			writeRaw(w, "{\"pending\":true}")
+			return
+		}
+		vkAutoRunning = true
+		vkAutoResult = "{\"pending\":true}"
+		vkAutoMu.Unlock()
+		go func() {
+			result := app.RunVkAutoApiCalls()
+			vkAutoMu.Lock()
+			vkAutoResult = result
+			vkAutoRunning = false
+			vkAutoMu.Unlock()
+		}()
+		writeRaw(w, "{\"pending\":true}")
+	})
+	mux.HandleFunc("/vk/auto/poll", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		vkAutoMu.Lock()
+		result := vkAutoResult
+		vkAutoMu.Unlock()
+		writeRaw(w, result)
+	})
+	mux.HandleFunc("/vk/finish", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		var ids []string
+		if err := json.NewDecoder(r.Body).Decode(&ids); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": app.FinishVkCalls(ids)})
+	})
 
-    mux.HandleFunc("/updates/core", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        writeJSON(w, map[string]bool{"ok": app.UpdateCore()})
-    })
-    mux.HandleFunc("/updates/core/wait", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        writeJSON(w, map[string]bool{"ok": app.UpdateCoreAndWait()})
-    })
-    mux.HandleFunc("/updates/core/check", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeRaw(w, app.CheckUpdate())
-    })
-    mux.HandleFunc("/updates/core/status", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeJSON(w, map[string]bool{"downloading": app.IsCoreDownloading()})
-    })
-    mux.HandleFunc("/updates/lalune", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeJSON(w, app.CheckLaLuneUpdate())
-    })
-    mux.HandleFunc("/vk/state", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeJSON(w, app.GetVKTokenState())
-    })
-    mux.HandleFunc("/vk/login", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        writeJSON(w, map[string]bool{"ok": app.LoginVK()})
-    })
-    mux.HandleFunc("/vk/import", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        if !privateClient(r) { http.Error(w, "forbidden", http.StatusForbidden); return }
-        var req struct { Token string `json:"token"` }
-        if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
-            w.WriteHeader(http.StatusBadRequest)
-            writeJSON(w, map[string]any{"ok": false, "error": "Некорректный запрос"})
-            return
-        }
-        if err := app.core.SaveVKTokenInput(req.Token); err != nil {
-            w.WriteHeader(http.StatusBadRequest)
-            writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
-            return
-        }
-        writeJSON(w, map[string]bool{"ok": true})
-    })
-    mux.HandleFunc("/vk/delete", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        writeJSON(w, map[string]bool{"ok": app.DeleteVKToken()})
-    })
-    mux.HandleFunc("/vk/validate", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeJSON(w, app.ValidateVKToken())
-    })
-    mux.HandleFunc("/vk/auto", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        vkAutoMu.Lock()
-        if vkAutoRunning { vkAutoMu.Unlock(); writeRaw(w, "{\"pending\":true}"); return }
-        vkAutoRunning = true; vkAutoResult = "{\"pending\":true}"; vkAutoMu.Unlock()
-        go func() { result := app.RunVkAutoApiCalls(); vkAutoMu.Lock(); vkAutoResult = result; vkAutoRunning = false; vkAutoMu.Unlock() }()
-        writeRaw(w, "{\"pending\":true}")
-    })
-    mux.HandleFunc("/vk/auto/poll", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        vkAutoMu.Lock(); result := vkAutoResult; vkAutoMu.Unlock(); writeRaw(w, result)
-    })
-    mux.HandleFunc("/vk/finish", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        var ids []string
-        if err := json.NewDecoder(r.Body).Decode(&ids); err != nil { http.Error(w, "bad json", http.StatusBadRequest); return }
-        writeJSON(w, map[string]bool{"ok": app.FinishVkCalls(ids)})
-    })
+	mux.HandleFunc("/captcha/state", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodGet) {
+			return
+		}
+		writeJSON(w, captchaState(app))
+	})
+	mux.HandleFunc("/captcha/result", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		var body struct {
+			SessionToken string `json:"sessionToken"`
+			Result       string `json:"result"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": finishCaptcha(app, body.SessionToken, body.Result)})
+	})
+	mux.HandleFunc("/captcha/cancel", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		captchaMu.Lock()
+		token := captchaSessionToken
+		captchaMu.Unlock()
+		ok := token != "" && finishCaptcha(app, token, "error:cancelled")
+		writeJSON(w, map[string]bool{"ok": ok})
+	})
+	mux.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		if !method(w, r, http.MethodPost) {
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+		}()
+	})
 
-    mux.HandleFunc("/captcha/state", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodGet) { return }
-        writeJSON(w, captchaState(app))
-    })
-    mux.HandleFunc("/captcha/result", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        var body struct { SessionToken string `json:"sessionToken"`; Result string `json:"result"` }
-        if err := json.NewDecoder(r.Body).Decode(&body); err != nil { http.Error(w, "bad json", http.StatusBadRequest); return }
-        writeJSON(w, map[string]bool{"ok": finishCaptcha(app, body.SessionToken, body.Result)})
-    })
-    mux.HandleFunc("/captcha/cancel", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        captchaMu.Lock(); token := captchaSessionToken; captchaMu.Unlock()
-        ok := token != "" && finishCaptcha(app, token, "error:cancelled")
-        writeJSON(w, map[string]bool{"ok": ok})
-    })
-    mux.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
-        if !method(w, r, http.MethodPost) { return }
-        writeJSON(w, map[string]bool{"ok": true})
-        go func() {
-            time.Sleep(100 * time.Millisecond)
-            _ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
-        }()
-    })
-
-    return mux
+	return mux
 }
 
+// panelSessionAuth stores opaque, random, short-lived browser sessions in RAM.
+// The existing Basic header remains accepted only for explicit API clients.
+// No credentials or sessions are persisted to disk, logs, URLs or localStorage.
+type panelSessionAuth struct {
+	mu       sync.Mutex
+	sessions map[string]time.Time
+	failures map[string]panelLoginFailures
+}
+type panelLoginFailures struct {
+	count int
+	reset time.Time
+}
 
-// panelSecurity protects both the UI and every API route with the same
-// per-install HTTP Basic credential. The panel is intentionally LAN reachable;
-// authentication is therefore mandatory and origin checks prevent browser CSRF.
-func panelSecurity(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Cache-Control", "no-store")
-        w.Header().Set("X-Content-Type-Options", "nosniff")
-        w.Header().Set("X-Frame-Options", "DENY")
-        w.Header().Set("Referrer-Policy", "same-origin")
+func newPanelSessionAuth() *panelSessionAuth {
+	return &panelSessionAuth{sessions: make(map[string]time.Time), failures: make(map[string]panelLoginFailures)}
+}
 
-        expected := os.Getenv("LALUNE_PANEL_PASSWORD")
-        if expected == "" {
-            expected = os.Getenv("CSQTT_WEB_PASS")
-        }
-        expectedUser := os.Getenv("LALUNE_PANEL_USER")
-        if expectedUser == "" {
-            expectedUser = os.Getenv("CSQTT_WEB_USER")
-        }
-        if expectedUser == "" {
-            expectedUser = "admin"
-        }
-        user, password, ok := r.BasicAuth()
-        if expected == "" {
-            http.Error(w, "panel authentication is not configured", http.StatusServiceUnavailable)
-            return
-        }
-        if !ok || subtle.ConstantTimeCompare([]byte(user), []byte(expectedUser)) != 1 ||
-            subtle.ConstantTimeCompare([]byte(password), []byte(expected)) != 1 {
-            w.Header().Set("WWW-Authenticate", `Basic realm="CSQTT Core", charset="UTF-8"`)
-            http.Error(w, "authentication required", http.StatusUnauthorized)
-            return
-        }
+var sharedPanelAuth = newPanelSessionAuth()
 
-        if r.Method != http.MethodGet && r.Method != http.MethodHead {
-            origin := r.Header.Get("Origin")
-            parsed, err := url.Parse(origin)
-            scheme := "http"
-            if r.TLS != nil { scheme = "https" }
-            if err != nil || parsed.Scheme != scheme || parsed.Host == "" ||
-                !strings.EqualFold(parsed.Host, r.Host) || parsed.User != nil {
-                http.Error(w, "same-origin request required", http.StatusForbidden)
-                return
-            }
-        }
-        next.ServeHTTP(w, r)
-    })
+func panelCredentials() (string, string) {
+	password := os.Getenv("LALUNE_PANEL_PASSWORD")
+	if password == "" {
+		password = os.Getenv("CSQTT_WEB_PASS")
+	}
+	user := os.Getenv("LALUNE_PANEL_USER")
+	if user == "" {
+		user = os.Getenv("CSQTT_WEB_USER")
+	}
+	if user == "" {
+		user = "admin"
+	}
+	return user, password
+}
+
+func panelCredentialsMatch(user, password, actualUser, actualPassword string) bool {
+	if actualPassword == "" || len(user) > 100 || len(password) > 512 {
+		return false
+	}
+	hUser := sha256.Sum256([]byte(user))
+	hPass := sha256.Sum256([]byte(password))
+	expectedUser := sha256.Sum256([]byte(actualUser))
+	expectedPass := sha256.Sum256([]byte(actualPassword))
+	return subtle.ConstantTimeCompare(hUser[:], expectedUser[:]) == 1 &&
+		subtle.ConstantTimeCompare(hPass[:], expectedPass[:]) == 1
+}
+
+func (a *panelSessionAuth) sessionOK(r *http.Request) bool {
+	cookie, err := r.Cookie("csqtt_core_session")
+	if err != nil || len(cookie.Value) != 43 {
+		return false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	until, ok := a.sessions[cookie.Value]
+	if !ok {
+		return false
+	}
+	if time.Now().After(until) {
+		delete(a.sessions, cookie.Value)
+		return false
+	}
+	return true
+}
+
+func (a *panelSessionAuth) basicOK(r *http.Request) bool {
+	user, password, ok := r.BasicAuth()
+	if !ok {
+		return false
+	}
+	expectedUser, expectedPassword := panelCredentials()
+	return panelCredentialsMatch(user, password, expectedUser, expectedPassword)
+}
+
+func panelSameOrigin(r *http.Request) bool {
+	parsed, err := url.Parse(r.Header.Get("Origin"))
+	if err != nil || parsed.User != nil || parsed.Host == "" ||
+		parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" {
+		return false
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return parsed.Scheme == scheme && strings.EqualFold(parsed.Host, r.Host)
+}
+
+func panelSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "same-origin")
+	w.Header().Set("Vary", "Cookie, Authorization")
+}
+
+func (a *panelSessionAuth) protect(next http.Handler, ui bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panelSecurityHeaders(w)
+		_, expectedPassword := panelCredentials()
+		if expectedPassword == "" {
+			http.Error(w, "panel authentication is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		// A cached HTTP Basic header must not bypass the new browser login.
+		browserUI := ui && r.URL.Path != "/api" && !strings.HasPrefix(r.URL.Path, "/api/")
+		authenticated := a.sessionOK(r)
+		if !authenticated && !browserUI {
+			authenticated = a.basicOK(r) // backward-compatible API automation only
+		}
+		if !authenticated {
+			if browserUI && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+			} else {
+				// Deliberately no WWW-Authenticate: never trigger native browser dialog.
+				http.Error(w, "authentication required", http.StatusUnauthorized)
+			}
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !panelSameOrigin(r) {
+			http.Error(w, "same-origin request required", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Keep the original test/API entrypoint while introducing shared browser sessions.
+func panelSecurity(next http.Handler) http.Handler { return sharedPanelAuth.protect(next, false) }
+
+func panelLoginClientID(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip != nil && ip.IsLoopback() {
+		// Only the local reverse proxy can set a meaningful X-Real-IP.
+		forwarded := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP")))
+		if forwarded != nil {
+			return forwarded.String()
+		}
+	}
+	if ip != nil {
+		return ip.String()
+	}
+	return "unknown"
+}
+
+func (a *panelSessionAuth) loginBlocked(client string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	entry := a.failures[client]
+	if !entry.reset.IsZero() && time.Now().After(entry.reset) {
+		delete(a.failures, client)
+		return false
+	}
+	return entry.count >= 8
+}
+
+func (a *panelSessionAuth) loginFailed(client string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	entry := a.failures[client]
+	if entry.reset.IsZero() || time.Now().After(entry.reset) {
+		entry = panelLoginFailures{reset: time.Now().Add(5 * time.Minute)}
+	}
+	entry.count++
+	// Bounded memory even when a large number of spoofed client IDs is sent.
+	if len(a.failures) >= 1024 {
+		for key := range a.failures {
+			delete(a.failures, key)
+			break
+		}
+	}
+	a.failures[client] = entry
+}
+
+func (a *panelSessionAuth) createSession(w http.ResponseWriter, r *http.Request, client string) error {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		return err
+	}
+	session := base64.RawURLEncoding.EncodeToString(secret)
+	expiry := time.Now().Add(8 * time.Hour)
+	a.mu.Lock()
+	for key, until := range a.sessions {
+		if time.Now().After(until) {
+			delete(a.sessions, key)
+		}
+	}
+	if len(a.sessions) >= 256 {
+		for key := range a.sessions {
+			delete(a.sessions, key)
+			break
+		}
+	}
+	a.sessions[session] = expiry
+	delete(a.failures, client)
+	a.mu.Unlock()
+	http.SetCookie(w, &http.Cookie{
+		Name: "csqtt_core_session", Value: session, Path: "/",
+		MaxAge: 8 * 3600, Expires: expiry, HttpOnly: true,
+		Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode,
+	})
+	return nil
+}
+
+func (a *panelSessionAuth) loginPage(w http.ResponseWriter, r *http.Request, files fs.FS) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	_, password := panelCredentials()
+	if password == "" {
+		http.Error(w, "panel authentication is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if a.sessionOK(r) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	// Login assets are embedded locally: no network dependencies or CDN/fonts.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	data, err := fs.ReadFile(files, "login.html")
+	if err != nil {
+		http.Error(w, "login page unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(data)
+	}
+}
+
+func (a *panelSessionAuth) handleLogin(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !panelSameOrigin(r) {
+		http.Error(w, "same-origin request required", http.StatusForbidden)
+		return
+	}
+	_, configuredPassword := panelCredentials()
+	if configuredPassword == "" {
+		http.Error(w, "panel authentication is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	client := panelLoginClientID(r)
+	if a.loginBlocked(client) {
+		http.Redirect(w, r, "/login?error=2", http.StatusSeeOther)
+		return
+	}
+	if r.Header.Get("Content-Type") != "application/x-www-form-urlencoded" &&
+		!strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded;") {
+		http.Error(w, "expected form data", http.StatusUnsupportedMediaType)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 2048)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid login form", http.StatusBadRequest)
+		return
+	}
+	username, password := r.PostForm.Get("username"), r.PostForm.Get("password")
+	configuredUser, configuredPassword := panelCredentials()
+	if !panelCredentialsMatch(username, password, configuredUser, configuredPassword) {
+		a.loginFailed(client)
+		http.Redirect(w, r, "/login?error=1", http.StatusSeeOther)
+		return
+	}
+	if err := a.createSession(w, r, client); err != nil {
+		http.Error(w, "cannot start session", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (a *panelSessionAuth) handleLogout(w http.ResponseWriter, r *http.Request) {
+	panelSecurityHeaders(w)
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !panelSameOrigin(r) {
+		http.Error(w, "same-origin request required", http.StatusForbidden)
+		return
+	}
+	if cookie, err := r.Cookie("csqtt_core_session"); err == nil {
+		a.mu.Lock()
+		delete(a.sessions, cookie.Value)
+		a.mu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: "csqtt_core_session", Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode,
+	})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func panelUIAuth(next http.Handler, files fs.FS) http.Handler {
+	return sharedPanelAuth.ui(next, files)
+}
+
+func (a *panelSessionAuth) ui(next http.Handler, files fs.FS) http.Handler {
+	protected := a.protect(next, true)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/login":
+			a.loginPage(w, r, files)
+		case "/auth/login":
+			a.handleLogin(w, r)
+		case "/auth/logout":
+			a.handleLogout(w, r)
+		default:
+			protected.ServeHTTP(w, r)
+		}
+	})
 }
 
 // panelAPIHandler maps the public /api prefix to backend routes. Sharing it
 // with tests keeps the browser's public URL and protected handler in sync.
 func panelAPIHandler(api http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if r.URL.Path != "/api" && !strings.HasPrefix(r.URL.Path, "/api/") {
-            http.NotFound(w, r)
-            return
-        }
-        u := *r.URL
-        u.Path = strings.TrimPrefix(r.URL.Path, "/api")
-        if u.Path == "" { u.Path = "/" }
-        rr := r.Clone(r.Context())
-        rr.URL = &u
-        api.ServeHTTP(w, rr)
-    })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api" && !strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+		u := *r.URL
+		u.Path = strings.TrimPrefix(r.URL.Path, "/api")
+		if u.Path == "" {
+			u.Path = "/"
+		}
+		rr := r.Clone(r.Context())
+		rr.URL = &u
+		api.ServeHTTP(w, rr)
+	})
 }
 
 func panelListenAddress() (string, error) {
-    port := strings.TrimSpace(os.Getenv("CSQTT_LALUNE_WEB_PORT"))
-    if port == "" { return panelListen, nil }
-    n, err := strconv.Atoi(port)
-    if err != nil || n < 1 || n > 65535 { return "", fmt.Errorf("invalid CSQTT_LALUNE_WEB_PORT %q", port) }
-    return net.JoinHostPort("0.0.0.0", strconv.Itoa(n)), nil
+	port := strings.TrimSpace(os.Getenv("CSQTT_LALUNE_WEB_PORT"))
+	if port == "" {
+		return panelListen, nil
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return "", fmt.Errorf("invalid CSQTT_LALUNE_WEB_PORT %q", port)
+	}
+	return net.JoinHostPort("0.0.0.0", strconv.Itoa(n)), nil
 }
 
 func main() {
-    configuredPanelListen, listenErr := panelListenAddress()
-    if listenErr != nil { panic(listenErr) }
-    app := NewApp()
-    // The CSQTT Linux runner owns both eth1 and loopback SOCKS5 listeners.
-    // The loopback listener is started only after the TUN packet bridge is ready;
-    // sing-box connects to it directly, with no extra TCP forwarding process.
-    app.startup(context.Background())
-    // Explicit opt-in only: a manually stopped Sing-box must not start
-    // after reboot unless the systemd unit deliberately enables it.
-    if err := defaultSingBoxManager().AutoStartConfiguredOnBoot(
-        context.Background(), strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_AUTOSTART"))); err != nil {
-        app.core.AddLog(fmt.Sprintf("[sing-box] Автозапуск отклонён: %v", err))
-    }
+	configuredPanelListen, listenErr := panelListenAddress()
+	if listenErr != nil {
+		panic(listenErr)
+	}
+	app := NewApp()
+	// The CSQTT Linux runner owns both eth1 and loopback SOCKS5 listeners.
+	// The loopback listener is started only after the TUN packet bridge is ready;
+	// sing-box connects to it directly, with no extra TCP forwarding process.
+	app.startup(context.Background())
+	// Explicit opt-in only: a manually stopped Sing-box must not start
+	// after reboot unless the systemd unit deliberately enables it.
+	if err := defaultSingBoxManager().AutoStartConfiguredOnBoot(
+		context.Background(), strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_AUTOSTART"))); err != nil {
+		app.core.AddLog(fmt.Sprintf("[sing-box] Автозапуск отклонён: %v", err))
+	}
 
-    api := apiHandler(app)
-    apiRoutes := panelAPIHandler(api)
-    secureAPI := panelSecurity(api)
-    srv := &http.Server{Addr: headlessListen, Handler: secureAPI, ReadHeaderTimeout: 5 * time.Second}
-    panelFS, _ := fs.Sub(panelAssets, "frontend")
-    panelHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
-            apiRoutes.ServeHTTP(w, r)
-            return
-        }
-        p := strings.TrimPrefix(r.URL.Path, "/")
-        if p == "" { p = "index.html" }
-        if _, err := fs.Stat(panelFS, p); err != nil { p = "index.html" }
-        http.ServeFileFS(w, r, panelFS, p)
-    })
-    panelSrv := &http.Server{Addr: configuredPanelListen, Handler: panelSecurity(panelHandler), ReadHeaderTimeout: 5 * time.Second}
+	api := apiHandler(app)
+	apiRoutes := panelAPIHandler(api)
+	secureAPI := panelSecurity(api)
+	srv := &http.Server{Addr: headlessListen, Handler: secureAPI, ReadHeaderTimeout: 5 * time.Second}
+	panelFS, _ := fs.Sub(panelAssets, "frontend")
+	panelHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+			apiRoutes.ServeHTTP(w, r)
+			return
+		}
+		p := strings.TrimPrefix(r.URL.Path, "/")
+		if p == "" {
+			p = "index.html"
+		}
+		if _, err := fs.Stat(panelFS, p); err != nil {
+			p = "index.html"
+		}
+		http.ServeFileFS(w, r, panelFS, p)
+	})
+	panelSrv := &http.Server{Addr: configuredPanelListen, Handler: panelUIAuth(panelHandler, panelFS), ReadHeaderTimeout: 5 * time.Second}
 
-    errCh := make(chan error, 2)
-    go func() { app.core.AddLog(fmt.Sprintf("[INFO] Headless API: http://%s", headlessListen)); errCh <- srv.ListenAndServe() }()
-    go func() { app.core.AddLog(fmt.Sprintf("[INFO] CSQTT Core panel: http://%s", configuredPanelListen)); errCh <- panelSrv.ListenAndServe() }()
+	errCh := make(chan error, 2)
+	go func() {
+		app.core.AddLog(fmt.Sprintf("[INFO] Headless API: http://%s", headlessListen))
+		errCh <- srv.ListenAndServe()
+	}()
+	go func() {
+		app.core.AddLog(fmt.Sprintf("[INFO] CSQTT Core panel: http://%s", configuredPanelListen))
+		errCh <- panelSrv.ListenAndServe()
+	}()
 
-    sigCh := make(chan os.Signal, 1)
-    signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-    select {
-    case sig := <-sigCh:
-        app.core.AddLog(fmt.Sprintf("[INFO] Shutdown signal: %s", sig))
-    case err := <-errCh:
-        app.core.AddLog(fmt.Sprintf("[ERROR] Headless API stopped: %v", err))
-    }
+	select {
+	case sig := <-sigCh:
+		app.core.AddLog(fmt.Sprintf("[INFO] Shutdown signal: %s", sig))
+	case err := <-errCh:
+		app.core.AddLog(fmt.Sprintf("[ERROR] Headless API stopped: %v", err))
+	}
 
-    if err := defaultSingBoxManager().Stop(); err != nil {
-        app.core.AddLog(fmt.Sprintf("[sing-box] Shutdown error: %v", err))
-    }
-    _ = app.Disconnect()
-    _ = srv.Shutdown(context.Background())
-    _ = panelSrv.Shutdown(context.Background())
+	if err := defaultSingBoxManager().Stop(); err != nil {
+		app.core.AddLog(fmt.Sprintf("[sing-box] Shutdown error: %v", err))
+	}
+	_ = app.Disconnect()
+	_ = srv.Shutdown(context.Background())
+	_ = panelSrv.Shutdown(context.Background())
 }
