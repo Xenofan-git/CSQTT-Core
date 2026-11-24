@@ -7,6 +7,11 @@ on:
       - test/csqtt-core-linux-unified-253-20261122
     paths:
       - adapt/csqtt-panel-preview.html
+      - adapt/csqtt-login.html
+      - adapt/favicon.svg
+      - adapt/favicon.ico
+      - adapt/apple-touch-icon.png
+      - adapt/test-csqtt-favicon-contract.py
       - adapt/test-csqtt-panel-browser.py
       - adapt/test-csqtt-panel-contract.py
       - adapt/test-csqtt-panel-api-method-contract.py
@@ -21,6 +26,11 @@ on:
   pull_request:
     paths:
       - adapt/csqtt-panel-preview.html
+      - adapt/csqtt-login.html
+      - adapt/favicon.svg
+      - adapt/favicon.ico
+      - adapt/apple-touch-icon.png
+      - adapt/test-csqtt-favicon-contract.py
       - adapt/test-csqtt-panel-browser.py
       - adapt/test-csqtt-panel-contract.py
       - adapt/test-csqtt-panel-api-method-contract.py
@@ -52,6 +62,7 @@ jobs:
           python adapt/test-csqtt-panel-api-method-contract.py
           python adapt/test-csqtt-core-branding.py
           python adapt/test-csqtt-core-update-contract.py
+          python adapt/test-csqtt-favicon-contract.py
       - name: Prepare isolated Chromium/Playwright browser test
         run: |
           python -m pip install --disable-pip-version-check 'playwright==1.56.0'

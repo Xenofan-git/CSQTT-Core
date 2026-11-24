@@ -942,9 +942,9 @@ func TestBrandedFaviconsPublicBeforeLoginAndMethodSafe(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(),
-		"href=\"/favicon.svg\"") || !strings.Contains(rec.Body.String(),
-		"href=\"/favicon.ico\"") || !strings.Contains(rec.Body.String(),
-		"href=\"/apple-touch-icon.png\"") {
+		"href=\"/favicon.svg?v=blue-c-white-20261124\"") || !strings.Contains(rec.Body.String(),
+		"href=\"/favicon.ico?v=blue-c-white-20261124\"") || !strings.Contains(rec.Body.String(),
+		"href=\"/apple-touch-icon.png?v=blue-c-white-20261124\"") {
 		t.Fatalf("login page icon links missing: HTTP %d", rec.Code)
 	}
 	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "img-src 'self'") {
