@@ -440,9 +440,11 @@ def main():
                     socks5_state["listening"] = True
                     socks5_state["address"] = "192.168.4.26:12500"
                 if name == "direct":
-                    # Direct editor is a full-screen dialog; close it before using bottom navigation again.
+                    # Direct editor is a regular page, not a fixed full-screen overlay.
+                    assert page.locator("#page-direct .route-dialog").evaluate("el => getComputedStyle(el).position") == "static"
+                    assert page.locator("#page-direct").evaluate("el => getComputedStyle(el).position") == "static"
                     page.locator("#routeClose").click()
-                    assert page.locator("#page-connect").evaluate("el => el.classList.contains('active')")
+                    assert page.locator("#page-route").evaluate("el => el.classList.contains('active')")
 
             page.locator('button[data-page="route"]').click()
             assert page.locator("#page-route").evaluate("el => el.classList.contains('active')")
@@ -751,6 +753,7 @@ def main():
                     delete:rect('#uninstallCsqtt'),
                     install:rect('#startDeploy'),
                     authorize:rect('#editDeployAuth'),
+                    status:rect('#deployState'),
                     overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,
                   };
                 }""")
@@ -764,6 +767,81 @@ def main():
                 assert dims["delete"]["right"]+6 < dims["install"]["left"], (width,dims)
                 assert dims["delete"]["height"] >= 50 and dims["install"]["height"] >= 50, (width,dims)
                 assert dims["authorize"]["height"] >= 50 and dims["overflow"] <= 1, (width,dims)
+                assert abs(target["left"]-dims["status"]["left"]) <= 1.5, (width,dims)
+                assert abs(target["right"]-dims["status"]["right"]) <= 1.5, (width,dims)
+                assert dims["status"]["top"] >= dims["authorize"]["top"] + dims["authorize"]["height"], (width,dims)
+
+            # Check the other three layouts at the same breakpoints.
+            for width in WIDTHS:
+                page.set_viewport_size({"width":width,"height":850})
+                page.locator('button[data-page="direct"]').click()
+                d=page.evaluate("""() => {
+                  const box=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height}};
+                  const root=document.querySelector('#page-direct');
+                  return {
+                    pagePosition:getComputedStyle(root).position,
+                    panelPosition:getComputedStyle(root.querySelector('.route-dialog')).position,
+                    panel:box(root.querySelector('.route-dialog')),
+                    fields:[...root.querySelectorAll('textarea')].map(box),
+                    footer:box(root.querySelector('.route-footer')),
+                    overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth
+                  };
+                }""")
+                assert d["pagePosition"]=="static" and d["panelPosition"]=="static", (width,d)
+                assert all(abs(v["x"]-d["fields"][0]["x"]) < 1 for v in d["fields"]), (width,d)
+                assert all(v["right"] <= d["panel"]["right"] - 10 for v in d["fields"]), (width,d)
+                assert d["footer"]["y"] > d["fields"][-1]["bottom"], (width,d)
+                assert d["overflow"] <= 1, (width,d)
+
+                page.locator('button[data-page="route"]').click()
+                route=page.evaluate("""() => {
+                  const cards=[...document.querySelectorAll('#singboxRouteRuleEditor .route-rule')];
+                  const get=e=>{const b=e.getBoundingClientRect();return {left:b.left,right:b.right,top:b.top}};
+                  return {
+                    toggles:cards.map(c=>get(c.querySelector('.route-rule-toggle'))),
+                    moves:cards.map(c=>get(c.querySelector('.route-rule-moves'))),
+                    checks:cards.map(c=>get(c.querySelector('[data-select-route-rule]'))),
+                    editorEnabled:get(document.querySelector('.route-rule-editor-header [data-field="Enabled"]')),
+                    headerHeight:document.querySelector('.route-rule-editor-header [data-field="Enabled"]').getBoundingClientRect().height,
+                    overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,
+                  };
+                }""")
+                assert len(route["toggles"])==2, (width,route)
+                assert abs(route["toggles"][0]["left"]-route["toggles"][1]["left"])<=1.5, (width,route)
+                assert all(move["right"] < toggle["left"] for move,toggle in zip(route["moves"],route["toggles"])), (width,route)
+                assert route["headerHeight"] <= 30, (width,route)
+                assert route["overflow"] <= 1, (width,route)
+
+                page.locator('button[data-page="singbox"]').click()
+                sb=page.evaluate("""() => {
+                  const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {left:r.left,right:r.right,width:r.width}};
+                  return {
+                    field:rect('#page-singbox .card .field'),
+                    save:rect('#singboxSaveEngine'),
+                    load:rect('#singboxLoadEngine'),
+                    upload:rect('#singboxRuleSetUpload'),
+                    refresh:rect('#singboxRuleSetRefresh'),
+                    overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,
+                  };
+                }""")
+                assert abs(sb["field"]["left"]-sb["save"]["left"])<=1.5, (width,sb)
+                assert abs(sb["field"]["right"]-sb["load"]["right"])<=1.5, (width,sb)
+                assert abs(sb["upload"]["left"]-sb["field"]["left"])<=1.5, (width,sb)
+                assert abs(sb["refresh"]["right"]-sb["field"]["right"])<=1.5, (width,sb)
+                assert sb["overflow"]<=1, (width,sb)
+
+                page.locator('button[data-page="logs"]').click()
+                log=page.evaluate("""() => {
+                  const buttons=[...document.querySelectorAll('#page-logs .logs-actions button')];
+                  const parent=document.querySelector('#page-logs .logs-actions').getBoundingClientRect();
+                  return {visible:buttons.every(b=>b.getBoundingClientRect().width>60),
+                    names:buttons.map(b=>b.textContent.trim()),
+                    inside:buttons.every(b=>b.getBoundingClientRect().left>=parent.left-1&&b.getBoundingClientRect().right<=parent.right+1),
+                    overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth};
+                }""")
+                assert log["visible"] and log["inside"] and log["overflow"]<=1, (width,log)
+                assert log["names"]==["Выделить","Копировать","Очистить"], (width,log)
+
 
             # Selecting another profile must round-trip through the API and refresh
             # the profile-specific hash shown on the Tunnel page.
@@ -969,9 +1047,7 @@ def main():
                 "VK credential mode, transport, or CAPTCHA mode did not persist"
             )
 
-            # Logs follow the original CSQTT LogsTab: opening the tab loads the
-            # live log stream; the terminal exposes copy and clear actions only.
-            # There is intentionally no manual refresh control in the original UI.
+            # Logs have clearly labeled Select / Copy / Clear actions.
             page.locator('button[data-page="logs"]').click()
             page.wait_for_function("""() => document.querySelector("#logs").textContent.includes("Записей пока нет")""")
             assert any(method == "GET" and path == "/logs" for method, path, _ in calls), (
@@ -980,6 +1056,9 @@ def main():
             assert page.locator("#refreshLogs").count() == 0, (
                 "Logs must match the original copy/clear-only terminal controls"
             )
+            page.locator("#selectLogs").click()
+            selection=page.evaluate("() => window.getSelection().toString()")
+            assert "Записей пока нет" in selection, selection
             page.locator("#copyLogs").click()
             page.wait_for_function("""() => document.querySelector("#toast").textContent.includes("Журнал выделен") || document.querySelector("#toast").textContent.includes("Журнал скопирован")""")
             page.locator("#clearLogs").click()

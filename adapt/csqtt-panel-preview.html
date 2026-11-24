@@ -661,6 +661,118 @@ input[type="number"]::-webkit-outer-spin-button{
   #page-deploy .deploy-action-group{padding-inline:19px;}
 }
 
+
+/* Layout audit 2026-11-24: align Deploy status with the action/field column. */
+#page-deploy .deploy-action-group #deployState{
+  box-sizing:border-box;width:100%;min-width:0;max-width:100%;
+  margin:12px 0 0;overflow-wrap:anywhere;
+}
+/* Direct is a standard, scrollable page rather than a fixed modal. */
+#page-direct.route-page.active{
+  position:static;inset:auto;display:block;z-index:auto;
+  padding:0;margin:0;max-width:100%;min-width:0;
+}
+#page-direct .route-dialog{
+  display:block;position:static;width:100%;max-width:880px;height:auto;
+  min-height:0;overflow:visible;margin:16px auto;
+  padding:24px;border-radius:28px;box-shadow:var(--card-shadow);
+}
+#page-direct .route-title{gap:12px;flex-wrap:wrap;align-items:center}
+#page-direct .route-title h2{margin:0;flex:1 1 220px;font-size:20px}
+#page-direct #routeClose{flex:0 0 auto;min-height:42px;padding:8px 17px}
+#page-direct .direct-editor-hint{font-size:13px;line-height:1.5;margin:14px 0}
+#page-direct .route-list-field{display:grid;flex:none;min-height:0;gap:7px;margin:16px 0}
+#page-direct .route-list-field textarea{
+  display:block;flex:none;width:100%;height:160px;min-height:130px;max-height:none;
+  padding:14px 16px;border-radius:16px;resize:vertical;
+}
+#page-direct .route-footer{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:15px}
+#page-direct .route-footer button{min-height:48px;min-width:132px}
+#page-direct #routeMessage{box-sizing:border-box;width:100%;margin:12px 0 0}
+/* Explicit log actions with text, visual icons and real selection. */
+#page-logs .logs-card{display:flex;flex-direction:column;gap:12px;min-height:0;padding:22px;border-radius:28px}
+#page-logs .logs-card .console{
+  height:auto;min-height:220px;max-height:56vh;flex:1;
+  padding:12px 14px;background:#151619;border-radius:16px;
+  font-size:13px;line-height:1.65;white-space:pre-wrap;user-select:text;
+}
+#page-logs .logs-actions{
+  position:static;inset:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;
+  gap:9px;margin:0;padding:0;min-width:0;
+}
+#page-logs .logs-actions button{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  width:auto;flex:0 1 auto;min-width:118px;min-height:43px;
+  padding:9px 13px;border-radius:14px;
+  border:1px solid var(--line);background:var(--surface2);color:var(--text);
+  font-size:13px;font-weight:650;
+}
+#page-logs .logs-actions button svg{width:17px;height:17px;flex:0 0 17px}
+#page-logs .logs-actions .logs-clear{border-color:color-mix(in srgb,var(--red) 35%,var(--line));color:var(--red)}
+#page-logs .logs-actions button:hover{background:color-mix(in srgb,var(--blue) 9%,var(--surface2))}
+/* Rule card action columns: arrows left, vertically aligned toggles. */
+#page-route .route-rule-summary,
+#page-route .route-rule .route-rule-summary{
+  display:flex;flex-wrap:nowrap;justify-content:space-between;
+  align-items:center;gap:10px;min-width:0;min-height:48px;
+}
+#page-route .route-rule-heading{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0}
+#page-route .route-rule-grip{display:grid;place-items:center;flex:0 0 18px;width:18px;height:20px;font-size:0}
+#page-route .route-rule-grip svg{width:18px;height:18px}
+#page-route .route-rule-name{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+#page-route .route-rule-name b{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:14px;white-space:nowrap}
+#page-route .route-rule-name .route-rule-meta{display:block;max-width:100%;font-size:11px;color:var(--muted);text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+#page-route .route-rule-controls{
+  flex:0 0 auto;display:grid;grid-template-columns:68px 46px 90px;
+  gap:7px;align-items:center;justify-content:end;
+}
+#page-route .route-rule-moves{display:flex;align-items:center;justify-content:center;gap:3px;width:68px;min-width:0}
+#page-route .route-rule-moves button{display:grid;place-items:center;flex:0 0 30px;width:30px;min-width:0;min-height:33px;padding:4px;border-radius:10px;font-size:17px}
+#page-route .route-rule-controls .route-rule-toggle{margin:0;padding:0;justify-self:center}
+#page-route .route-rule-controls>button{width:90px;min-width:0;min-height:36px;padding:6px 9px;font-size:13px}
+#page-route .route-rule-description{margin:6px 0 0 26px;overflow-wrap:anywhere}
+#page-route .route-rule-editor-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#page-route .route-rule-editor-header h3{margin:0;flex:1 1 140px;min-width:0}
+#page-route .route-editor-enabled{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin:0;padding:0;flex:0 0 auto;width:auto;white-space:nowrap;font-size:13px;cursor:pointer;color:var(--text)}
+#page-route .route-editor-enabled input[type="checkbox"]{
+  appearance:none;-webkit-appearance:none;display:block;position:relative;
+  width:46px!important;min-width:46px;height:28px!important;min-height:28px!important;
+  flex:0 0 46px;padding:0!important;margin:0!important;border:2px solid #8b8d95!important;
+  border-radius:99px;background:#e8e4eb;
+}
+#page-route .route-editor-enabled input[type="checkbox"]::after{
+  content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;
+  background:#85878f;border-radius:50%;transition:transform .16s;
+}
+#page-route .route-editor-enabled input[type="checkbox"]:checked{background:#d8e7ff;border-color:var(--blue)!important}
+#page-route .route-editor-enabled input[type="checkbox"]:checked::after{transform:translateX(18px);background:var(--blue)}
+/* Sing-box standalone save buttons match the content inside its cards. */
+#page-singbox .singbox-config-action-wrap{width:100%;max-width:880px;margin-inline:auto;padding-inline:25px;box-sizing:border-box;min-width:0}
+#page-singbox .singbox-config-action-wrap .row{flex-wrap:nowrap;min-width:0}
+#page-singbox .singbox-config-action-wrap button{flex:1 1 0;min-width:0;white-space:normal}
+#page-singbox .card .row{min-width:0;width:100%}
+#page-singbox .card .row>button{min-width:0;white-space:normal}
+#page-singbox .card input[type=file]{min-width:0;max-width:100%;box-sizing:border-box}
+@media(max-width:700px){
+ #page-deploy .deploy-action-group,#page-singbox .singbox-config-action-wrap{padding-inline:19px}
+ #page-direct .route-dialog{padding:18px;border-radius:22px}
+ #page-direct .route-list-field textarea{height:140px;min-height:120px}
+ #page-logs .logs-card{padding:16px;border-radius:22px}
+ #page-logs .logs-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+ #page-logs .logs-actions button{min-width:0;width:100%;gap:5px;padding:8px 5px;font-size:11px}
+ #page-logs .logs-actions button svg{width:15px;height:15px;flex-basis:15px}
+ #page-route .route-rule-controls{grid-template-columns:62px 46px 82px;gap:5px}
+ #page-route .route-rule-moves{width:62px;gap:2px}
+ #page-route .route-rule-moves button{flex-basis:29px;width:29px}
+ #page-route .route-rule-controls>button{width:82px;font-size:12px}
+ #page-route .route-rule-heading{gap:4px}
+ #page-route .route-rule-grip{flex-basis:12px;width:12px}
+ #page-route .route-rule-grip svg{width:12px}
+ #page-route .route-rule .route-rule-summary{gap:5px}
+ #page-route .route-rule-name b{font-size:12px}
+ #page-route .route-rule{padding:10px 9px}
+}
+
 </style>
 </head>
 <body>
@@ -700,7 +812,14 @@ input[type="number"]::-webkit-outer-spin-button{
  <div class="card"><h2>Оформление CSQTT</h2><div class="field"><label for="themeMode">Тема приложения</label><select id="themeMode"><option value="system">Как в системе</option><option value="light">Светлая</option><option value="dark">Тёмная</option></select></div><p class="muted">Оформление CSQTT Core на основе CSQTT 2.5.0.</p></div>
  <div class="card"><h2>Система и версия</h2><div class="statusline"><span class="dot ok"></span><span>CSQTT Core · Linux ARM64</span></div><p class="muted">CSQTT Core — клиент и сервер для ARM64. Автоматическое получение VK-токена реализовано отдельным компонентом.</p><div class="row"><div><div class="muted">Backend</div><strong id="backendVersion">—</strong><div class="muted" style="font-size:12px;margin-top:6px">Коммит сборки: <span id="coreBuildCommit">—</span></div></div></div><div class="row" style="margin-top:12px"><button class="secondary" id="checkCoreUpdate">Проверить CSQTT Core</button><button id="updateCore" disabled>Обновить CSQTT Core</button></div><p class="muted" style="font-size:12px;margin:12px 0">Источник — Xenofan-git/CSQTT-Core. Проверка сравнивает коммит рабочей ветки и опубликованные ARM64-релизы. Установка доступна только для совместимого релиза с подтверждённой SHA-256, резервной копией и автоматическим откатом. CSQTT и Sing-box обновляются отдельно.</p><div id="updateMessage" class="notice hidden"></div></div>
 </section>
-<section class="page route-page" id="page-direct"><div class="route-backdrop"></div><div class="route-dialog"><div class="route-title"><h2><span>◎</span> Direct</h2><button type="button" id="routeClose" class="modal-close" aria-label="Закрыть">×</button></div><div class="route-direct-label">Direct</div><div class="field route-list-field"><label for="directDomains">Direct — домены (по одному в строке)</label><textarea id="directDomains" placeholder="example.com&#10;cdn.example.com"></textarea></div><div class="field route-list-field"><label for="directIPs">Direct — IP-адреса IPv4 / IPv6 (по одному в строке)</label><textarea id="directIPs" placeholder="192.0.2.10&#10;2001:db8::10"></textarea></div><div class="route-footer"><span id="directCount">Распознано: 0</span><button id="saveDirectRules">Готово</button></div><div id="routeMessage" class="notice hidden"></div></div></section>
+<section class="page route-page" id="page-direct"><div class="route-dialog card direct-editor-card">
+  <div class="route-title"><h2>DIRECT — правила прямого соединения</h2><button type="button" id="routeClose" class="secondary small" aria-label="К маршрутам">К маршрутам</button></div>
+  <p class="muted direct-editor-hint">Добавьте домены и IP-адреса для прямого соединения без прокси. Одно значение в строке.</p>
+  <div class="field route-list-field"><label for="directDomains">Домены Direct</label><textarea id="directDomains" rows="7" placeholder="example.com&#10;cdn.example.com"></textarea></div>
+  <div class="field route-list-field"><label for="directIPs">IP-адреса Direct — IPv4 / IPv6</label><textarea id="directIPs" rows="7" placeholder="192.0.2.10&#10;2001:db8::10"></textarea></div>
+  <div class="route-footer"><span id="directCount">Распознано: 0</span><button id="saveDirectRules">Сохранить</button></div>
+  <div id="routeMessage" class="notice hidden" role="status" aria-live="polite"></div>
+</div></section>
 <section class="page" id="page-deploy">
  <h1>Деплой</h1>
  <div class="card">
@@ -726,9 +845,9 @@ input[type="number"]::-webkit-outer-spin-button{
  <div class="deploy-action-group">
   <div class="row deploy-actions"><button class="danger" id="uninstallCsqtt">Удалить</button><button id="startDeploy">Установить</button></div>
   <button class="secondary deploy-auth-button" id="editDeployAuth">⚿　Авторизация</button>
+  <div id="deployState" class="notice" role="status" aria-live="polite">Деплой не запущен.</div>
  </div>
  <div id="authSummary" class="muted">Данные туннеля и веб-панели не заданы.</div>
- <div id="deployState" class="notice">Деплой не запущен.</div>
  <div class="card"><h2>Журнал деплоя</h2><pre id="deployLog" class="console">Журнал пока пуст.</pre></div>
 </section><section class="page" id="page-route"><h1>Маршрут</h1><div class="card"><h2>Правила маршрутизации</h2><p class="muted">Правила проверяются сверху вниз. Выберите Rule Set из реестра, задайте условия и outbound. Карточка CSQTT обрабатывает только совпавшие условия; трафик без совпадений направляется через outbound по умолчанию.</p><div id="singboxRouteRuleEditor" class="stack"><div class="notice">Загрузка правил…</div></div><div class="row"><button id="singboxAddRouteRule">Добавить правило</button><button id="singboxSave">Проверить и сохранить</button><button class="secondary" id="singboxLoad">Загрузить сохранённое</button></div><details class="field"><summary>Расширенный режим — JSON правил</summary><p class="muted">Ручное редактирование для дополнительных полей. После изменения нажмите «Обновить визуальный редактор».</p><textarea id="singboxRules" rows="12" spellcheck="false">[]</textarea><button type="button" class="secondary" id="singboxRenderRouteRules">Обновить визуальный редактор</button></details><div id="routeConfigMessage" class="notice" role="status" aria-live="polite">Конфигурация ещё не загружена.</div></div></section>
 <section class="page" id="page-singbox">
@@ -737,7 +856,7 @@ input[type="number"]::-webkit-outer-spin-button{
  <div class="card"><h2>Входящий SOCKS5 и выход по умолчанию</h2><div class="field"><label for="singboxListen">SOCKS5 inbound — IP:порт</label><input id="singboxListen" placeholder="127.0.0.1:19180" autocomplete="off"></div><div class="notice">CSQTT Core запускается и останавливается во вкладке «Подключение». Его SOCKS5 outbound остаётся настроенным независимо от состояния Core; правило CSQTT отдельно включается во вкладке «Маршрут».</div><div class="field" id="singboxCsqttField"><label for="singboxCsqtt">CSQTT SOCKS5 outbound — локальный listener CSQTT Core</label><input id="singboxCsqtt" value="127.0.0.1:12500" placeholder="127.0.0.1:12500" autocomplete="off"></div><div class="field"><label for="singboxFinalOutbound">Outbound по умолчанию — для всего трафика без совпавшего правила</label><select id="singboxFinalOutbound"><option value="">Сначала добавьте или включите SOCKS5 outbound</option></select></div><div class="notice">Входящий SOCKS5 принадлежит sing-box. Он маршрутизирует трафик через выбранный outbound: CSQTT, любой добавленный SOCKS5 сервер или Direct. Для CSQTT требуется работающий Core и listener; выключение CSQTT не останавливает и не меняет sing-box. TUN, auto_route и глобальный маршрут не создаются.</div></div>
  <div class="card"><h2>DNS</h2><p class="muted">DNS через SOCKS inbound перехватывается внутри sing-box. Reverse mapping включён, чтобы доменные правила применялись и после локального разрешения имени в IP. Системный DNS NanoPi не перенастраивается.</p><div class="field"><label for="singboxDNSMode">DNS resolver</label><select id="singboxDNSMode"><option value="local">Системный resolver NanoPi</option><option value="udp">Указанный UDP DNS</option></select></div><div id="singboxDNSUDPFields" class="hidden"><div class="field"><label for="singboxDNSServer">DNS server IP</label><input id="singboxDNSServer" placeholder="192.168.4.1" autocomplete="off"></div><div class="field"><label for="singboxDNSPort">DNS server port</label><input id="singboxDNSPort" type="number" min="1" max="65535" value="53"></div></div><div class="field"><label for="singboxDNSStrategy">DNS address strategy</label><select id="singboxDNSStrategy"><option value="prefer_ipv4">Предпочитать IPv4</option><option value="prefer_ipv6">Предпочитать IPv6</option><option value="ipv4_only">Только IPv4</option><option value="ipv6_only">Только IPv6</option></select></div><div class="notice">DNS reverse mapping: всегда включён. DNS hijack обрабатывает UDP/TCP порт 53 только внутри входящего SOCKS5 sing-box.</div></div>
  <div class="card hidden" aria-hidden="true"><h2>Direct exclusions (legacy storage)</h2><div class="field"><label for="singboxDirectDomains">Домены (по одному в строке)</label><textarea id="singboxDirectDomains" placeholder="example.ru"></textarea></div><div class="field"><label for="singboxDirectSuffixes">Доменные суффиксы (включая поддомены)</label><textarea id="singboxDirectSuffixes" placeholder=".example.ru"></textarea></div><div class="field"><label for="singboxDirectCIDRs">IP / CIDR IPv4 и IPv6 (по одному в строке)</label><textarea id="singboxDirectCIDRs" placeholder="192.0.2.0/24&#10;2001:db8::/32"></textarea></div></div>
- <div class="card"><h2>Пользовательские SOCKS5 outbound</h2><p class="muted">JSON-массив. ID — латиница, цифры, дефис или подчёркивание; порт — число. Логин и пароль указываются вместе.</p><div class="field"><label for="singboxOutbounds">SOCKS5 серверы</label><textarea id="singboxOutbounds" rows="7" spellcheck="false">[]</textarea></div></div><div class="row"><button id="singboxSaveEngine">Проверить и сохранить настройки</button><button id="singboxLoadEngine" class="secondary">Загрузить настройки</button></div>
+ <div class="card"><h2>Пользовательские SOCKS5 outbound</h2><p class="muted">JSON-массив. ID — латиница, цифры, дефис или подчёркивание; порт — число. Логин и пароль указываются вместе.</p><div class="field"><label for="singboxOutbounds">SOCKS5 серверы</label><textarea id="singboxOutbounds" rows="7" spellcheck="false">[]</textarea></div></div><div class="singbox-config-action-wrap"><div class="row"><button id="singboxSaveEngine">Проверить и сохранить настройки</button><button id="singboxLoadEngine" class="secondary">Загрузить настройки</button></div></div>
  
  <div class="card"><h2>Маршруты и Rule Set</h2>
  <p class="muted">Подключайте наборы sing-box в формате .srs (binary) или .json (source). Тег набора используется в правилах маршрутизации.</p>
@@ -752,7 +871,11 @@ input[type="number"]::-webkit-outer-spin-button{
  </div>
  <div class="card"><h2>Журнал sing-box</h2><pre id="singboxLogs" class="console">Журнал не загружен.</pre><button class="secondary" id="singboxLogsRefresh">Обновить журнал</button></div>
 </section>
-<section class="page" id="page-logs"><label class="mode logs-toggle"><span><b>Активное логирование</b></span><input type="checkbox" id="logsActive" checked></label><div class="card logs-card"><pre id="logs" class="console">Загрузка…</pre><div class="logs-actions"><button class="secondary" id="copyLogs" aria-label="Копировать журнал">▢</button><button class="secondary" id="clearLogs" aria-label="Очистить журнал">▤</button></div></div></section>
+<section class="page" id="page-logs"><label class="mode logs-toggle"><span><b>Активное логирование</b></span><input type="checkbox" id="logsActive" checked></label><div class="card logs-card"><pre id="logs" class="console">Загрузка…</pre><div class="logs-actions" role="group" aria-label="Действия с журналом">
+<button class="secondary" id="selectLogs" type="button" aria-label="Выделить весь журнал" title="Выделить весь журнал"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="M8 9h8M8 12h8M8 15h6"/></svg><span>Выделить</span></button>
+<button class="secondary" id="copyLogs" type="button" aria-label="Копировать журнал" title="Копировать журнал"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg><span>Копировать</span></button>
+<button class="secondary logs-clear" id="clearLogs" type="button" aria-label="Очистить журнал" title="Очистить журнал"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v7M14 10v7"/></svg><span>Очистить</span></button>
+</div></div></section>
 
 </main>
 <nav class="tabs" aria-label="Основная навигация"><button class="tab active" data-page="connect" aria-current="page" aria-label="Подключение"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.99 19 9.91 19 12a7 7 0 1 1-14 0c0-2.09 1.01-4.01 2.59-5.41L6.17 5.17A8.96 8.96 0 0 0 3 12a9 9 0 1 0 18 0 8.96 8.96 0 0 0-3.17-6.83z"/></svg></span><span class="tab-label-full">Подключение</span><span class="tab-label-compact" aria-hidden="true">Связь</span></button><button class="tab" data-page="settings"><span class="ico"><svg class="nav-key" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M15.6 12.6a7.3 7.3 0 1 0 1.9 7.1H29v-7h-5v3.2h-4v-3.2h-4.4Z" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="9.6" cy="16" r="2.2" stroke="currentColor" stroke-width="2.2"/></svg></span>Туннель</button><button class="tab" data-page="deploy"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.35 10.04A7.49 7.49 0 0 0 5 8.2 5.5 5.5 0 0 0 5.5 19h13a4.5 4.5 0 0 0 .85-8.96z"/></svg></span>Деплой</button><button class="tab" data-page="logs"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 19H4V5h16v14zM6 7l4 5-4 5 1.5 1.5L13 12 7.5 5.5 6 7zm8 9h4v-2h-4z"/></svg></span>Логи</button><button class="tab" data-page="direct"><span class="ico"><svg class="nav-direct-arrows" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4-4 4 4 4V9h10v3l4-4-4-4v3H7V4Zm10 16 4-4-4-4v3H7v-3l-4 4 4 4v-3h10v3Z"/></svg></span>Директ</button><button class="tab" data-page="route"><span class="ico"><svg class="nav-route-bars" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5h18v2.5H3zM6 11h12v2.5H6zM9 16.5h6V19H9z"/></svg></span>Маршрут</button><button class="tab" data-page="singbox"><span class="ico"><svg class="nav-singbox-logo" viewBox="260 250 504 570" aria-hidden="true" focusable="false">
@@ -895,7 +1018,7 @@ function renderSocks5Status(){
 $('copySocks5Address').addEventListener('click',async()=>{const value=$('socks5Address').value;if(!value||value==='—')return;try{await navigator.clipboard.writeText(value);toast('Адрес SOCKS5 скопирован')}catch(e){$('socks5Address').select();toast('Адрес выделен — скопируйте вручную',true)}});
 async function req(path,method='GET',body){const opt={method,headers:{}};if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body)}const r=await fetch(API+path,opt);const raw=await r.text();let data=raw;try{data=JSON.parse(raw)}catch(_){}if(!r.ok)throw new Error(typeof data==='string'?data:(data.error||data.message||r.statusText));return data;}
 function showPage(name){document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));if(name==='deploy')refreshSocks5Status();if((name==='singbox'||name==='route')&&!singboxState.loaded&&!singboxState.loading)refreshSingBox();document.querySelectorAll('.tab').forEach(x=>{const active=x.dataset.page===name;x.classList.toggle('active',active);if(active)x.setAttribute('aria-current','page');else x.removeAttribute('aria-current')});if(name==='logs'&&state.logsActive)refreshLogsOnly();}
-document.querySelectorAll('.tabs button[data-page]').forEach(tab=>{tab.addEventListener('click',e=>{e.preventDefault();showPage(tab.dataset.page)});});$('routeClose').addEventListener('click',()=>showPage('connect'));document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('page-direct').classList.contains('active'))showPage('connect');});['directDomains','directIPs'].forEach(id=>$(id).addEventListener('input',()=>{const n=['directDomains','directIPs'].reduce((sum,key)=>sum+$(key).value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).length,0);$('directCount').textContent='Распознано: '+n}));
+document.querySelectorAll('.tabs button[data-page]').forEach(tab=>{tab.addEventListener('click',e=>{e.preventDefault();showPage(tab.dataset.page)});});$('routeClose').addEventListener('click',()=>showPage('route'));document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('page-direct').classList.contains('active'))showPage('route');});['directDomains','directIPs'].forEach(id=>$(id).addEventListener('input',()=>{const n=['directDomains','directIPs'].reduce((sum,key)=>sum+$(key).value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).length,0);$('directCount').textContent='Распознано: '+n}));
 
 const singboxState={configured:false,running:false,loaded:false,loading:false};
 function splitLines(id){return $(id).value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)}
@@ -941,10 +1064,13 @@ function renderRouteRuleEditor(){
  const summary=r=>{const parts=[];for(const [key,label] of [['Domains','домены'],['DomainSuffixes','суффиксы'],['IPCIDRs','IP/CIDR'],['RuleSets','Rule Sets']]){const v=r[key]||[];if(v.length)parts.push(label+': '+v.length)}return parts.join(' · ')||'Условия не заданы'};
  const cardHTML=rules.map((r,i)=>{
   const id=r.ID||r.id,system=id==='system-direct'?'direct':id==='system-csqtt'?'csqtt':'',active=(r.Enabled??r.enabled)!==false;
-  const move=system==='direct'?'':'<button type="button" class="small" data-move-route-rule="'+i+': -1" '+(i<=1?'disabled':'')+'>↑</button><button type="button" class="small" data-move-route-rule="'+i+': 1" '+(i===rules.length-1?'disabled':'')+'>↓</button>';
+  const move=system==='direct'
+    ?'<div class="route-rule-moves" aria-hidden="true"></div>'
+    :'<div class="route-rule-moves"><button type="button" class="small" data-move-route-rule="'+i+': -1" aria-label="Поднять правило '+esc(id)+'" '+(i<=1?'disabled':'')+'>↑</button><button type="button" class="small" data-move-route-rule="'+i+': 1" aria-label="Опустить правило '+esc(id)+'" '+(i===rules.length-1?'disabled':'')+'>↓</button></div>';
   const title=system==='direct'?'DIRECT':system==='csqtt'?'CSQTT':(r.Name||id);
   const out=system==='direct'?'direct':system==='csqtt'?'csqtt':(r.Outbound||r.outbound||'—');
-  return '<article class="card route-rule '+(system?'system-rule':'')+(id===selectedRouteRuleId?' selected':'')+'" data-index="'+i+'" data-rule-id="'+esc(id)+'" data-system-rule="'+(system||'')+'" '+(system==='direct'?'':'draggable="true"')+'><div class="route-rule-summary"><span class="route-rule-grip" aria-hidden="true">'+(system==='direct'?'◆':'⠿')+'</span><b>'+esc(title)+'</b><span class="route-rule-meta">'+esc(out)+'</span><label class="mode route-rule-toggle" title="'+(active?'Выключить':'Включить')+' правило"><input type="checkbox" data-toggle-route-rule="'+esc(id)+'" aria-label="'+esc((active?'Выключить ':'Включить ')+title)+'" '+(active?'checked':'')+' '+(system==='csqtt'&&!$('singboxCsqtt').value.trim()?'disabled':'')+'><span aria-hidden="true"></span></label>'+move+'<button type="button" class="secondary small" data-select-route-rule="'+esc(id)+'">Изменить</button></div><div class="muted route-rule-description">'+esc(summary(r))+'</div></article>';
+  const grip=system==='direct'?'':'<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><circle cx="6" cy="5" r="1.4"/><circle cx="12" cy="5" r="1.4"/><circle cx="6" cy="10" r="1.4"/><circle cx="12" cy="10" r="1.4"/><circle cx="6" cy="15" r="1.4"/><circle cx="12" cy="15" r="1.4"/></svg>';
+  return '<article class="card route-rule '+(system?'system-rule':'')+(id===selectedRouteRuleId?' selected':'')+'" data-index="'+i+'" data-rule-id="'+esc(id)+'" data-system-rule="'+(system||'')+'" '+(system==='direct'?'':'draggable="true"')+'><div class="route-rule-summary"><div class="route-rule-heading"><span class="route-rule-grip">'+grip+'</span><div class="route-rule-name"><b>'+esc(title)+'</b><small class="route-rule-meta">'+esc(out)+'</small></div></div><div class="route-rule-controls">'+move+'<label class="mode route-rule-toggle" title="'+(active?'Выключить':'Включить')+' правило"><input type="checkbox" data-toggle-route-rule="'+esc(id)+'" aria-label="'+esc((active?'Выключить ':'Включить ')+title)+'" '+(active?'checked':'')+' '+(system==='csqtt'&&!$('singboxCsqtt').value.trim()?'disabled':'')+'><span aria-hidden="true"></span></label><button type="button" class="secondary small" data-select-route-rule="'+esc(id)+'">Изменить</button></div></div><div class="muted route-rule-description">'+esc(summary(r))+'</div></article>';
  }).join('');
  const field=(name,label)=>'<div class="field"><label>'+label+'</label><textarea rows="2" data-field="'+name+'">'+esc((selected[name]||[]).join('\n'))+'</textarea></div>';
  const selectedSystem=selected.ID==='system-direct'?'direct':selected.ID==='system-csqtt'?'csqtt':'';
@@ -957,7 +1083,7 @@ function renderRouteRuleEditor(){
    return '<label class="route-ruleset-option" data-search="'+esc(t.toLocaleLowerCase())+'"><input type="checkbox" data-ruleset-tag="'+esc(t)+'" '+(selectedSetTags.includes(t)?'checked':'')+'><span>'+esc(t)+(registered?'':' <em>(нет в реестре)</em>')+'</span></label>';
  }).join(''):'<p class="muted">Нет Rule Sets. Добавьте набор на вкладке Sing-box.</p>';
  const categoryField='<div class="field route-ruleset-picker"><label>Rule Sets — категории</label><input type="search" data-ruleset-search placeholder="Поиск категории..." autocomplete="off" aria-label="Поиск Rule Set"><div class="route-ruleset-options" data-field="RuleSets" role="group" aria-label="Категории Rule Sets">'+categoryMarkup+'</div><small class="muted">Отметьте нужные наборы. Выбор сохраняется отдельно для каждого правила.</small></div>';
- const editor='<section class="card route-rule-editor" data-editor-rule="'+esc(selectedRouteRuleId)+'"><div class="row" style="align-items:center;justify-content:space-between"><h3>'+(selectedSystem==='direct'?'DIRECT — условия':selectedSystem==='csqtt'?'CSQTT — условия':'Правило — '+esc(selected.ID||''))+'</h3><label><input type="checkbox" data-field="Enabled" '+(enabled?'checked':'')+' '+(selectedSystem==='csqtt'&&!$('singboxCsqtt').value.trim()?'disabled':'')+'> Включено</label></div>'+categoryField+field('Domains','Домены (точное совпадение)')+field('DomainSuffixes','Доменные суффиксы')+field('DomainKeywords','Ключевые слова домена')+field('DomainRegexes','Регулярные выражения домена')+field('IPCIDRs','IP / CIDR')+(selectedSystem==='direct'?'':selectedSystem==='csqtt'?'<div class="notice">Outbound: CSQTT (фиксированный)</div>':'<div class="field"><label>Outbound</label><select data-field="Outbound">'+outs.map(t=>'<option value="'+esc(t)+'" '+(selectedOut===t?'selected':'')+' '+(singBoxOutboundUnavailable(t)?'disabled':'')+'>'+esc(t)+'</option>').join('')+'</select></div>')+(selectedSystem?'':'<button type="button" class="danger small" data-delete-selected-rule="1">Удалить правило</button>')+'</section>';
+ const editor='<section class="card route-rule-editor" data-editor-rule="'+esc(selectedRouteRuleId)+'"><div class="route-rule-editor-header"><h3>'+(selectedSystem==='direct'?'DIRECT — условия':selectedSystem==='csqtt'?'CSQTT — условия':'Правило — '+esc(selected.ID||''))+'</h3><label class="route-editor-enabled"><span>Включено</span><input type="checkbox" data-field="Enabled" aria-label="Включить выбранное правило" '+(enabled?'checked':'')+' '+(selectedSystem==='csqtt'&&!$('singboxCsqtt').value.trim()?'disabled':'')+'></label></div>'+categoryField+field('Domains','Домены (точное совпадение)')+field('DomainSuffixes','Доменные суффиксы')+field('DomainKeywords','Ключевые слова домена')+field('DomainRegexes','Регулярные выражения домена')+field('IPCIDRs','IP / CIDR')+(selectedSystem==='direct'?'':selectedSystem==='csqtt'?'<div class="notice">Outbound: CSQTT (фиксированный)</div>':'<div class="field"><label>Outbound</label><select data-field="Outbound">'+outs.map(t=>'<option value="'+esc(t)+'" '+(selectedOut===t?'selected':'')+' '+(singBoxOutboundUnavailable(t)?'disabled':'')+'>'+esc(t)+'</option>').join('')+'</select></div>')+(selectedSystem?'':'<button type="button" class="danger small" data-delete-selected-rule="1">Удалить правило</button>')+'</section>';
  root.innerHTML='<div class="route-rule-list" aria-label="Очередь правил">'+cardHTML+'</div>'+editor;
  root.querySelectorAll('[data-toggle-route-rule]').forEach(input=>input.addEventListener('change',()=>{collectRouteRuleEditor();const rules=routeJSON('singboxRules'),r=rules.find(x=>(x.ID||x.id)===input.dataset.toggleRouteRule);if(!r)return;r.Enabled=input.checked;$('singboxRules').value=JSON.stringify(rules,null,2);renderRouteRuleEditor()}));
  root.querySelectorAll('[data-select-route-rule]').forEach(b=>b.addEventListener('click',()=>{collectRouteRuleEditor();selectedRouteRuleId=b.dataset.selectRouteRule;renderRouteRuleEditor()}));
@@ -1065,7 +1191,7 @@ $('manualPorts').addEventListener('change',renderDeploy);$('sshKeyToggle').addEv
 $('editDeployAuth').addEventListener('click',()=>$('deploySecretsOverlay').classList.remove('hidden'));$('cancelDeployAuth').addEventListener('click',()=>$('deploySecretsOverlay').classList.add('hidden'));$('saveDeployAuth').addEventListener('click',()=>{const vals=[$('mainPassword').value.trim(),$('webLogin').value.trim(),$('webPassword').value.trim()];const valid=v=>v.length>0&&/^[A-Za-z0-9]+$/.test(v);const msg=$('deployAuthMessage');if(!vals.every(valid)){msg.textContent='Заполните все поля: только латинские буквы и цифры.';msg.className='notice error';msg.classList.remove('hidden');return}deploySecrets.mainPassword=vals[0];deploySecrets.webLogin=vals[1];deploySecrets.webPassword=vals[2];$('deploySecretsOverlay').classList.add('hidden');msg.classList.add('hidden');renderDeploy();toast('Данные авторизации заданы до перезагрузки страницы')});$('copyPanelLink').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('panelLink').value);toast('Ссылка скопирована')}catch(e){$('panelLink').select();toast('Выделите и скопируйте ссылку вручную',true)}});$('openPanelLink').addEventListener('click',()=>{if($('panelLink').value)window.open($('panelLink').value,'_blank','noopener,noreferrer')});
 $('uninstallCsqtt').addEventListener('click',async()=>{const host=$('deployHost').value.trim(),auth= $('sshKeyToggle').checked?'key':'password' ;const sshPort=Number($('deploySshPort').value);if(!Number.isInteger(sshPort)||sshPort<1||sshPort>65535){toast('Порт SSH должен быть целым числом от 1 до 65535',true);return}const corePort=$('manualPorts').checked?Number($('corePort').value):47000,panelPort=$('manualPorts').checked?Number($('warpPort').value):47002;if(!Number.isInteger(corePort)||corePort<1||corePort>65535||!Number.isInteger(panelPort)||panelPort<1||panelPort>65535||new Set([sshPort,corePort,panelPort]).size!==3){toast('Порты SSH, CSQTT и веб-панели должны быть корректными и разными',true);return}if(!host){toast('Укажите хост сервера',true);return}if(auth==='password'&&!$('deployPassword').value){toast('Укажите SSH пароль',true);return}if(auth==='key'&&!$('deployKey').value.trim()){toast('Укажите путь к SSH-ключу на NanoPi',true);return}if(!confirm('Полностью удалить runtime CSQTT Core с '+host+'? Будут остановлены и удалены служба и вспомогательные службы CSQTT Core, процесс, TUN-интерфейс, правила firewall с маркерами CSQTT Core, бинарные файлы, runtime-каталоги и sysctl-файлы CSQTT Core. База SQLite, файл конфигурации и сертификаты сохраняются. Оригинальный CSQTT и другие службы/маршруты не должны затрагиваться.'))return;const payload={protocol:'CSQTT',host,sshPort:Number($('deploySshPort').value)||22,user:$('deployUser').value.trim()||'root',usePassword:auth==='password',password:auth==='password'?$('deployPassword').value:'',keyPath:auth==='key'?$('deployKey').value.trim():'',manualPorts:$('manualPorts').checked,corePort:Number($('corePort').value)||47000,warpPort:Number($('warpPort').value)||47002,listenPort:0,uninstall:true};try{const r=await req('/deploy','POST',payload);if(!r.ok)throw new Error('Команда удаления не запущена');state.deployStarted=true;state.deployLog='';toast('Удаление CSQTT запущено');await refreshAll()}catch(e){toast(e.message,true)}});$('startDeploy').addEventListener('click',async()=>{const host=$('deployHost').value.trim(),auth= $('sshKeyToggle').checked?'key':'password' ;const sshPort=Number($('deploySshPort').value);if(!Number.isInteger(sshPort)||sshPort<1||sshPort>65535){toast('Порт SSH должен быть целым числом от 1 до 65535',true);return}const corePort=$('manualPorts').checked?Number($('corePort').value):47000,panelPort=$('manualPorts').checked?Number($('warpPort').value):47002;if(!Number.isInteger(corePort)||corePort<1||corePort>65535||!Number.isInteger(panelPort)||panelPort<1||panelPort>65535){toast('Порты CSQTT и веб-панели должны быть от 1 до 65535',true);return}if(new Set([sshPort,corePort,panelPort]).size!==3){toast('Порты SSH, CSQTT и веб-панели должны быть разными',true);return}if(!host){toast('Укажите хост сервера',true);return}if(auth==='password'&&!$('deployPassword').value){toast('Укажите SSH пароль',true);return}if(auth==='key'&&!$('deployKey').value.trim()){toast('Укажите путь к SSH-ключу на NanoPi',true);return}if(!confirm('Установить изолированный сервер CSQTT Core на '+host+'? Устанавливается отдельная служба CSQTT Core на UDP 47000 и TCP 47002; оригинальная служба CSQTT и основные маршруты не должны изменяться. Продолжить?'))return;if(!deploySecrets.mainPassword||!deploySecrets.webLogin||!deploySecrets.webPassword){toast('Сначала задайте данные в окне «Авторизация»',true);return}const secretRe=/^[A-Za-z0-9]+$/;if(!secretRe.test(deploySecrets.mainPassword)||!secretRe.test(deploySecrets.webLogin)||!secretRe.test(deploySecrets.webPassword)){toast('Данные авторизации должны содержать только латиницу и цифры',true);return}const deviceId=String(state.settings?.deviceId||'').trim();if(!/^[A-Za-z0-9-]+$/.test(deviceId)){toast('Не удалось получить ID устройства CSQTT Core из настроек',true);return}const payload={protocol:'CSQTT',host,sshPort:Number($('deploySshPort').value)||22,user:$('deployUser').value.trim()||'root',usePassword:auth==='password',password:auth==='password'?$('deployPassword').value:'',keyPath:auth==='key'?$('deployKey').value.trim():'',manualPorts:$('manualPorts').checked,corePort:Number($('corePort').value)||47000,warpPort:Number($('warpPort').value)||47002,listenPort:0,mainPassword:deploySecrets.mainPassword,webUser:deploySecrets.webLogin,webPassword:deploySecrets.webPassword,deviceId,dockerInstall:$('dockerInstall').checked};try{const r=await req('/deploy','POST',payload);if(!r.ok)throw new Error('DeployManager не запустился. Проверьте журнал.');state.deployStarted=true;toast('Деплой запущен');await refreshAll()}catch(e){toast(e.message,true)}});
 function renderLogs(){const el=$('logs');const lines=(state.logs||[]).slice(-160);if(!lines.length){el.textContent='Записей пока нет.';return}el.innerHTML=lines.map(line=>{let html=esc(line);html=html.replace(/\bOK\b/g,'<span class="log-ok">OK</span>').replace(/\bTURN\b/g,'<span class="log-turn">TURN</span>').replace(/\b(x\d+)\b/g,'<span class="log-count">$1</span>');return '<div class="log-line">'+html+'</div>'}).join('');el.scrollTop=el.scrollHeight}
-$('logsActive').addEventListener('change',()=>{state.logsActive=$('logsActive').checked;if(state.logsActive)refreshLogsOnly()});$('copyLogs').addEventListener('click',async()=>{const value=(state.logs||[]).join('\n');try{await navigator.clipboard.writeText(value);toast('Журнал скопирован')}catch(e){const el=$('logs');const range=document.createRange();range.selectNodeContents(el);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);toast('Журнал выделен — скопируйте вручную')}});$('clearLogs').addEventListener('click',async()=>{if(!confirm('Очистить журнал?'))return;try{const r=await req('/logs/clear','POST');if(!r.ok)throw new Error('Не удалось очистить журнал');await refreshAll();toast('Журнал очищен')}catch(e){toast(e.message,true)}});
+$('logsActive').addEventListener('change',()=>{state.logsActive=$('logsActive').checked;if(state.logsActive)refreshLogsOnly()});$('selectLogs').addEventListener('click',()=>{const el=$('logs'),r=document.createRange();r.selectNodeContents(el);const selected=window.getSelection();selected.removeAllRanges();selected.addRange(r);toast('Журнал выделен — нажмите Ctrl+C для копирования')});$('copyLogs').addEventListener('click',async()=>{const value=(state.logs||[]).join('\n');try{await navigator.clipboard.writeText(value);toast('Журнал скопирован')}catch(e){const el=$('logs');const range=document.createRange();range.selectNodeContents(el);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);toast('Журнал выделен — скопируйте вручную')}});$('clearLogs').addEventListener('click',async()=>{if(!confirm('Очистить журнал?'))return;try{const r=await req('/logs/clear','POST');if(!r.ok)throw new Error('Не удалось очистить журнал');await refreshAll();toast('Журнал очищен')}catch(e){toast(e.message,true)}});
 $('checkCoreUpdate').addEventListener('click',async()=>{
   const b=$('checkCoreUpdate'),update=$('updateCore'),m=$('updateMessage');
   b.disabled=true;update.disabled=true;
