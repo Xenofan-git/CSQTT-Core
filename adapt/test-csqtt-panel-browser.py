@@ -188,7 +188,15 @@ def main():
             assert actual == EXPECTED, f"seven-tab order mismatch: {actual}"
             assert page.locator("#page-connect > .connect-hero").count() == 1
             assert page.locator("#page-connect > .card").count() == 1, "Connect must retain the clean 2.5.0 single-card composition"
-            assert page.locator("#topHeart").count() == 1 and page.locator("#topSwitch").count() == 1 and page.locator("#topSettings").count() == 1
+            assert page.locator("#topHeart, #topSettings").count() == 0, "old donation and gear buttons must be absent"
+            assert page.locator("#topSwitch").count() == 1, "profile selector should be retained"
+            github=page.locator("#topGitHub")
+            assert github.count() == 1
+            assert github.get_attribute("href") == "https://github.com/Xenofan-git/CSQTT-Core"
+            assert github.get_attribute("target") == "_blank"
+            assert set((github.get_attribute("rel") or "").split()) >= {"noopener","noreferrer"}
+            assert github.get_attribute("aria-label") == "Репозиторий CSQTT Core на GitHub"
+            assert github.locator("svg.github-mark path").count() == 1
             assert page.locator("#topQr, #qrImage").count() == 0, "QR controls must remain absent"
             assert page.locator("#power .power-symbol").count() == 1, "the Connect button must use the power icon, not C"
             assert page.locator("#power").inner_text().strip() == "", "old C glyph is still visible"
@@ -726,6 +734,36 @@ def main():
                     if tab["svgSize"] is not None:
                         assert tab["svgSize"] == (28 if width <= 700 else 31), (
                             f"tab svg icon did not grow at {width}: {tab}")
+
+            # Deploy action group must align exactly with the nearby SOCKS5
+            # field/card's inner edges, rather than stretching beyond the cards.
+            for width in WIDTHS:
+                page.set_viewport_size({"width": width, "height": 850})
+                page.locator('button[data-page="deploy"]').click()
+                dims=page.evaluate("""() => {
+                  const rect=selector=>{
+                    const r=document.querySelector(selector).getBoundingClientRect();
+                    return {left:r.left,right:r.right,width:r.width,height:r.height,top:r.top};
+                  };
+                  return {
+                    target:rect('#socks5DeployCard .field'),
+                    group:rect('#page-deploy .deploy-action-group'),
+                    delete:rect('#uninstallCsqtt'),
+                    install:rect('#startDeploy'),
+                    authorize:rect('#editDeployAuth'),
+                    overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth,
+                  };
+                }""")
+                target=dims["target"]
+                for name in ("authorize",):
+                    button=dims[name]
+                    assert abs(target["left"]-button["left"]) <= 1.5, (width,name,dims)
+                    assert abs(target["right"]-button["right"]) <= 1.5, (width,name,dims)
+                assert abs(target["left"]-dims["delete"]["left"]) <= 1.5, (width,dims)
+                assert abs(target["right"]-dims["install"]["right"]) <= 1.5, (width,dims)
+                assert dims["delete"]["right"]+6 < dims["install"]["left"], (width,dims)
+                assert dims["delete"]["height"] >= 50 and dims["install"]["height"] >= 50, (width,dims)
+                assert dims["authorize"]["height"] >= 50 and dims["overflow"] <= 1, (width,dims)
 
             # Selecting another profile must round-trip through the API and refresh
             # the profile-specific hash shown on the Tunnel page.

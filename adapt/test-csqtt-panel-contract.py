@@ -116,6 +116,12 @@ for token in (
     ".tabs .tab .ico svg{width:24px;height:24px}",
     "border-radius:var(--csqtt-field-radius)!important;",
     "border-width:1px!important;",
+    'id="topGitHub" href="https://github.com/Xenofan-git/CSQTT-Core"',
+    'class="top-icon top-github-link"',
+    'class="github-mark"',
+    'class="deploy-action-group"',
+    '#page-deploy .deploy-action-group{',
+
     'class="nav-key"',
     'class="nav-direct-arrows"',
     'class="nav-route-bars"',
@@ -361,3 +367,11 @@ print(
     f"CSQTT panel contract OK: {len(parser.button_ids)} fixed buttons, "
     f"{len(parser.tabs)} tabs, {len(api_paths)} API paths."
 )
+
+
+# Header's GitHub action must be a real safe link, not a JS click listener.
+if any(marker in html for marker in ('id="topHeart"', 'id="topSettings"',
+                                      "getElementById('topHeart')", "$('topSettings')")):
+    raise SystemExit("obsolete heart/gear still present")
+if "github.com/amurcanov/csqtt" in html:
+    raise SystemExit("old heart target still present")
