@@ -1207,6 +1207,7 @@ def main():
             page.locator("#deployHost").fill("192.0.2.50")
             page.locator("#deployPassword").fill("fixture-ssh-password")
             page.locator("#editDeployAuth").click()
+            page.locator("#deploySecretsOverlay").wait_for(state="visible")
             # A single blue focus border belongs to the password wrapper.
             # The nested password input must not draw a second offset ring.
             for theme_name in ("light","dark"):
