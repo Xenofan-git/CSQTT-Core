@@ -48,6 +48,7 @@ def main():
     socks5_state = {"interface":"eth1","protocol":"SOCKS5","auth":"no-auth","monitoring":True,"listening":True,"address":"192.168.4.26:12500"}
     calls = []
     fail_paths = set()
+    core_release_available = {"value": False}
     fail_requests = set()  # (verb, path): inject only a readback failure, not a failed save.
     readback_unconfigured = {"value": False}
 
@@ -138,6 +139,24 @@ def main():
             body = {"ok": True}
         elif path == "/deploy" and method == "POST":
             body = {"ok": True}
+        elif path == "/updates/core/check" and method == "GET":
+            yes = core_release_available["value"]
+            body = {
+                "repository":"Xenofan-git/CSQTT-Core",
+                "installedCommit":"d1cc2b58076413faca283cfa0183d6f33068a571",
+                "sourceCommit":"d1cc2b58076413faca283cfa0183d6f33068a571",
+                "sourceAhead":False,
+                "releaseTag":"csqtt-core-v1.0.0" if yes else "",
+                "update":yes,"canInstall":yes,
+                "message":"Доступен проверенный релиз" if yes else "Совместимого ARM64-релиза пока нет",
+                "error":"",
+            }
+        elif path == "/updates/core/wait" and method == "POST":
+            if core_release_available["value"]:
+                body = {"ok":True,"scheduled":True,"releaseTag":"csqtt-core-v1.0.0","message":"Отдельная systemd-служба запущена"}
+            else:
+                status = 409
+                body = {"error":"Нет проверенного ARM64-релиза"}
         elif path == "/updates/lalune":
             body = {"hasUpdate": False}
         else:
@@ -172,6 +191,26 @@ def main():
             navicons = page.locator('.tabs button[data-page="direct"] path').get_attribute("d"), page.locator('.tabs button[data-page="route"] path').get_attribute("d")
             assert navicons[0] != navicons[1], "Direct and Route must have different symbols"
 
+
+            # The release update UI is fail-closed by default and never
+            # offers the legacy Endlad2/csqtt-core download path.
+            assert page.locator('#updateCore').is_disabled()
+            page.locator('button[data-page="settings"]').click()
+            page.locator('#checkCoreUpdate').click()
+            page.wait_for_function("document.querySelector('#updateMessage').textContent.includes('Совместимого ARM64-релиза пока нет')")
+            assert page.locator('#updateCore').is_disabled()
+            assert page.locator('#updateMessage').is_visible()
+            assert 'Endlad2/csqtt-core' not in page.locator('#updateMessage').inner_text()
+            assert not any(method == 'POST' and path == '/updates/core/wait' for method,path,_ in calls)
+            core_release_available["value"] = True
+            page.locator('#checkCoreUpdate').click()
+            page.wait_for_function("!document.querySelector('#updateCore').disabled")
+            assert page.locator('#updateMessage').inner_text().startswith('Доступен проверенный релиз')
+            page.locator('#updateCore').click()
+            page.wait_for_function("document.querySelector('#updateMessage').textContent.includes('systemd-служба запущена')")
+            assert any(method == 'POST' and path == '/updates/core/wait' for method,path,_ in calls)
+            assert page.locator('#updateCore').is_disabled()
+            core_release_available["value"] = False
 
             # Regression for the real tunnel/profile UI controls.
             # Switch to the *visible* Tunnel page before measuring element

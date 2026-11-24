@@ -15,6 +15,8 @@ on:
       - captcha-bridge/options.html
       - captcha-bridge/README.md
       - adapt/headless_main.go
+      - adapt/test-csqtt-core-update-contract.py
+      - adapt/CSQTT-CORE-UPDATE-RELEASE-CONTRACT.md
       - .github/workflows/csqtt-core-app-panel-browser.yml
   pull_request:
     paths:
@@ -27,6 +29,8 @@ on:
       - captcha-bridge/options.html
       - captcha-bridge/README.md
       - adapt/headless_main.go
+      - adapt/test-csqtt-core-update-contract.py
+      - adapt/CSQTT-CORE-UPDATE-RELEASE-CONTRACT.md
       - .github/workflows/csqtt-core-app-panel-browser.yml
   workflow_dispatch:
 
@@ -47,6 +51,7 @@ jobs:
           python adapt/test-csqtt-panel-contract.py
           python adapt/test-csqtt-panel-api-method-contract.py
           python adapt/test-csqtt-core-branding.py
+          python adapt/test-csqtt-core-update-contract.py
       - name: Prepare isolated Chromium/Playwright browser test
         run: |
           python -m pip install --disable-pip-version-check 'playwright==1.56.0'

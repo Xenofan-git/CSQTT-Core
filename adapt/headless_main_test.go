@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -948,5 +949,105 @@ func TestBrandedFaviconsPublicBeforeLoginAndMethodSafe(t *testing.T) {
 	}
 	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "img-src 'self'") {
 		t.Fatal("login CSP blocks favicon image loading")
+	}
+}
+
+// CSQTT Core updates never fetch Endlad2 or silently install an incompatible asset.
+func TestCSQTTCoreUpdateCheckNoCompatibleRelease(t *testing.T) {
+	oldBase, oldClient, oldCommit := csqttGitHubBase, csqttHTTP, buildCommit
+	defer func() { csqttGitHubBase = oldBase; csqttHTTP = oldClient; buildCommit = oldCommit }()
+	sha := strings.Repeat("a", 40)
+	buildCommit = sha
+	requests := []string{}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Path)
+		if strings.Contains(r.URL.Path, "/commits/") {
+			io.WriteString(w, `{"sha":"`+sha+`"}`)
+		} else if strings.HasSuffix(r.URL.Path, "/releases") {
+			io.WriteString(w, `[{"tag_name":"nanopi-gateway-build","draft":false,"prerelease":false,"assets":[]}]`)
+		} else {
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+	csqttGitHubBase = ts.URL
+	csqttHTTP = ts.Client()
+	state := checkOurCSQTTCoreUpdate(context.Background())
+	if state.Error != "" || state.Update || state.CanInstall || state.SourceAhead || state.SourceCommit != sha {
+		t.Fatalf("unsafe update check: %+v", state)
+	}
+	if len(requests) != 2 || strings.Contains(strings.Join(requests, " "), "Endlad2") {
+		t.Fatalf("untrusted repo queried: %v", requests)
+	}
+}
+func TestCSQTTCoreRejectsUntrustedAssets(t *testing.T) {
+	tag := "csqtt-core-v0.6.1"
+	a := csqttAsset{Name: csqttUpdateAssetName, Size: 17002463, Digest: "sha256:" + strings.Repeat("a", 64), URL: "https://github.com/Xenofan-git/CSQTT-Core/releases/download/" + tag + "/" + csqttUpdateAssetName}
+	if _, ok := csqttApprovedAsset(csqttRelease{Tag: tag, Assets: []csqttAsset{a}}); !ok {
+		t.Fatal("valid release not accepted")
+	}
+	for _, bad := range []csqttRelease{
+		{Tag: "nanopi-gateway-build", Assets: []csqttAsset{a}},
+		{Tag: tag, Draft: true, Assets: []csqttAsset{a}},
+		{Tag: tag, Prerelease: true, Assets: []csqttAsset{a}},
+		{Tag: tag, Assets: []csqttAsset{{Name: a.Name, Size: a.Size, Digest: "sha256:bad", URL: a.URL}}},
+		{Tag: tag, Assets: []csqttAsset{{Name: a.Name, Size: a.Size, Digest: a.Digest, URL: "https://github.com/Endlad2/csqtt-core/releases/download/" + tag + "/" + a.Name}}},
+	} {
+		if _, ok := csqttApprovedAsset(bad); ok {
+			t.Fatalf("unsafe asset accepted: %+v", bad)
+		}
+	}
+}
+func TestCSQTTCoreLegacyUpdaterRemoved(t *testing.T) {
+	r := httptest.NewRecorder()
+	apiHandler(&App{}).ServeHTTP(r, httptest.NewRequest(http.MethodPost, "/updates/core", nil))
+	if r.Code != http.StatusGone {
+		t.Fatalf("legacy upstream updater HTTP %d", r.Code)
+	}
+	r = httptest.NewRecorder()
+	post := httptest.NewRequest(http.MethodPost, "/updates/core/wait", nil)
+	post.RemoteAddr = "192.168.1.5:12345"
+	apiHandler(&App{}).ServeHTTP(r, post)
+	if r.Code != http.StatusConflict {
+		t.Fatalf("unapproved updater HTTP %d", r.Code)
+	}
+}
+func TestCSQTTCoreRejectsNonARM64Binary(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "fake")
+	if err := os.WriteFile(f, []byte("fake"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := csqttValidateCandidate(f, strings.Repeat("a", 40)); err == nil {
+		t.Fatal("accepted non ELF")
+	}
+}
+
+// A release older than the installed commit must never be offered.
+func TestCSQTTCoreRejectsReleaseDowngrade(t *testing.T) {
+	oldBase, oldClient, oldCommit := csqttGitHubBase, csqttHTTP, buildCommit
+	defer func() { csqttGitHubBase = oldBase; csqttHTTP = oldClient; buildCommit = oldCommit }()
+	buildCommit = strings.Repeat("a", 40)
+	tag := "csqtt-core-v0.6.1"
+	assetURL := "https://github.com/Xenofan-git/CSQTT-Core/releases/download/" + tag + "/" + csqttUpdateAssetName
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/compare/"):
+			io.WriteString(w, `{"status":"behind"}`)
+		case strings.Contains(r.URL.Path, "/commits/"):
+			io.WriteString(w, `{"sha":"`+buildCommit+`"}`)
+		case strings.HasSuffix(r.URL.Path, "/releases"):
+			io.WriteString(w, `[{"tag_name":"`+tag+`","draft":false,"prerelease":false,"assets":[{"name":"`+csqttUpdateAssetName+`","size":17002463,"digest":"sha256:`+strings.Repeat("a", 64)+`","browser_download_url":"`+assetURL+`"}]}]`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+	csqttGitHubBase = ts.URL
+	csqttHTTP = ts.Client()
+	status := checkOurCSQTTCoreUpdate(context.Background())
+	if status.Error != "" || status.CanInstall || status.Update {
+		t.Fatalf("unsafe downgrade: %+v", status)
 	}
 }

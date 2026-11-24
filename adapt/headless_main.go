@@ -7,8 +7,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"debug/buildinfo"
 	"embed"
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,9 +21,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -768,29 +773,44 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
 		writeJSON(w, map[string]bool{"deploying": libs.DeployBusy()})
 	})
 
+	// The inherited upstream updater is NOT safe for this hybrid: it could
+	// replace our controller with Endlad2/csqtt-core. Never call that code.
 	mux.HandleFunc("/updates/core", func(w http.ResponseWriter, r *http.Request) {
 		if !method(w, r, http.MethodPost) {
 			return
 		}
-		writeJSON(w, map[string]bool{"ok": app.UpdateCore()})
+		http.Error(w, "legacy upstream updater removed; use verified CSQTT Core release", http.StatusGone)
 	})
 	mux.HandleFunc("/updates/core/wait", func(w http.ResponseWriter, r *http.Request) {
 		if !method(w, r, http.MethodPost) {
 			return
 		}
-		writeJSON(w, map[string]bool{"ok": app.UpdateCoreAndWait()})
+		if !privateClient(r) {
+			http.Error(w, "LAN or Tailscale only", http.StatusForbidden)
+			return
+		}
+		if app == nil || app.core == nil || app.core.IsConnected() {
+			http.Error(w, "disconnect CSQTT Core before updating", http.StatusConflict)
+			return
+		}
+		result, err := prepareVerifiedCSQTTCoreUpdate(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		writeJSON(w, result)
 	})
 	mux.HandleFunc("/updates/core/check", func(w http.ResponseWriter, r *http.Request) {
 		if !method(w, r, http.MethodGet) {
 			return
 		}
-		writeRaw(w, app.CheckUpdate())
+		writeJSON(w, checkOurCSQTTCoreUpdate(r.Context()))
 	})
 	mux.HandleFunc("/updates/core/status", func(w http.ResponseWriter, r *http.Request) {
 		if !method(w, r, http.MethodGet) {
 			return
 		}
-		writeJSON(w, map[string]bool{"downloading": app.IsCoreDownloading()})
+		writeJSON(w, readCSQTTCoreUpdateStatus())
 	})
 	mux.HandleFunc("/updates/lalune", func(w http.ResponseWriter, r *http.Request) {
 		if !method(w, r, http.MethodGet) {
@@ -1302,6 +1322,403 @@ func panelListenAddress() (string, error) {
 	}
 	return net.JoinHostPort("0.0.0.0", strconv.Itoa(n)), nil
 }
+
+// CSQTT Core release channel. Never invoke inherited Endlad2/csqtt-core updaters.
+const csqttUpdateRepo = "Xenofan-git/CSQTT-Core"
+const csqttUpdateBranch = "test/csqtt-core-linux-unified-253-20261122"
+const csqttUpdateBinary = "/usr/local/libexec/csqtt-core/bin/csqtt-core-headless"
+const csqttUpdateRoot = "/var/lib/csqtt-core/updates"
+const csqttUpdateAssetName = "csqtt-core-headless-linux-arm64"
+
+var csqttGitHubBase = "https://api.github.com"
+var csqttHTTP = &http.Client{Timeout: 12 * time.Second}
+var csqttUpdateLock sync.Mutex
+
+type csqttAsset struct {
+	Name   string `json:"name"`
+	Size   int64  `json:"size"`
+	Digest string `json:"digest"`
+	URL    string `json:"browser_download_url"`
+}
+type csqttRelease struct {
+	Tag        string       `json:"tag_name"`
+	Draft      bool         `json:"draft"`
+	Prerelease bool         `json:"prerelease"`
+	Assets     []csqttAsset `json:"assets"`
+}
+type csqttUpdateInfo struct {
+	Repository      string `json:"repository"`
+	SourceBranch    string `json:"sourceBranch"`
+	InstalledCommit string `json:"installedCommit"`
+	SourceCommit    string `json:"sourceCommit,omitempty"`
+	SourceAhead     bool   `json:"sourceAhead"`
+	ReleaseTag      string `json:"releaseTag,omitempty"`
+	Version         string `json:"version,omitempty"`
+	Update          bool   `json:"update"`
+	CanInstall      bool   `json:"canInstall"`
+	Message         string `json:"message"`
+	Error           string `json:"error,omitempty"`
+	asset           csqttAsset
+	releaseCommit   string
+}
+
+func csqttGithubGet(ctx context.Context, link string, out any) error {
+	req, e := http.NewRequestWithContext(ctx, "GET", link, nil)
+	if e != nil {
+		return e
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "CSQTT-Core-LinuxARM64/1")
+	res, e := csqttHTTP.Do(req)
+	if e != nil && strings.HasPrefix(link, "https://api.github.com/") {
+		// Preserve GitHub TLS verification when using the app-owned
+		// Sing-box SOCKS5 as a fallback. No global routing changes.
+		proxyURL, _ := url.Parse("socks5://127.0.0.1:19180")
+		transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+		fallback := &http.Client{Timeout: 12 * time.Second, Transport: transport}
+		res, e = fallback.Do(req.Clone(ctx))
+		transport.CloseIdleConnections()
+	}
+	if e != nil {
+		return fmt.Errorf("GitHub API недоступен по HTTPS и SOCKS5: %w", e)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		return fmt.Errorf("GitHub HTTP %d", res.StatusCode)
+	}
+	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(out)
+}
+func csqttSHA(path string) (string, error) {
+	f, e := os.Open(path)
+	if e != nil {
+		return "", e
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, e = io.Copy(h, io.LimitReader(f, 128<<20+1)); e != nil {
+		return "", e
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+func csqttAssetURL(link, tag string) bool {
+	u, e := url.Parse(link)
+	if e != nil {
+		return false
+	}
+	return u.Scheme == "https" && u.Host == "github.com" && u.RawQuery == "" && u.Fragment == "" &&
+		strings.HasPrefix(u.Path, "/Xenofan-git/CSQTT-Core/releases/download/"+tag+"/") &&
+		strings.HasSuffix(u.Path, "/"+csqttUpdateAssetName)
+}
+func csqttApprovedAsset(r csqttRelease) (csqttAsset, bool) {
+	if r.Draft || r.Prerelease || !regexp.MustCompile(`^csqtt-core-v[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(r.Tag) {
+		return csqttAsset{}, false
+	}
+	for _, a := range r.Assets {
+		if a.Name != csqttUpdateAssetName || a.Size < 5<<20 || a.Size > 128<<20 || !strings.HasPrefix(a.Digest, "sha256:") {
+			continue
+		}
+		sha := strings.TrimPrefix(a.Digest, "sha256:")
+		if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(sha) || !csqttAssetURL(a.URL, r.Tag) {
+			continue
+		}
+		return a, true
+	}
+	return csqttAsset{}, false
+}
+func checkOurCSQTTCoreUpdate(ctx context.Context) csqttUpdateInfo {
+	o := csqttUpdateInfo{Repository: csqttUpdateRepo, SourceBranch: csqttUpdateBranch, InstalledCommit: buildCommit}
+	var head struct {
+		SHA string `json:"sha"`
+	}
+	if e := csqttGithubGet(ctx, csqttGitHubBase+"/repos/"+csqttUpdateRepo+"/commits/"+url.PathEscape(csqttUpdateBranch), &head); e != nil {
+		o.Error = "Не удалось проверить исходники CSQTT Core: " + e.Error()
+		o.Message = o.Error
+		return o
+	}
+	if !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(head.SHA) {
+		o.Error = "Некорректный commit SHA GitHub"
+		o.Message = o.Error
+		return o
+	}
+	o.SourceCommit = head.SHA
+	o.SourceAhead = head.SHA != buildCommit
+	var releases []csqttRelease
+	if e := csqttGithubGet(ctx, csqttGitHubBase+"/repos/"+csqttUpdateRepo+"/releases?per_page=30", &releases); e != nil {
+		o.Error = "Не удалось проверить релизы CSQTT Core: " + e.Error()
+		o.Message = o.Error
+		return o
+	}
+	for _, r := range releases {
+		asset, ok := csqttApprovedAsset(r)
+		if !ok {
+			continue
+		}
+		// The installed code must be an ancestor of the release tag. This
+		// blocks stale releases, unrelated forks and accidental downgrades.
+		if !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(buildCommit) {
+			o.Error = "Неизвестен commit работающего CSQTT Core — обновление запрещено"
+			o.Message = o.Error
+			return o
+		}
+		var cmp struct {
+			Status string `json:"status"`
+		}
+		cmpURL := csqttGitHubBase + "/repos/" + csqttUpdateRepo + "/compare/" + buildCommit + "..." + url.PathEscape(r.Tag)
+		if e := csqttGithubGet(ctx, cmpURL, &cmp); e != nil {
+			o.Error = "Невозможно проверить историю релиза: " + e.Error()
+			o.Message = o.Error
+			return o
+		}
+		if cmp.Status != "ahead" && cmp.Status != "identical" {
+			continue
+		}
+		var releaseHead struct {
+			SHA string `json:"sha"`
+		}
+		if e := csqttGithubGet(ctx, csqttGitHubBase+"/repos/"+csqttUpdateRepo+"/commits/"+url.PathEscape(r.Tag), &releaseHead); e != nil {
+			o.Error = "Невозможно подтвердить коммит релиза: " + e.Error()
+			o.Message = o.Error
+			return o
+		}
+		if !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(releaseHead.SHA) {
+			o.Error = "Некорректный коммит релиза"
+			o.Message = o.Error
+			return o
+		}
+		current, e := csqttSHA(csqttUpdateBinary)
+		if e != nil {
+			o.Message = "Нет доступа к установленному контроллеру — обновление запрещено"
+			return o
+		}
+		o.ReleaseTag = r.Tag
+		o.Version = r.Tag
+		o.asset = asset
+		o.releaseCommit = releaseHead.SHA
+		if current == strings.TrimPrefix(asset.Digest, "sha256:") {
+			o.Message = "Проверенный ARM64-релиз " + r.Tag + " уже установлен"
+			return o
+		}
+		o.Update = true
+		o.CanInstall = true
+		o.Message = "Доступен проверенный контроллер " + r.Tag + " (Sing-box отдельно)"
+		return o
+	}
+	if o.SourceAhead {
+		o.Message = "Исходники обновились, но совместимый опубликованный ARM64-релиз отсутствует. Установка заблокирована."
+	} else {
+		o.Message = "Исходники CSQTT Core актуальны. Подходящего опубликованного ARM64-релиза пока нет."
+	}
+	return o
+}
+func readCSQTTCoreUpdateStatus() map[string]any {
+	b, e := os.ReadFile(filepath.Join(csqttUpdateRoot, "last-status"))
+	if e != nil {
+		return map[string]any{"downloading": false, "state": "idle"}
+	}
+	return map[string]any{"downloading": false, "state": strings.TrimSpace(string(b))}
+}
+
+func csqttDownloadAsset(ctx context.Context, a csqttAsset, tag, target string) error {
+	if !csqttAssetURL(a.URL, tag) {
+		return fmt.Errorf("недоверенный URL релиза")
+	}
+	client := &http.Client{Timeout: 120 * time.Second, CheckRedirect: func(req *http.Request, history []*http.Request) error {
+		host := req.URL.Hostname()
+		if len(history) > 5 || req.URL.Scheme != "https" || (host != "github.com" && host != "release-assets.githubusercontent.com" && host != "objects.githubusercontent.com") {
+			return fmt.Errorf("недоверенный редирект загрузки")
+		}
+		return nil
+	}}
+	req, e := http.NewRequestWithContext(ctx, "GET", a.URL, nil)
+	if e != nil {
+		return e
+	}
+	req.Header.Set("User-Agent", "CSQTT-Core-ARM64-Updater/1")
+	res, e := client.Do(req)
+	if e != nil {
+		return e
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		return fmt.Errorf("скачивание HTTP %d", res.StatusCode)
+	}
+	f, e := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if e != nil {
+		return e
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, e := io.Copy(io.MultiWriter(f, h), io.LimitReader(res.Body, 128<<20+1))
+	if e != nil {
+		return e
+	}
+	if n != a.Size || n > 128<<20 {
+		return fmt.Errorf("неверный размер файла релиза")
+	}
+	if hex.EncodeToString(h.Sum(nil)) != strings.TrimPrefix(a.Digest, "sha256:") {
+		return fmt.Errorf("SHA-256 не совпадает")
+	}
+	if e = f.Sync(); e != nil {
+		return e
+	}
+	return f.Chmod(0700)
+}
+func csqttValidateCandidate(path, expectedCommit string) error {
+	f, e := os.Open(path)
+	if e != nil {
+		return e
+	}
+	defer f.Close()
+	header := make([]byte, 20)
+	if _, e = io.ReadFull(f, header); e != nil {
+		return e
+	}
+	if string(header[:4]) != "\x7fELF" || header[4] != 2 || header[5] != 1 || binary.LittleEndian.Uint16(header[18:20]) != 183 {
+		return fmt.Errorf("артефакт не является Linux ARM64 ELF")
+	}
+	info, e := buildinfo.ReadFile(path)
+	if e != nil {
+		return fmt.Errorf("отсутствуют Go build сведения: %w", e)
+	}
+	if info.Path != "lalune-desktop" {
+		return fmt.Errorf("неподходящий модуль контроллера")
+	}
+	linux, arm, commit := false, false, false
+	for _, v := range info.Settings {
+		if v.Key == "GOOS" && v.Value == "linux" {
+			linux = true
+		}
+		if v.Key == "GOARCH" && v.Value == "arm64" {
+			arm = true
+		}
+		if v.Key == "-ldflags" && strings.Contains(v.Value, "main.buildCommit="+expectedCommit) {
+			commit = true
+		}
+	}
+	if !linux || !arm || !commit {
+		return fmt.Errorf("нет проверенных GOOS/GOARCH/commit метаданных")
+	}
+	return nil
+}
+func prepareVerifiedCSQTTCoreUpdate(ctx context.Context) (map[string]any, error) {
+	if !csqttUpdateLock.TryLock() {
+		return nil, fmt.Errorf("обновление уже подготавливается")
+	}
+	defer csqttUpdateLock.Unlock()
+	if runtime.GOOS != "linux" || runtime.GOARCH != "arm64" || os.Geteuid() != 0 {
+		return nil, fmt.Errorf("обновление разрешено только root на Linux ARM64")
+	}
+	exe, e := os.Executable()
+	if e != nil || exe != csqttUpdateBinary {
+		return nil, fmt.Errorf("неподтвержденный путь CSQTT Core")
+	}
+	result := checkOurCSQTTCoreUpdate(ctx)
+	if result.Error != "" {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	if !result.CanInstall {
+		return nil, fmt.Errorf("нет совместимого опубликованного ARM64-релиза")
+	}
+	tag, a := result.ReleaseTag, result.asset
+	parent := filepath.Join(csqttUpdateRoot, tag)
+	if e = os.MkdirAll(parent, 0700); e != nil {
+		return nil, e
+	}
+	if e = os.Chmod(parent, 0700); e != nil {
+		return nil, e
+	}
+	// Per-attempt private directory prevents another check from replacing
+	// an asset while the detached systemd updater validates it.
+	dir, e := os.MkdirTemp(parent, "candidate-")
+	if e != nil {
+		return nil, e
+	}
+	if e = os.Chmod(dir, 0700); e != nil {
+		return nil, e
+	}
+	candidate := filepath.Join(dir, "candidate")
+	if e = csqttDownloadAsset(ctx, a, tag, candidate); e != nil {
+		_ = os.Remove(candidate)
+		return nil, e
+	}
+	if e = csqttValidateCandidate(candidate, result.releaseCommit); e != nil {
+		_ = os.Remove(candidate)
+		return nil, e
+	}
+	script := filepath.Join(dir, "apply.sh")
+	if e = os.WriteFile(script, []byte(csqttApplyScript), 0700); e != nil {
+		return nil, e
+	}
+	sha := strings.TrimPrefix(a.Digest, "sha256:")
+	unit := "csqtt-core-upgrade-" + sha[:12] + "-" + strconv.FormatInt(time.Now().Unix(), 10)
+	_ = os.WriteFile(filepath.Join(csqttUpdateRoot, "last-status"), []byte("scheduled:"+tag+"\n"), 0600)
+	cmd := exec.Command("systemd-run", "--collect", "--unit="+unit, "--property=Type=oneshot", "/bin/bash", script, candidate, sha)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		_ = os.WriteFile(filepath.Join(csqttUpdateRoot, "last-status"), []byte("failed-to-start:"+tag+"\n"), 0600)
+		return nil, fmt.Errorf("не удалось запустить отдельную systemd-службу: %v %s", err, strings.TrimSpace(string(output)))
+	}
+	return map[string]any{"ok": true, "scheduled": true, "releaseTag": tag, "message": "Обновление запущено отдельной systemd-службой; при ошибке будет выполнен откат"}, nil
+}
+
+const csqttApplyScript = `#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+exec 9>/run/csqtt-core-release-update.lock
+flock -n 9
+TARGET=/usr/local/libexec/csqtt-core/bin/csqtt-core-headless
+STATE=/var/lib/csqtt-core/updates/last-status
+CANDIDATE="$1"
+SHA="$2"
+[[ "$CANDIDATE" == /var/lib/csqtt-core/updates/csqtt-core-v*/candidate-*/candidate ]]
+[[ "$SHA" =~ ^[0-9a-f]{64}$ ]]
+[[ "$(sha256sum "$CANDIDATE" | cut -d' ' -f1)" == "$SHA" ]]
+[[ "$(id -u)" == 0 ]]
+[[ -f "$TARGET" ]]
+[[ -f /etc/systemd/system/csqtt-core.service ]]
+for service in csqtt-core.service hydraroute-core.service m-ui.service tailscale-xray-proxy.service; do
+ systemctl is-active --quiet "$service"
+done
+BEFORE_ROUTE="$(ip -4 route show default)"
+BACKUP="$(dirname "$CANDIDATE")/backup-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -m 0700 "$BACKUP"
+cp -p "$TARGET" "$BACKUP/csqtt-core-headless.previous"
+cp -p /etc/systemd/system/csqtt-core.service "$BACKUP/csqtt-core.service"
+OLD="$(sha256sum "$BACKUP/csqtt-core-headless.previous" | cut -d' ' -f1)"
+echo "applying:$SHA" > "$STATE"
+rollback() {
+ rc="$?"
+ trap - ERR
+ echo "rollback:$SHA" > "$STATE"
+ install -m 0755 "$BACKUP/csqtt-core-headless.previous" "$TARGET.rollback"
+ mv -f "$TARGET.rollback" "$TARGET"
+ systemctl restart csqtt-core.service || true
+ echo "CSQTT_CORE_RELEASE_ROLLBACK old=$OLD new=$SHA rc=$rc"
+ exit "$rc"
+}
+trap rollback ERR
+install -m 0755 "$CANDIDATE" "$TARGET.new"
+[[ "$(sha256sum "$TARGET.new" | cut -d' ' -f1)" == "$SHA" ]]
+mv -f "$TARGET.new" "$TARGET"
+systemctl restart csqtt-core.service
+healthy=false
+for attempt in $(seq 1 20); do
+ if systemctl is-active --quiet csqtt-core.service &&
+  [[ "$(curl -fsS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:1061/login)" == 200 ]] &&
+  ss -lnt | grep -q '127.0.0.1:19180'; then
+  healthy=true
+  break
+ fi
+ sleep 1
+done
+[[ "$healthy" == true ]]
+[[ "$(sha256sum "$TARGET" | cut -d' ' -f1)" == "$SHA" ]]
+[[ "$(ip -4 route show default)" == "$BEFORE_ROUTE" ]]
+for service in hydraroute-core.service m-ui.service tailscale-xray-proxy.service; do
+ systemctl is-active --quiet "$service"
+done
+echo "success:$SHA" > "$STATE"
+echo "CSQTT_CORE_RELEASE_UPDATE_OK old=$OLD new=$SHA"
+`
 
 func main() {
 	configuredPanelListen, listenErr := panelListenAddress()
