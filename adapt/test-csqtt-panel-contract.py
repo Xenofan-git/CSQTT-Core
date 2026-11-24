@@ -356,9 +356,19 @@ for contract in (
 
 # Keep the user-facing route save explicit: it stores rules but must not claim
 # that active routing changed immediately without a reconnect.
-# Deploy exposes only the actual eth1-bound listener; no configured/example IP is shown.
-if 'id="socks5DeployCard"' not in html or "req('/socks5/status')" not in js:
-    raise SystemExit("Deploy tab does not query live SOCKS5 listener state")
+# The CSQTT SOCKS5 runtime listener status belongs in Sing-box, not SSH Deploy.
+if 'id="socks5DeployCard"' in html or 'id="socks5CsqttRuntime"' not in html:
+    raise SystemExit("CSQTT SOCKS5 runtime status not moved to Sing-box")
+if "req('/socks5/status')" not in js:
+    raise SystemExit("Sing-box tab does not query live CSQTT SOCKS5 listener state")
+deploy=html.split('<section class="page" id="page-deploy">',1)[1].split('<section class="page" id="page-route">',1)[0]
+singbox=html.split('<section class="page" id="page-singbox">',1)[1].split('</section>',1)[0]
+if any('id="'+k+'"' in deploy for k in ('socks5Address','socks5Dot','socks5Details','copySocks5Address')):
+    raise SystemExit("CSQTT SOCKS5 runtime controls still in Deploy")
+if not all('id="'+k+'"' in singbox for k in ('socks5Address','socks5Dot','socks5Details','copySocks5Address')):
+    raise SystemExit("CSQTT SOCKS5 runtime controls missing from Sing-box")
+if 'id="refreshDeployStatus"' not in deploy or 'deployStatusError' not in js:
+    raise SystemExit("Deploy status error and retry action missing")
 if 'id="copySocks5Address"' not in html or "$('copySocks5Address').addEventListener('click'" not in js:
     raise SystemExit("SOCKS5 copy control is missing")
 if 'mux.HandleFunc("/socks5/status"' not in backend:

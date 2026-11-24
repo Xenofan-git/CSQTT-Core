@@ -48,6 +48,7 @@ def main():
     socks5_state = {"interface":"eth1","protocol":"SOCKS5","auth":"no-auth","monitoring":True,"listening":True,"address":"192.168.4.26:12500"}
     calls = []
     fail_paths = set()
+    fail_http_status = {}
     core_release_available = {"value": False}
     core_update_server_state = {"value":"idle"}
     fail_requests = set()  # (verb, path): inject only a readback failure, not a failed save.
@@ -68,8 +69,9 @@ def main():
         calls.append((method, path, request.post_data))
         body = {}
         status = 200
-        if path in fail_paths or (method, path) in fail_requests:
-            route.fulfill(status=503, content_type="application/json", body=json.dumps({"error": "fixture unavailable"}))
+        if path in fail_paths or (method, path) in fail_requests or path in fail_http_status:
+            status_code=fail_http_status.get(path,503)
+            route.fulfill(status=status_code, content_type="application/json", body=json.dumps({"error": "fixture unavailable"}))
             return
         if path == "/configs" and method == "GET":
             body = profiles
@@ -470,7 +472,9 @@ def main():
                     f"active tab missing aria-current state: {name}"
                 )
                 assert page.locator(f'button[data-page="{name}"]').get_attribute("aria-pressed") is None
-                if name == "deploy":
+                if name == "singbox":
+                    assert page.locator("#page-deploy #socks5Address").count() == 0
+                    assert page.locator("#page-singbox #socks5CsqttRuntime").count() == 1
                     page.wait_for_function("document.querySelector('#socks5Address').value === '192.168.4.26:12500'")
                     assert page.locator("#socks5State").inner_text() == "Слушатель активен"
                     assert page.locator("#copySocks5Address").is_enabled()
@@ -479,7 +483,7 @@ def main():
                     socks5_state["address"] = ""
                     page.evaluate("() => window.dispatchEvent(new Event('focus'))")
                     page.locator('button[data-page="connect"]').click()
-                    page.locator('button[data-page="deploy"]').click()
+                    page.locator('button[data-page="singbox"]').click()
                     page.wait_for_function("document.querySelector('#socks5Address').value === '—'")
                     assert page.locator("#copySocks5Address").is_disabled()
                     socks5_state["listening"] = True
@@ -793,7 +797,7 @@ def main():
                     return {left:r.left,right:r.right,width:r.width,height:r.height,top:r.top};
                   };
                   return {
-                    target:rect('#socks5DeployCard .field'),
+                    target:rect('#page-deploy>.card:first-of-type .field'),
                     group:rect('#page-deploy .deploy-action-group'),
                     delete:rect('#uninstallCsqtt'),
                     install:rect('#startDeploy'),
@@ -1151,6 +1155,21 @@ def main():
             assert page.locator("#power").is_disabled(), "connect toggle stayed enabled while VPN state was unknown"
             assert "Не удалось получить состояние деплоя" in page.locator("#deployState").inner_text(), "unknown deploy state was presented as a completed/idle operation"
             assert page.locator("#startDeploy").is_disabled(), "deploy remained enabled while deploy state was unknown"
+            assert "HTTP 503" in page.locator("#deployState").inner_text()
+            assert page.locator("#refreshDeployStatus").is_enabled()
+            page.locator('button[data-page="deploy"]').click()
+            fail_paths.discard("/deploy/status")
+            page.locator("#refreshDeployStatus").click()
+            page.wait_for_function("() => !document.querySelector('#startDeploy').disabled")
+            assert page.locator("#startDeploy").is_enabled(), "retry did not re-enable deploy after confirmed idle status"
+            fail_http_status["/deploy/status"]=403
+            page.locator("#refreshDeployStatus").click()
+            page.wait_for_function("() => document.querySelector('#deployState').textContent.includes('HTTP 403')")
+            assert "Tailscale" in page.locator("#deployState").inner_text()
+            assert page.locator("#startDeploy").is_disabled(), "403 deployment denial must fail closed"
+            fail_http_status.pop("/deploy/status")
+            page.locator("#refreshDeployStatus").click()
+            page.wait_for_function("() => !document.querySelector('#startDeploy').disabled")
             assert not page_errors, f"uncaught browser errors: {page_errors}"
 
             # Exercise the split MAIN/ISOLATED CAPTCHA Bridge. Page-controlled
