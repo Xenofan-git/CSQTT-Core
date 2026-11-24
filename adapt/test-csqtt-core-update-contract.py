@@ -11,7 +11,7 @@ assert 'http.StatusGone' in x
 assert 'prepareVerifiedCSQTTCoreUpdate' in x
 assert 'privateClient(r)' in x
 for x in ['csqttApprovedAsset','csqttAssetURL','sha256:','csqttValidateCandidate',
-          'csqttDownloadAsset','main.buildCommit=','/compare/','systemd-run',
+          'csqttDownloadAsset','bytes.Contains(data, []byte(expectedCommit))','/compare/','systemd-run',
           'rollback','BEFORE_ROUTE','hydraroute-core.service']:
     assert x in g,x
 assert 'id="updateCore" disabled' in h

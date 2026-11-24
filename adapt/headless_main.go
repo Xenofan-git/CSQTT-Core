@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -1583,7 +1584,7 @@ func csqttValidateCandidate(path, expectedCommit string) error {
 	if info.Path != "lalune-desktop" {
 		return fmt.Errorf("неподходящий модуль контроллера")
 	}
-	linux, arm, commit := false, false, false
+	linux, arm := false, false
 	for _, v := range info.Settings {
 		if v.Key == "GOOS" && v.Value == "linux" {
 			linux = true
@@ -1591,12 +1592,22 @@ func csqttValidateCandidate(path, expectedCommit string) error {
 		if v.Key == "GOARCH" && v.Value == "arm64" {
 			arm = true
 		}
-		if v.Key == "-ldflags" && strings.Contains(v.Value, "main.buildCommit="+expectedCommit) {
-			commit = true
-		}
 	}
-	if !linux || !arm || !commit {
-		return fmt.Errorf("нет проверенных GOOS/GOARCH/commit метаданных")
+	if !linux || !arm {
+		return fmt.Errorf("нет проверенных GOOS/GOARCH метаданных")
+	}
+	// Go 1.26 does not expose -X main.buildCommit in debug/buildinfo,
+	// but the linker puts the exact 40-byte SHA into the ELF data section.
+	// Require the release-tag commit within that ELF after SHA-256 verification.
+	if !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(expectedCommit) {
+		return fmt.Errorf("недопустимый GitHub commit SHA")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !bytes.Contains(data, []byte(expectedCommit)) {
+		return fmt.Errorf("коммит ELF не совпадает с коммитом тега GitHub")
 	}
 	return nil
 }

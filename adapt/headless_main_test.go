@@ -1051,3 +1051,17 @@ func TestCSQTTCoreRejectsReleaseDowngrade(t *testing.T) {
 		t.Fatalf("unsafe downgrade: %+v", status)
 	}
 }
+
+func TestCSQTTCoreVerifyActualARM64ELFCommit(t *testing.T) {
+	path := os.Getenv("CSQTT_TEST_ARM64_BINARY")
+	commit := os.Getenv("CSQTT_TEST_ARM64_COMMIT")
+	if path == "" || commit == "" {
+		t.Skip("specify isolated test ARM64 binary and commit")
+	}
+	if err := csqttValidateCandidate(path, commit); err != nil {
+		t.Fatalf("valid ARM64 ELF rejected: %v", err)
+	}
+	if err := csqttValidateCandidate(path, strings.Repeat("a", 40)); err == nil {
+		t.Fatal("different release tag SHA accepted")
+	}
+}
