@@ -1206,8 +1206,25 @@ def main():
             page.set_viewport_size({"width":1280,"height":850})
             page.locator("#deployHost").fill("192.0.2.50")
             page.locator("#deployPassword").fill("fixture-ssh-password")
+            # First install attempt without server credentials must open the
+            # relevant authorization dialog BEFORE showing install confirmation.
+            initial_posts = len([1 for method, path, _ in calls if method == "POST" and path == "/deploy"])
+            page.locator("#startDeploy").click()
+            page.locator("#deploySecretsOverlay").wait_for(state="visible")
+            assert page.locator("#deployConfirmOverlay").is_hidden(), "confirmation shown before authorization"
+            assert "НЕ SSH-пароль" in page.locator("#deployAuthMessage").inner_text()
+            assert "192.0.2.50" in page.locator("#deployAuthMessage").inner_text()
+            assert page.evaluate("document.activeElement === document.querySelector('#mainPassword')")
+            assert page.locator("#deployPassword").input_value() == ""
+            assert ssh_password_saved["192.0.2.50"] == "fixture-ssh-password"
+            assert len([1 for method, path, _ in calls if method == "POST" and path == "/deploy"]) == initial_posts
+            page.locator("#cancelDeployAuth").click()
+            assert page.locator("#deploySecretsOverlay").is_hidden()
+            assert "Авторизация" in page.locator("#authSummary").inner_text()
+            # Existing explicit access to the authorization dialog still works.
             page.locator("#editDeployAuth").click()
             page.locator("#deploySecretsOverlay").wait_for(state="visible")
+            assert page.locator("#deployAuthMessage").is_hidden()
             # A single blue focus border belongs to the password wrapper.
             # The nested password input must not draw a second offset ring.
             for theme_name in ("light","dark"):
@@ -1284,6 +1301,7 @@ def main():
             # Cancel, Escape and backdrop must never send the Deploy request.
             initial_posts=len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])
             page.locator("#startDeploy").click()
+            page.locator("#deployConfirmOverlay").wait_for(state="visible")
             assert page.locator("#deployConfirmOverlay").is_visible()
             assert page.locator("#deployConfirmHost").inner_text()=="192.0.2.50"
             assert page.locator("#deployConfirmCorePort").inner_text()=="UDP 47000"
@@ -1292,6 +1310,7 @@ def main():
             assert page.locator("#deployConfirmOverlay").is_hidden()
             assert len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])==initial_posts
             page.locator("#startDeploy").click()
+            page.locator("#deployConfirmOverlay").wait_for(state="visible")
             page.locator("#deployConfirmCancel").press("Escape")
             assert page.locator("#deployConfirmOverlay").is_hidden()
             assert len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])==initial_posts
@@ -1301,6 +1320,7 @@ def main():
                 for viewport_width in (390,768,1280,1920):
                     page.set_viewport_size({"width":viewport_width,"height":850})
                     page.locator("#startDeploy").click()
+                    page.locator("#deployConfirmOverlay").wait_for(state="visible")
                     dialog=page.evaluate("""() => {
                         const rect=document.querySelector('#deployConfirmOverlay [role="dialog"]').getBoundingClientRect();
                         return {x:rect.x,right:rect.right,centerX:rect.x+rect.width/2,centerY:rect.y+rect.height/2,
@@ -1314,6 +1334,7 @@ def main():
             page.set_viewport_size({"width":1280,"height":850})
             page.locator("#themeMode").select_option("light")
             page.locator("#startDeploy").click()
+            page.locator("#deployConfirmOverlay").wait_for(state="visible")
             page.locator("#deployConfirmAccept").click()
             page.wait_for_function("""() => document.querySelector("#toast").textContent.includes("Деплой запущен")""")
             deploy_requests = [json.loads(raw) for method, path, raw in calls

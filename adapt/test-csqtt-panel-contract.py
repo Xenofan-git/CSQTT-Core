@@ -459,3 +459,11 @@ assert 'id="deployStatusOverlay"' in html and 'id="deployStatusRetry"' in html
 assert 'aria-labelledby="deployStatusTitle"' in html
 assert 'function renderDeployStatusDialog(loading=false)' in js
 assert 'function checkDeployStatusDialog()' in js
+
+
+# Missing per-host Deploy server credentials open an actionable dialog
+# BEFORE install confirmation, without sending POST /deploy.
+assert 'async function openDeployAuthModal(requiredForInstall=false)' in js
+assert 'if(!hasDeployCredentials(host)){await openDeployAuthModal(true);return}if(!await showDeployConfirmation' in js
+assert 'SSH-пароль хранится отдельно.' in js
+assert 'id="authSummary" class="muted" role="status" aria-live="polite"' in html
