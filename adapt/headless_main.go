@@ -138,6 +138,213 @@ func saveTunnelAuthPassword(password string) error {
 	return os.Rename(tmp, path)
 }
 
+// Deploy secrets are kept per destination in a root-private controller file.
+// GET exposes only configured state and login, never either password.
+type deploySavedCredentials struct {
+	MainPassword string `json:"mainPassword"`
+	WebLogin     string `json:"webLogin"`
+	WebPassword  string `json:"webPassword"`
+}
+
+var deployCredentialsMu sync.Mutex
+var deployCredentialPattern = regexp.MustCompile("^[A-Za-z0-9]+$")
+var deployHostPattern = regexp.MustCompile("^[A-Za-z0-9_.:-]+$")
+
+func deployHostKey(host string) (string, error) {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" || len(host) > 253 || !deployHostPattern.MatchString(host) {
+		return "", fmt.Errorf("недопустимый адрес сервера")
+	}
+	return host, nil
+}
+func validateDeployCredentials(v deploySavedCredentials) error {
+	if len(v.MainPassword) < 1 || len(v.MainPassword) > 256 || len(v.WebLogin) < 1 || len(v.WebLogin) > 64 || len(v.WebPassword) < 1 || len(v.WebPassword) > 256 || !deployCredentialPattern.MatchString(v.MainPassword) || !deployCredentialPattern.MatchString(v.WebLogin) || !deployCredentialPattern.MatchString(v.WebPassword) {
+		return fmt.Errorf("авторизация: только латиница и цифры, логин до 64 символов, пароль до 256")
+	}
+	return nil
+}
+func deployCredentialsPath() (string, error) {
+	root, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(root, "csqtt-core")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	st, err := os.Lstat(dir)
+	if err != nil || !st.IsDir() || st.Mode().Perm()&0077 != 0 {
+		return "", fmt.Errorf("небезопасные права каталога авторизации")
+	}
+	return filepath.Join(dir, "deploy-credentials.json"), nil
+}
+
+// Call read/write only while holding deployCredentialsMu.
+func readDeployCredentials(path string) (map[string]deploySavedCredentials, error) {
+	values := make(map[string]deploySavedCredentials)
+	st, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return values, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() || st.Mode().Perm()&0077 != 0 || st.Size() > (1<<20) {
+		return nil, fmt.Errorf("небезопасный файл сохранённой авторизации")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(data, &values); err != nil || values == nil {
+		return nil, fmt.Errorf("повреждён файл сохранённой авторизации")
+	}
+	return values, nil
+}
+func writeDeployCredentials(path string, values map[string]deploySavedCredentials) error {
+	data, err := json.Marshal(values)
+	if err != nil {
+		return err
+	}
+	if len(data) > 1<<20 {
+		return fmt.Errorf("слишком много сохранённых данных авторизации")
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".deploy-credentials-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err = f.Chmod(0600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err = f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	if err = os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		defer d.Close()
+		if err = d.Sync(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func getDeployCredentials(host string) (deploySavedCredentials, bool, error) {
+	key, err := deployHostKey(host)
+	if err != nil {
+		return deploySavedCredentials{}, false, err
+	}
+	deployCredentialsMu.Lock()
+	defer deployCredentialsMu.Unlock()
+	path, err := deployCredentialsPath()
+	if err != nil {
+		return deploySavedCredentials{}, false, err
+	}
+	values, err := readDeployCredentials(path)
+	if err != nil {
+		return deploySavedCredentials{}, false, err
+	}
+	value, ok := values[key]
+	return value, ok, nil
+}
+func saveDeployCredentials(host string, value deploySavedCredentials) error {
+	key, err := deployHostKey(host)
+	if err != nil {
+		return err
+	}
+	if err = validateDeployCredentials(value); err != nil {
+		return err
+	}
+	deployCredentialsMu.Lock()
+	defer deployCredentialsMu.Unlock()
+	path, err := deployCredentialsPath()
+	if err != nil {
+		return err
+	}
+	values, err := readDeployCredentials(path)
+	if err != nil {
+		return err
+	}
+	if _, exists := values[key]; !exists && len(values) >= 32 {
+		return fmt.Errorf("предел 32 сохранённых сервера")
+	}
+	values[key] = value
+	return writeDeployCredentials(path, values)
+}
+func deleteDeployCredentials(host string) error {
+	key, err := deployHostKey(host)
+	if err != nil {
+		return err
+	}
+	deployCredentialsMu.Lock()
+	defer deployCredentialsMu.Unlock()
+	path, err := deployCredentialsPath()
+	if err != nil {
+		return err
+	}
+	values, err := readDeployCredentials(path)
+	if err != nil {
+		return err
+	}
+	delete(values, key)
+	return writeDeployCredentials(path, values)
+}
+
+// Inject only for the exact target host, never for other servers. Uninstall unchanged.
+func enrichDeployRequest(raw json.RawMessage) (json.RawMessage, error) {
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &body); err != nil || body == nil {
+		return nil, fmt.Errorf("неверный JSON Deploy")
+	}
+	var protocol, host string
+	_ = json.Unmarshal(body["protocol"], &protocol)
+	_ = json.Unmarshal(body["host"], &host)
+	var uninstall bool
+	_ = json.Unmarshal(body["uninstall"], &uninstall)
+	if uninstall || !strings.EqualFold(protocol, "CSQTT") {
+		return raw, nil
+	}
+	read := func(key string) string { var v string; _ = json.Unmarshal(body[key], &v); return v }
+	count := 0
+	for _, key := range []string{"mainPassword", "webUser", "webPassword"} {
+		if read(key) != "" {
+			count++
+		}
+	}
+	if count == 3 {
+		return raw, nil
+	} // backwards-compatible explicit API credentials
+	if count != 0 {
+		return nil, fmt.Errorf("частично заполненные данные авторизации")
+	}
+	v, ok, err := getDeployCredentials(host)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("для сервера не сохранена авторизация")
+	}
+	for key, val := range map[string]string{"mainPassword": v.MainPassword, "webUser": v.WebLogin, "webPassword": v.WebPassword} {
+		body[key], err = json.Marshal(val)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(body)
+}
+
 func csqttDeviceID(core *libs.AppCore) string {
 	if core == nil {
 		return ""
@@ -738,6 +945,52 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
 		}
 	})
 
+	mux.HandleFunc("/deploy/credentials", func(w http.ResponseWriter, r *http.Request) {
+		if !privateClient(r) {
+			http.Error(w, "LAN or Tailscale only", http.StatusForbidden)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			v, ok, err := getDeployCredentials(r.URL.Query().Get("host"))
+			if err != nil {
+				http.Error(w, "не удалось прочитать авторизацию", http.StatusBadRequest)
+				return
+			}
+			user := ""
+			if ok {
+				user = v.WebLogin
+			}
+			writeJSON(w, map[string]any{"configured": ok, "webLogin": user})
+		case http.MethodPut:
+			var body struct {
+				Host         string `json:"host"`
+				MainPassword string `json:"mainPassword"`
+				WebLogin     string `json:"webLogin"`
+				WebPassword  string `json:"webPassword"`
+			}
+			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&body); err != nil {
+				http.Error(w, "некорректные данные", http.StatusBadRequest)
+				return
+			}
+			if err := saveDeployCredentials(body.Host, deploySavedCredentials{MainPassword: body.MainPassword, WebLogin: body.WebLogin, WebPassword: body.WebPassword}); err != nil {
+				http.Error(w, "не удалось сохранить авторизацию", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string]bool{"ok": true, "configured": true})
+		case http.MethodDelete:
+			if err := deleteDeployCredentials(r.URL.Query().Get("host")); err != nil {
+				http.Error(w, "не удалось удалить авторизацию", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string]bool{"ok": true})
+		default:
+			w.Header().Set("Allow", "GET, PUT, DELETE")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 	mux.HandleFunc("/deploy", func(w http.ResponseWriter, r *http.Request) {
 		if !method(w, r, http.MethodPost) {
 			return
@@ -751,7 +1004,12 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
 			http.Error(w, "bad json", http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, map[string]bool{"ok": libs.DeployProtocol(string(raw))})
+		prepared, err := enrichDeployRequest(raw)
+		if err != nil {
+			http.Error(w, "для этого сервера не заданы корректные данные авторизации", http.StatusPreconditionFailed)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": libs.DeployProtocol(string(prepared))})
 	})
 	mux.HandleFunc("/deploy/log", func(w http.ResponseWriter, r *http.Request) {
 		if !method(w, r, http.MethodGet) {

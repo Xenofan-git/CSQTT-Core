@@ -47,6 +47,7 @@ def main():
     }
     socks5_state = {"interface":"eth1","protocol":"SOCKS5","auth":"no-auth","monitoring":True,"listening":True,"address":"192.168.4.26:12500"}
     calls = []
+    deploy_auth_saved = {}  # backend fixture keeps secrets across browser reloads
     fail_paths = set()
     fail_http_status = {}
     core_release_available = {"value": False}
@@ -130,6 +131,23 @@ def main():
             body = {"ok": True}
         elif path == "/socks5/status":
             body = dict(socks5_state)
+        elif path == "/deploy/credentials" and method == "GET":
+            from urllib.parse import parse_qs
+            host = parse_qs(urlparse(request.url).query).get("host", [""])[0].lower()
+            saved = deploy_auth_saved.get(host)
+            body = {"configured": bool(saved), "webLogin":saved["webLogin"] if saved else ""}
+            assert "mainPassword" not in body and "webPassword" not in body
+        elif path == "/deploy/credentials" and method == "PUT":
+            content = json.loads(request.post_data or "{}")
+            assert set(content) == {"host","mainPassword","webLogin","webPassword"}
+            host = content["host"].lower()
+            deploy_auth_saved[host] = content
+            body = {"ok":True,"configured":True}
+        elif path == "/deploy/credentials" and method == "DELETE":
+            from urllib.parse import parse_qs
+            host=parse_qs(urlparse(request.url).query).get("host",[""])[0].lower()
+            deploy_auth_saved.pop(host,None)
+            body = {"ok":True}
         elif path == "/deploy/status":
             body = {"deploying": False}
         elif path == "/deploy/log":
@@ -1186,6 +1204,31 @@ def main():
             page.locator("#webPassword").fill("fixturewebpassword")
             page.locator("#saveDeployAuth").click()
             page.wait_for_function("""() => document.querySelector("#deploySecretsOverlay").classList.contains("hidden")""")
+            assert deploy_auth_saved["192.0.2.50"]["mainPassword"] == "fixturetunnelpassword"
+            assert deploy_auth_saved["192.0.2.50"]["webLogin"] == "fixtureadmin"
+            assert deploy_auth_saved["192.0.2.50"]["webPassword"] == "fixturewebpassword"
+            assert page.locator("#mainPassword").input_value() == ""
+            assert page.locator("#webPassword").input_value() == ""
+            assert "сохранены" in page.locator("#authSummary").inner_text()
+            # Persisted credentials survive a fresh page and never appear in
+            # GET / localStorage, while the SSH password remains deliberately transient.
+            page.reload(wait_until="domcontentloaded")
+            page.locator('button[data-page="deploy"]').click()
+            page.wait_for_function("""() => document.querySelector('#authSummary').textContent.includes('сохранены')""")
+            assert page.locator("#deployHost").input_value()=="192.0.2.50"
+            storage=page.evaluate("JSON.stringify(localStorage)")
+            assert "fixturetunnelpassword" not in storage and "fixturewebpassword" not in storage
+            assert "fixturetunnelpassword" not in page.content() and "fixturewebpassword" not in page.content()
+            page.locator("#editDeployAuth").click()
+            page.locator("#deploySecretsOverlay").wait_for(state="visible")
+            assert page.locator("#webLogin").input_value()=="fixtureadmin"
+            assert page.locator("#mainPassword").input_value()==""
+            assert page.locator("#webPassword").input_value()==""
+            assert "сохранены" in page.locator("#deployAuthStoredNote").inner_text()
+            page.locator("#saveDeployAuth").click()
+            page.wait_for_function("""() => document.querySelector("#deploySecretsOverlay").classList.contains("hidden")""")
+            assert deploy_auth_saved["192.0.2.50"]["mainPassword"]=="fixturetunnelpassword"
+            page.locator("#deployPassword").fill("fixture-ssh-password")
             # Install requires a centered in-app confirmation, not a browser dialog.
             # Cancel, Escape and backdrop must never send the Deploy request.
             initial_posts=len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])
@@ -1228,6 +1271,7 @@ def main():
             assert deploy_requests[-1]["host"] == "192.0.2.50"
             assert deploy_requests[-1]["deviceId"] == "fixture-device"
             assert deploy_requests[-1]["corePort"] == 47000 and deploy_requests[-1]["warpPort"] == 47002
+            assert not any(k in deploy_requests[-1] for k in ("mainPassword","webPassword","webUser")), "browser must not resend saved server passwords"
 
             # A failed status endpoint must not be misreported as a real disconnect,
             # and deployment actions must remain blocked when operation state is unknown.

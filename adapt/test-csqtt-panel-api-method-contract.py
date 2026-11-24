@@ -62,8 +62,14 @@ def parse_frontend_requests(html: str) -> list[tuple[str,str,bool]]:
             raise AssertionError("unrecognized CSQTT req() first argument; review dynamic route")
         prefix=path.group(2)
         dynamic=bool(args[0][path.end():].strip())
-        if dynamic and not prefix.endswith("/"):
+        # A fixed backend route may append only an encoded host query value.
+        # Other dynamic paths still require a trailing "/" as before.
+        if dynamic and not prefix.endswith("/") and prefix != "/deploy/credentials?host=":
             raise AssertionError("dynamic path lacks explicit backend prefix")
+        if prefix == "/deploy/credentials?host=":
+            if "encodeURIComponent(host)" not in args[0]:
+                raise AssertionError("Deploy host query is not URL-encoded")
+            prefix = "/deploy/credentials"
         if len(args)>1:
             method=METHOD_RX.fullmatch(args[1])
             if not method:

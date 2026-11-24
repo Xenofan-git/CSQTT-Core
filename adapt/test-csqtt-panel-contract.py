@@ -259,7 +259,7 @@ if "delProfile" not in js or "addEventListener('click'" not in js:
     raise SystemExit("dynamic profile selection/deletion handlers are missing")
 
 # Ensure all statically requested API paths are present in the backend mux.
-api_paths = sorted(set(re.findall(r"req\(['\"](/[^'\"+]+)['\"]", js)))
+api_paths = sorted(set(path.split("?", 1)[0] for path in re.findall(r"req\(['\"](/[^'\"+]+)['\"]", js)))
 routes = set(re.findall(r'mux\.HandleFunc\("([^"]+)"', backend))
 missing_routes = []
 for path in api_paths:
@@ -427,3 +427,14 @@ assert "confirm('Установить изолированный сервер CS
 assert '#deploySecretsOverlay .password-inline:focus-within' in html
 assert '#deploySecretsOverlay .password-inline input:focus-visible' in html
 assert 'outline:none!important;' in html.split('#deploySecretsOverlay .password-inline input:focus-visible',1)[1].split('}',1)[0]
+
+
+# Persisted Deploy authorization remains server-side, never in localStorage.
+assert 'mux.HandleFunc("/deploy/credentials"' in backend
+assert 'func enrichDeployRequest(raw json.RawMessage)' in backend
+assert 'deployCredentialsPath()' in backend
+assert 'req(\'/deploy/credentials\',\'PUT\'' in js
+assert 'loadDeployCredentials()' in js
+assert 'csqtt-deploy-host' in js  # only nonsecret host persistence
+assert "deploySecrets.mainPassword" not in js and "deploySecrets.webPassword" not in js
+assert 'Данные авторизации заданы до перезагрузки страницы' not in js
