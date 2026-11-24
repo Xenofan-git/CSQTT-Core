@@ -1148,6 +1148,39 @@ def main():
             page.locator("#deployHost").fill("192.0.2.50")
             page.locator("#deployPassword").fill("fixture-ssh-password")
             page.locator("#editDeployAuth").click()
+            # A single blue focus border belongs to the password wrapper.
+            # The nested password input must not draw a second offset ring.
+            for theme_name in ("light","dark"):
+                page.locator("#themeMode").select_option(theme_name)
+                for vw in (390, 768, 1280):
+                    page.set_viewport_size({"width":vw,"height":850})
+                    field=page.locator("#mainPassword")
+                    field.focus()
+                    visual=page.evaluate("""() => {
+                      const el=document.querySelector('#mainPassword');
+                      const box=el.closest('.password-inline');
+                      const a=getComputedStyle(el),w=getComputedStyle(box);
+                      const b=box.getBoundingClientRect();
+                      return {inputOutline:a.outlineStyle,inputBoxShadow:a.boxShadow,
+                        inputBorder:a.borderLeftWidth,wrapperBorder:w.borderLeftWidth,
+                        wrapperColor:w.borderLeftColor,themeBlue:(() => { const probe=document.createElement('span');probe.style.color='var(--blue)';box.appendChild(probe);const color=getComputedStyle(probe).color;probe.remove();return color;})(),
+                        wrapperRadius:w.borderTopLeftRadius,withinViewport:b.left>=0&&b.right<=innerWidth};
+                    }""")
+                    assert visual["inputOutline"]=="none",(theme_name,vw,visual)
+                    assert visual["inputBoxShadow"]=="none",(theme_name,vw,visual)
+                    assert visual["inputBorder"]=="0px",(theme_name,vw,visual)
+                    assert visual["wrapperBorder"]=="1px",(theme_name,vw,visual)
+                    assert visual["wrapperColor"]==visual["themeBlue"],(theme_name,vw,visual)
+                    assert visual["wrapperRadius"]=="12px" and visual["withinViewport"],(theme_name,vw,visual)
+                # Focusing another form field removes wrapper's blue border.
+                page.locator("#webLogin").focus()
+                after=page.evaluate("""() => {
+                  const box=document.querySelector('#mainPassword').closest('.password-inline');
+                  return getComputedStyle(box).borderLeftColor;
+                }""")
+                assert after!=visual["themeBlue"],(theme_name,after)
+            page.locator("#themeMode").select_option("light")
+            page.set_viewport_size({"width":1280,"height":850})
             page.locator("#mainPassword").fill("fixturetunnelpassword")
             page.locator("#webLogin").fill("fixtureadmin")
             page.locator("#webPassword").fill("fixturewebpassword")

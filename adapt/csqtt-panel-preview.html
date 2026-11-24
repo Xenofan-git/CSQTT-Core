@@ -867,6 +867,29 @@ input[type="number"]::-webkit-outer-spin-button{
  .deploy-confirm-actions>button{min-height:48px}
 }
 
+
+/* Authorization: draw a single, evenly rounded focus border on the
+   password wrapper, never a second outline around its inner input. */
+#deploySecretsOverlay .password-inline{
+  border:1px solid var(--line)!important;
+  border-radius:var(--csqtt-field-radius)!important;
+  box-shadow:none!important;
+}
+#deploySecretsOverlay .password-inline:focus-within{
+  border-color:var(--blue)!important;
+  box-shadow:none!important;
+  outline:none!important;
+}
+#deploySecretsOverlay .password-inline input,
+#deploySecretsOverlay .password-inline input:focus,
+#deploySecretsOverlay .password-inline input:focus-visible{
+  border:0!important;
+  outline:none!important;
+  box-shadow:none!important;
+  border-radius:var(--csqtt-field-radius)!important;
+  background:transparent;
+}
+
 </style>
 </head>
 <body>

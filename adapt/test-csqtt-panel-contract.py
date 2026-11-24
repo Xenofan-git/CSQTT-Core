@@ -420,3 +420,10 @@ assert 'aria-modal="true"' in html
 assert 'id="deployConfirmAccept"' in html and 'id="deployConfirmCancel"' in html
 assert 'showDeployConfirmation(host,corePort,panelPort)' in js
 assert "confirm('Установить изолированный сервер CSQTT Core" not in js
+
+
+# The Deploy authorization composite password field must have exactly one
+# focus contour; native input focus outlines cause the double-blue-border bug.
+assert '#deploySecretsOverlay .password-inline:focus-within' in html
+assert '#deploySecretsOverlay .password-inline input:focus-visible' in html
+assert 'outline:none!important;' in html.split('#deploySecretsOverlay .password-inline input:focus-visible',1)[1].split('}',1)[0]
