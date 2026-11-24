@@ -195,6 +195,21 @@ def main():
                     tunnelAppearance: arrow.appearance,
                     tunnelChevron: arrow.backgroundImage.includes('svg'),
                     minWorkers: document.querySelector('#workers').min,
+                    autoWorkers: (() => {
+                      const el=document.querySelector('#autoApiWorkers'), cs=getComputedStyle(el);
+                      const numberInputs=[...document.querySelectorAll('input[type="number"]')]
+                        .map(n=>({id:n.id,appearance:getComputedStyle(n).appearance}));
+                      const rules=[...document.styleSheets].flatMap(sheet=>[...sheet.cssRules])
+                        .filter(rule=>rule.selectorText?.includes('#autoApiWorkers::-webkit-slider'))
+                        .map(rule=>({selector:rule.selectorText,height:rule.style.height,
+                          width:rule.style.width,marginTop:rule.style.marginTop,
+                          radius:rule.style.borderRadius}));
+                      return {type:el.type,min:el.min,max:el.max,step:el.step,value:el.value,
+                        border:cs.borderTopWidth,appearance:cs.appearance,
+                        label:document.querySelector('#autoApiWorkersValue').textContent,
+                        markers:[...document.querySelectorAll('.auto-api-workers-field .range-endpoints span')].map(e=>e.textContent),
+                        numberInputs,rules};
+                    })(),
                     toggleLeftOfDescription: rt.right < rl.left,
                     palette: getComputedStyle(document.documentElement).getPropertyValue('--csqtt-accent').trim(),
                     formRadii: [...new Set([...document.querySelectorAll(
@@ -214,6 +229,18 @@ def main():
                 assert controls["profileAppearance"] == "none" and controls["profileChevron"], controls
                 assert controls["tunnelAppearance"] == "none" and controls["tunnelChevron"], controls
                 assert controls["minWorkers"] == "9", controls
+                auto=controls["autoWorkers"]
+                assert (auto["type"],auto["min"],auto["max"],auto["step"]) == ("range","9","27","1"), auto
+                assert auto["value"] == "9" and auto["label"] == "9", auto
+                assert auto["markers"] == ["9","27"], auto
+                assert auto["border"] == "0px" and auto["appearance"] == "none", auto
+                assert any('runnable-track' in rule["selector"] and rule["height"]=="4px"
+                           for rule in auto["rules"]), auto
+                assert any('slider-thumb' in rule["selector"] and rule["width"]=="20px"
+                           and rule["height"]=="20px" and rule["marginTop"]=="-8px"
+                           and rule["radius"]=="50%" for rule in auto["rules"]), auto
+                assert auto["numberInputs"] and all(n["appearance"]=="textfield" for n in auto["numberInputs"]), auto
+
                 assert controls["fieldCount"] >= 40 and controls["formRadii"] == ["12px"], controls
                 assert all(field["width"] == "1px" or (field["id"] == "panelLink" and field["width"] == "0px")
                            for field in controls["formBorders"]), controls
@@ -776,6 +803,20 @@ def main():
               el.value = "11";
               el.dispatchEvent(new Event("input", {bubbles:true}));
             }""")
+
+            # Auto API worker slider is an independent 9..27 setting,
+            # updates its readout, and preserves the backend's numeric key.
+            auto=page.locator("#autoApiWorkers")
+            assert auto.get_attribute("type") == "range"
+            auto.evaluate("""el => {
+              el.value = '21';
+              el.dispatchEvent(new Event('input',{bubbles:true}));
+            }""")
+            assert page.locator("#autoApiWorkersValue").text_content() == "21"
+            auto.focus()
+            auto.press("ArrowRight")
+            assert auto.input_value() == "22"
+            assert page.locator("#autoApiWorkersValue").text_content() == "22"
             page.locator("#serverPeer").fill("192.0.2.55")
             page.locator("#serverPeer").press("Tab")
             page.wait_for_function("""() => document.querySelector("#toast").textContent.includes("Адрес сервера сохранён") """)
@@ -787,6 +828,9 @@ def main():
             page.wait_for_function("""() => document.querySelector("#workersValue").textContent === "11" """)
             saved_settings = [json.loads(raw) for method, path, raw in calls
                               if method == "POST" and path == "/settings" and raw]
+            assert saved_settings and saved_settings[-1]["autoApiWorkers"] == 22, (
+                "Auto API workers slider value did not persist through the API"
+            )
             assert saved_settings and saved_settings[-1]["workers"] == 11, (
                 "Tunnel settings were not persisted"
             )
