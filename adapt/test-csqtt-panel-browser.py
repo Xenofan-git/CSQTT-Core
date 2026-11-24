@@ -27,7 +27,7 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 def main():
     profiles = [
-        {"id": 1, "name": "Profile one", "protocol": "CSQTT", "hashes": "hash-one"},
+        {"id": 1, "name": "Profile one", "protocol": "CSQTT", "hashes": "hash-one", "peer": "203.0.113.15"},
         {"id": 2, "name": "Profile two", "protocol": "CSQTT", "hashes": "hash-two"},
     ]
     selected = {"profile": profiles[0]}
@@ -1026,10 +1026,6 @@ def main():
             auto.press("ArrowRight")
             assert auto.input_value() == "22"
             assert page.locator("#autoApiWorkersValue").text_content() == "22"
-            page.locator("#serverPeer").fill("192.0.2.55")
-            page.locator("#serverPeer").press("Tab")
-            page.wait_for_function("""() => document.querySelector("#toast").textContent.includes("Адрес сервера сохранён") """)
-            assert selected["profile"]["peer"] == "192.0.2.55", "server peer did not persist through selected-profile API"
             page.locator("#vkAuthMode").select_option("auto_js")
             page.locator("#turnTransport").select_option("tcp_tls")
             page.locator("#captchaMode").select_option("manual")
@@ -1047,6 +1043,20 @@ def main():
                 "VK credential mode, transport, or CAPTCHA mode did not persist"
             )
 
+            # No duplicated server editor on the Tunnel tab. Runtime peer
+            # belongs to the selected CSQTT profile, not to Deploy SSH.
+            assert page.locator("#serverPeer").count() == 0
+            assert "выбранного профиля" in page.locator("#profilePeerInfo").inner_text()
+            previous_peer=selected["profile"].get("peer")
+            page.locator('button[data-page="deploy"]').click()
+            assert "для установки по SSH" in page.locator("label[for=deployHost]").inner_text()
+            page.locator("#deployHost").fill("198.51.100.88")
+            page.locator('button[data-page="settings"]').click()
+            page.wait_for_timeout(5500)  # regression for the 5s refresh
+            assert selected["profile"].get("peer") == previous_peer, "Deploy SSH host must not rewrite the active client peer"
+            page.locator('button[data-page="deploy"]').click()
+            assert page.locator("#deployHost").input_value() == "198.51.100.88"
+            page.locator('button[data-page="settings"]').click()
             # Logs have clearly labeled Select / Copy / Clear actions.
             page.locator('button[data-page="logs"]').click()
             page.wait_for_function("""() => document.querySelector("#logs").textContent.includes("Записей пока нет")""")
