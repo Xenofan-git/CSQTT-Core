@@ -118,9 +118,9 @@ for token in (
     "border-width:1px!important;",
     'id="topGitHub" href="https://github.com/Xenofan-git/CSQTT-Core"',
     'class="top-icon top-github-link"',
-    'id="themeMode" class="top-theme-select"',
-    '<option value="light">Светлая</option>',
-    '<option value="dark">Тёмная</option>',
+    'id="themeMode" aria-label="Выбрать тему оформления"',
+    'data-theme-choice="light"',
+    'data-theme-choice="dark"',
     'const THEME_KEY=',
     'localStorage.setItem(THEME_KEY',
     'class="github-mark"',
@@ -467,3 +467,11 @@ assert 'async function openDeployAuthModal(requiredForInstall=false)' in js
 assert 'if(!hasDeployCredentials(host)){await openDeployAuthModal(true);return}if(!await showDeployConfirmation' in js
 assert 'SSH-пароль хранится отдельно.' in js
 assert 'id="authSummary" class="muted" role="status" aria-live="polite"' in html
+
+# The header offers a lightbulb icon, not the old select control.
+assert '<details class="top-theme-chooser" id="themeChooser">' in html
+assert '<summary id="themeMode" aria-label="Выбрать тему оформления"' in html
+assert '<select id="themeMode"' not in html
+assert 'data-theme-choice="light"' in html and 'data-theme-choice="dark"' in html
+assert 'document.querySelectorAll(\'[data-theme-choice]\')' in js
+assert 'chooser.open=false' in js

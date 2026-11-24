@@ -20,6 +20,20 @@ EXPECTED = ["connect", "settings", "deploy", "logs", "direct", "route", "singbox
 WIDTHS = [390, 768, 1280, 1440, 1920]
 
 
+def choose_theme(page, mode):
+    """Select light/dark using the actual bulb-menu interaction."""
+    assert mode in ("light", "dark")
+    # Some legacy color-regression checks execute with a blocking modal
+    # visible. In those tests the header cannot be clicked by design.
+    if page.locator(".overlay:not(.hidden)").count():
+        page.locator(f'[data-theme-choice="{mode}"]').evaluate("(button) => button.click()")
+    else:
+        page.locator("#themeMode").click()
+        page.locator(f'[data-theme-choice="{mode}"]').click()
+    assert page.locator("#themeChooser").get_attribute("open") is None
+    assert page.evaluate("document.documentElement.dataset.theme") == mode
+
+
 class QuietHandler(SimpleHTTPRequestHandler):
     def log_message(self, *_args):
         pass
@@ -226,30 +240,42 @@ def main():
             assert page.locator("#page-connect > .card").count() == 1, "Connect must retain the clean 2.5.0 single-card composition"
             assert page.locator("#topHeart, #topSettings").count() == 0, "old donation and gear buttons must be absent"
             assert page.locator("#topSwitch").count() == 1, "profile selector should be retained"
-            # Theme selector belongs in the top bar beside Profiles, with
-            # only manual light/dark modes and no dependency on OS preference.
+            # Only the bulb icon is visible until activated. Theme choices
+            # appear in a small popover next to Profiles, without OS mode.
             theme = page.locator("#themeMode")
             assert theme.count() == 1
             assert page.locator("#page-settings #themeMode").count() == 0
-            assert theme.locator("option").all_text_contents() == ["Светлая", "Тёмная"]
-            assert theme.locator("option").evaluate_all("(opts) => opts.map(o => o.value)") == ["light", "dark"]
-            assert page.locator("#topSwitch + #themeMode").count() == 1
-            assert theme.get_attribute("aria-label") == "Тема интерфейса"
-            theme.select_option("dark")
-            assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+            assert page.locator("#topSwitch + #themeChooser").count() == 1
+            assert theme.get_attribute("aria-label") == "Выбрать тему оформления"
+            assert theme.locator("svg").count() == 1
+            assert page.locator("select#themeMode").count() == 0
+            assert page.locator("#themeChooser").get_attribute("open") is None
+            assert page.locator(".theme-options").is_hidden()
+            theme.click()
+            assert page.locator(".theme-options").is_visible()
+            assert page.locator("[data-theme-choice]").all_text_contents() == ["Светлая", "Тёмная"]
+            assert page.locator("[data-theme-choice]").evaluate_all("(els) => els.map(el => el.dataset.themeChoice)") == ["light", "dark"]
+            assert page.locator('[data-theme-choice="light"]').get_attribute("aria-pressed") == "true"
+            theme.press("Escape")
+            assert page.locator(".theme-options").is_hidden()
+            choose_theme(page, "dark")
+            assert page.locator('[data-theme-choice="dark"]').get_attribute("aria-pressed") == "true"
             assert page.evaluate("localStorage.getItem('csqtt-theme-mode')") == "dark"
             page.reload(wait_until="domcontentloaded")
-            assert page.locator("#themeMode").input_value() == "dark"
+            assert page.locator('[data-theme-choice="dark"]').get_attribute("aria-pressed") == "true"
             assert page.evaluate("document.documentElement.dataset.theme") == "dark"
-            theme.select_option("light")
-            assert page.evaluate("document.documentElement.dataset.theme") == "light"
+            choose_theme(page, "light")
             page.reload(wait_until="domcontentloaded")
-            assert page.locator("#themeMode").input_value() == "light"
+            assert page.locator('[data-theme-choice="light"]').get_attribute("aria-pressed") == "true"
+            theme.click()
+            assert page.locator(".theme-options").is_visible()
+            page.locator(".brand").click()
+            assert page.locator(".theme-options").is_hidden()
             # Migrate the previous automatic preference to light explicitly.
             page.evaluate("localStorage.setItem('csqtt-theme-mode', 'system')")
             page.emulate_media(color_scheme="dark")
             page.reload(wait_until="domcontentloaded")
-            assert page.locator("#themeMode").input_value() == "light"
+            assert page.locator('[data-theme-choice="light"]').get_attribute("aria-pressed") == "true"
             assert page.evaluate("localStorage.getItem('csqtt-theme-mode')") == "light"
             assert page.evaluate("document.documentElement.dataset.theme") == "light"
             page.emulate_media(color_scheme="light")
@@ -1228,7 +1254,7 @@ def main():
             # A single blue focus border belongs to the password wrapper.
             # The nested password input must not draw a second offset ring.
             for theme_name in ("light","dark"):
-                page.locator("#themeMode").select_option(theme_name)
+                choose_theme(page, theme_name)
                 for vw in (390, 768, 1280):
                     page.set_viewport_size({"width":vw,"height":850})
                     field=page.locator("#mainPassword")
@@ -1256,7 +1282,7 @@ def main():
                   return getComputedStyle(box).borderLeftColor;
                 }""")
                 assert after!=visual["themeBlue"],(theme_name,after)
-            page.locator("#themeMode").select_option("light")
+            choose_theme(page, "light")
             page.set_viewport_size({"width":1280,"height":850})
             page.locator("#mainPassword").fill("fixturetunnelpassword")
             page.locator("#webLogin").fill("fixtureadmin")
@@ -1316,7 +1342,7 @@ def main():
             assert len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])==initial_posts
             # Modal stays centered for mobile and desktop and in both visual themes.
             for theme_name in ("light","dark"):
-                page.locator("#themeMode").select_option(theme_name)
+                choose_theme(page, theme_name)
                 for viewport_width in (390,768,1280,1920):
                     page.set_viewport_size({"width":viewport_width,"height":850})
                     page.locator("#startDeploy").click()
@@ -1332,7 +1358,7 @@ def main():
                     assert dialog["x"]>=0 and dialog["right"]<=viewport_width+1 and dialog["overflow"]<=1,(theme_name,viewport_width,dialog)
                     page.locator("#deployConfirmCancel").click()
             page.set_viewport_size({"width":1280,"height":850})
-            page.locator("#themeMode").select_option("light")
+            choose_theme(page, "light")
             page.locator("#startDeploy").click()
             page.locator("#deployConfirmOverlay").wait_for(state="visible")
             page.locator("#deployConfirmAccept").click()
@@ -1381,7 +1407,7 @@ def main():
             assert page.locator("#startDeploy").is_enabled(), "retry did not re-enable deploy after confirmed idle status"
             assert "не подтверждает установку" in page.locator("#deployStatusOverlay").inner_text()
             for theme_name in ("light","dark"):
-                page.locator("#themeMode").select_option(theme_name)
+                choose_theme(page, theme_name)
                 for vw in (390,768,1280,1920):
                     page.set_viewport_size({"width":vw,"height":850})
                     rect=page.evaluate("""() => {
@@ -1393,7 +1419,7 @@ def main():
                     assert abs(rect["midY"]-rect["h"]/2)<2,(theme_name,vw,rect)
                     assert rect["x"]>=0 and rect["right"]<=rect["w"]+1 and rect["horizontalOverflow"]<=1,(theme_name,vw,rect)
             page.set_viewport_size({"width":1280,"height":850})
-            page.locator("#themeMode").select_option("light")
+            choose_theme(page, "light")
             page.locator("#deployStatusClose").press("Escape")
             assert page.locator("#deployStatusOverlay").is_hidden()
             fail_http_status["/deploy/status"]=403
