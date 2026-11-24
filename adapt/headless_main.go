@@ -1516,7 +1516,9 @@ func readCSQTTCoreUpdateStatus() map[string]any {
 	if e != nil {
 		return map[string]any{"downloading": false, "state": "idle"}
 	}
-	return map[string]any{"downloading": false, "state": strings.TrimSpace(string(b))}
+	state := strings.TrimSpace(string(b))
+	busy := strings.HasPrefix(state, "scheduled:") || strings.HasPrefix(state, "applying:") || strings.HasPrefix(state, "rollback:")
+	return map[string]any{"downloading": busy, "state": state}
 }
 
 func csqttDownloadAsset(ctx context.Context, a csqttAsset, tag, target string) error {
@@ -1702,7 +1704,14 @@ rollback() {
  echo "rollback:$SHA" > "$STATE"
  install -m 0755 "$BACKUP/csqtt-core-headless.previous" "$TARGET.rollback"
  mv -f "$TARGET.rollback" "$TARGET"
- systemctl restart csqtt-core.service || true
+ if systemctl restart csqtt-core.service &&
+    [[ "$(sha256sum "$TARGET" | cut -d' ' -f1)" == "$OLD" ]] &&
+    systemctl is-active --quiet csqtt-core.service &&
+    [[ "$(ip -4 route show default)" == "$BEFORE_ROUTE" ]]; then
+   echo "rolled-back:$SHA" > "$STATE"
+ else
+   echo "rollback-failed:$SHA" > "$STATE"
+ fi
  echo "CSQTT_CORE_RELEASE_ROLLBACK old=$OLD new=$SHA rc=$rc"
  exit "$rc"
 }

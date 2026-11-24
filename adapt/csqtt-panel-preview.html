@@ -578,6 +578,45 @@ input[type="number"]::-webkit-outer-spin-button{
   -webkit-appearance:none;margin:0;
 }
 
+
+/* CSQTT Core release check/install: a dedicated nonmodal notification.
+   Keep the inline status below the buttons as an accessible history. */
+.core-update-popup{
+  position:fixed;right:calc(18px + env(safe-area-inset-right,0px));
+  top:calc(18px + env(safe-area-inset-top,0px));
+  z-index:110;width:min(424px,calc(100vw - 32px));
+  display:flex;align-items:flex-start;gap:13px;
+  background:var(--surface);color:var(--text);
+  border:1px solid var(--line);border-left:4px solid var(--blue);
+  border-radius:17px;padding:17px 13px 16px 16px;
+  box-shadow:0 12px 42px #0003;overflow-wrap:anywhere;
+}
+.core-update-popup.hidden{display:none}
+.core-update-popup[data-kind="success"]{border-left-color:var(--green)}
+.core-update-popup[data-kind="error"]{border-left-color:var(--red)}
+.core-update-popup[data-kind="info"]{border-left-color:var(--blue)}
+.core-update-popup .core-update-icon{
+  flex:none;display:grid;place-items:center;width:30px;height:30px;
+  border-radius:50%;background:color-mix(in srgb,var(--blue) 13%,var(--surface));
+  color:var(--blue);font-size:19px;font-weight:650;line-height:1;
+}
+.core-update-popup[data-kind="success"] .core-update-icon{background:color-mix(in srgb,var(--green) 14%,var(--surface));color:var(--green)}
+.core-update-popup[data-kind="error"] .core-update-icon{background:color-mix(in srgb,var(--red) 13%,var(--surface));color:var(--red)}
+.core-update-popup .core-update-copy{flex:1;min-width:0}
+.core-update-popup .core-update-title{display:block;font-size:16px;font-weight:650;line-height:1.3;margin-bottom:5px}
+.core-update-popup .core-update-description{font-size:13px;line-height:1.45;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.core-update-popup .core-update-close{
+  flex:none;min-width:30px;width:30px;min-height:30px;height:30px;
+  display:grid;place-items:center;padding:0;border-radius:9px;
+  background:transparent;color:var(--muted);font-size:23px;font-weight:400;
+  border:0;box-shadow:none;line-height:1;
+}
+.core-update-popup .core-update-close:hover{background:var(--surface2);color:var(--text)}
+@media(max-width:520px){
+  .core-update-popup{right:calc(10px + env(safe-area-inset-right,0px));left:calc(10px + env(safe-area-inset-left,0px));width:auto;top:calc(10px + env(safe-area-inset-top,0px));padding:14px 10px 14px 13px}
+  .core-update-popup .core-update-title{font-size:15px}
+}
+
 </style>
 </head>
 <body>
@@ -672,6 +711,14 @@ input[type="number"]::-webkit-outer-spin-button{
 </main>
 <nav class="tabs" aria-label="Основная навигация"><button class="tab active" data-page="connect" aria-current="page" aria-label="Подключение"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.99 19 9.91 19 12a7 7 0 1 1-14 0c0-2.09 1.01-4.01 2.59-5.41L6.17 5.17A8.96 8.96 0 0 0 3 12a9 9 0 1 0 18 0 8.96 8.96 0 0 0-3.17-6.83z"/></svg></span><span class="tab-label-full">Подключение</span><span class="tab-label-compact" aria-hidden="true">Связь</span></button><button class="tab" data-page="settings"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.65 10A6 6 0 1 0 12 12l2 0v3h3v3h3v-6h-8.35zM6 10a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg></span>Туннель</button><button class="tab" data-page="deploy"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.35 10.04A7.49 7.49 0 0 0 5 8.2 5.5 5.5 0 0 0 5.5 19h13a4.5 4.5 0 0 0 .85-8.96z"/></svg></span>Деплой</button><button class="tab" data-page="logs"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 19H4V5h16v14zM6 7l4 5-4 5 1.5 1.5L13 12 7.5 5.5 6 7zm8 9h4v-2h-4z"/></svg></span>Логи</button><button class="tab" data-page="direct"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v2H3zm0 6h12v2H3zm0 6h6v2H3z"/></svg></span>Директ</button><button class="tab" data-page="route"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4-4 4 4 4V9h10v3l4-4-4-4v3H7V4Zm10 16 4-4-4-4v3H7v-3l-4 4 4 4v-3h10v3Z"/></svg></span>Маршрут</button><button class="tab" data-page="singbox"><span class="ico">▤</span>Sing-Box</button></nav>
 <div id="profileManagerOverlay" class="overlay hidden"><div class="modal profile-manager-modal"><div class="modal-title"><h2>Профили подключения</h2><button type="button" class="modal-close" id="closeProfiles" aria-label="Закрыть">×</button></div><div id="profileList"><div class="muted">Загрузка профилей…</div></div><div class="row profile-manager-actions"><button class="secondary" id="refreshProfiles">Обновить</button><button id="showAddProfile">＋ Добавить</button></div><div id="addProfile" class="hidden profile-add-form"><div class="field"><label for="newProtocol">Протокол</label><select id="newProtocol"><option>CSQTT</option><option value="FreeTurn">FreeTurn (экспериментально)</option><option value="OlcRTC">OlcRTC (экспериментально)</option><option value="OpenFlux">OpenFlux (экспериментально)</option><option value="ToTS">ToTS (экспериментально)</option></select><small class="muted">CSQTT — основной проверяемый протокол. Остальные ядра экспериментальные: наличие пункта в списке не означает, что они установлены на этом устройстве.</small></div><div class="field"><label for="newLink">Ссылка подключения</label><textarea id="newLink" placeholder="csqtt://connect?..." autocomplete="off" spellcheck="false"></textarea></div><button id="saveProfile" class="block-button">Сохранить профиль</button></div></div></div><div id="tunnelAuthOverlay" class="overlay hidden"><div class="modal"><h2>🔑 Подключение</h2><div class="field"><label>Пароль туннеля</label><div class="row"><input id="tunnelPassword" type="password" autocomplete="current-password" placeholder="Укажите пароль"><button class="secondary small" id="toggleTunnelPassword" type="button">Показать</button></div></div><div class="row"><button class="secondary" id="cancelTunnelAuth">Отмена</button><button id="saveTunnelAuth">Сохранить</button></div><div id="tunnelAuthMessage" class="notice hidden"></div></div></div><div id="deploySecretsOverlay" class="overlay hidden"><div class="modal deploy-auth-modal"><div class="modal-title"><h2><span>⚿</span> Авторизация</h2><button type="button" class="modal-close" id="cancelDeployAuth" aria-label="Закрыть">×</button></div><p class="muted">Придумайте свои данные — латиница и цифры. Они будут созданы на сервере при установке, искать ничего не нужно.</p><h3>Подключение</h3><div class="field password-field"><label>Пароль туннеля (придумайте)</label><div class="password-inline"><input id="mainPassword" type="password" autocomplete="new-password"><button type="button" class="reveal-password" data-reveal="mainPassword">Показать</button></div></div><hr><h3>Данные доступа к web панели</h3><div class="field"><label>Логин WEB (придумайте)</label><input id="webLogin" autocomplete="username" value="admin"></div><div class="field"><label>Пароль WEB (придумайте)</label><input id="webPassword" type="password" autocomplete="new-password"></div><button id="saveDeployAuth" class="save-auth">Сохранить</button><div id="deployAuthMessage" class="notice hidden"></div></div></div><div id="captchaOverlay" class="overlay hidden"><div class="modal"><h2>🔐 Требуется CAPTCHA VK</h2><p id="captchaModalText" class="muted">CSQTT ожидает подтверждение.</p><button id="openCaptchaModal" class="secondary">Открыть страницу проверки</button><div class="field"><label>Ответ CAPTCHA</label><input id="captchaModalAnswer" autocomplete="off"></div><div class="row"><button id="submitCaptchaModal">Отправить</button><button class="secondary" id="dismissCaptcha">Скрыть</button></div></div></div>
+<div id="coreUpdatePopup" class="core-update-popup hidden" data-kind="info" role="status" aria-live="polite" aria-atomic="true">
+  <span id="coreUpdatePopupIcon" class="core-update-icon" aria-hidden="true">i</span>
+  <div class="core-update-copy">
+    <strong id="coreUpdatePopupTitle" class="core-update-title"></strong>
+    <div id="coreUpdatePopupDescription" class="core-update-description"></div>
+  </div>
+  <button type="button" id="coreUpdatePopupClose" class="core-update-close" aria-label="Закрыть уведомление">×</button>
+</div>
 <div id="toast" class="toast hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 <script>
 (() => {
@@ -698,6 +745,84 @@ const deploySecrets={mainPassword:'',webLogin:'admin',webPassword:''};
 let toastTimer=null,refreshBusy=false,captchaLastSession='',captchaArmed=false,captchaDismissedSession='';
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function toast(msg,error=false){const el=$('toast');el.textContent=msg;el.classList.remove('hidden');el.classList.toggle('error',error);clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.add('hidden'),3500);}
+
+// Dedicated CSQTT Core update notification, independent of 3.5s generic toasts.
+let corePopupTimer=null,coreMonitorTimer=null,coreMonitorFailures=0;
+const CORE_STATUS_SEEN_KEY='csqtt-core-update-last-seen';
+function showCoreUpdatePopup(kind,title,description,timeout=0){
+  const popup=$('coreUpdatePopup');
+  popup.dataset.kind=kind;
+  $('coreUpdatePopupIcon').textContent=kind==='success'?'✓':(kind==='error'?'!':'i');
+  $('coreUpdatePopupTitle').textContent=title;
+  $('coreUpdatePopupDescription').textContent=description;
+  popup.classList.remove('hidden');
+  clearTimeout(corePopupTimer);
+  if(timeout>0)corePopupTimer=setTimeout(()=>popup.classList.add('hidden'),timeout);
+}
+$('coreUpdatePopupClose').addEventListener('click',()=>{
+  clearTimeout(corePopupTimer);$('coreUpdatePopup').classList.add('hidden');
+});
+function persistCoreUpdateStateSeen(value){
+  try{sessionStorage.setItem(CORE_STATUS_SEEN_KEY,value)}catch(_){}
+}
+function lastCoreUpdateStateSeen(){
+  try{return sessionStorage.getItem(CORE_STATUS_SEEN_KEY)||''}catch(_){return ''}
+}
+function stopCoreUpdateMonitoring(){
+  if(coreMonitorTimer){clearInterval(coreMonitorTimer);coreMonitorTimer=null}
+}
+function renderCoreUpdateResult(raw){
+  const current=String(raw?.state||'idle');
+  if(!current||current==='idle')return false;
+  if(['scheduled','applying','rollback','rollback-start'].includes(current.split(':',1)[0])&&!coreMonitorTimer){
+    coreMonitorTimer=setInterval(pollCoreUpdateState,3000);
+  }
+  const [stage,...rest]=current.split(':');
+  const details=rest.join(':');
+  const stored=lastCoreUpdateStateSeen();
+  if(current!==stored){
+    if(stage==='scheduled'||stage==='applying'){
+      showCoreUpdatePopup('info','Обновление CSQTT Core выполняется',
+        stage==='scheduled'?'Задача передана отдельной службе. Ожидается начало установки '+details+'.':'Контроллер устанавливается, выполняется проверка службы. Успех ещё не подтверждён.');
+    }else if(stage==='success'){
+      showCoreUpdatePopup('success','CSQTT Core успешно обновлён',
+        'Новая версия установлена и проверена. SHA-256: '+details.slice(0,12)+'…',16000);
+    }else if(stage==='rolled-back'){
+      showCoreUpdatePopup('error','CSQTT Core восстановлен из резервной копии',
+        'Обновление не прошло проверку, прежний контроллер восстановлен. Подробнее — в журнале службы.',0);
+    }else if(stage==='rollback'||stage==='rollback-start'){
+      showCoreUpdatePopup('info','Выполняется откат CSQTT Core',
+        'Обновление не прошло проверку. Восстанавливается предыдущая версия.',0);
+    }else if(stage==='rollback-failed'){
+      showCoreUpdatePopup('error','Проверка отката CSQTT Core не пройдена',
+        'Требуется проверить службу и журнал systemd. Не считайте обновление успешным.',0);
+    }else if(stage==='failed-to-start'){
+      showCoreUpdatePopup('error','Не удалось запустить обновление CSQTT Core',
+        'Системная служба установки не запущена. '+details,0);
+    }
+    persistCoreUpdateStateSeen(current);
+  }
+  return stage==='scheduled'||stage==='applying'||stage==='rollback'||stage==='rollback-start';
+}
+async function pollCoreUpdateState(){
+  try{
+    const status=await req('/updates/core/status');
+    coreMonitorFailures=0;
+    const busy=renderCoreUpdateResult(status);
+    if(!busy)stopCoreUpdateMonitoring();
+  }catch(err){
+    if(++coreMonitorFailures>=4){
+      stopCoreUpdateMonitoring();
+      showCoreUpdatePopup('error','Статус обновления не подтверждён',
+        'Не удалось получить ответ сервера. Проверьте состояние службы после восстановления подключения.',0);
+    }
+  }
+}
+function startCoreUpdateMonitoring(){
+  if(!coreMonitorTimer)coreMonitorTimer=setInterval(pollCoreUpdateState,3000);
+  void pollCoreUpdateState();
+}
+
 async function refreshSocks5Status(){
  try{const s=await req('/socks5/status');state.socks5Status=s;state.socks5StatusAvailable=true;}
  catch(error){state.socks5Status=null;state.socks5StatusAvailable=false;}
@@ -887,9 +1012,46 @@ $('editDeployAuth').addEventListener('click',()=>$('deploySecretsOverlay').class
 $('uninstallCsqtt').addEventListener('click',async()=>{const host=$('deployHost').value.trim(),auth= $('sshKeyToggle').checked?'key':'password' ;const sshPort=Number($('deploySshPort').value);if(!Number.isInteger(sshPort)||sshPort<1||sshPort>65535){toast('Порт SSH должен быть целым числом от 1 до 65535',true);return}const corePort=$('manualPorts').checked?Number($('corePort').value):47000,panelPort=$('manualPorts').checked?Number($('warpPort').value):47002;if(!Number.isInteger(corePort)||corePort<1||corePort>65535||!Number.isInteger(panelPort)||panelPort<1||panelPort>65535||new Set([sshPort,corePort,panelPort]).size!==3){toast('Порты SSH, CSQTT и веб-панели должны быть корректными и разными',true);return}if(!host){toast('Укажите хост сервера',true);return}if(auth==='password'&&!$('deployPassword').value){toast('Укажите SSH пароль',true);return}if(auth==='key'&&!$('deployKey').value.trim()){toast('Укажите путь к SSH-ключу на NanoPi',true);return}if(!confirm('Полностью удалить runtime CSQTT Core с '+host+'? Будут остановлены и удалены служба и вспомогательные службы CSQTT Core, процесс, TUN-интерфейс, правила firewall с маркерами CSQTT Core, бинарные файлы, runtime-каталоги и sysctl-файлы CSQTT Core. База SQLite, файл конфигурации и сертификаты сохраняются. Оригинальный CSQTT и другие службы/маршруты не должны затрагиваться.'))return;const payload={protocol:'CSQTT',host,sshPort:Number($('deploySshPort').value)||22,user:$('deployUser').value.trim()||'root',usePassword:auth==='password',password:auth==='password'?$('deployPassword').value:'',keyPath:auth==='key'?$('deployKey').value.trim():'',manualPorts:$('manualPorts').checked,corePort:Number($('corePort').value)||47000,warpPort:Number($('warpPort').value)||47002,listenPort:0,uninstall:true};try{const r=await req('/deploy','POST',payload);if(!r.ok)throw new Error('Команда удаления не запущена');state.deployStarted=true;state.deployLog='';toast('Удаление CSQTT запущено');await refreshAll()}catch(e){toast(e.message,true)}});$('startDeploy').addEventListener('click',async()=>{const host=$('deployHost').value.trim(),auth= $('sshKeyToggle').checked?'key':'password' ;const sshPort=Number($('deploySshPort').value);if(!Number.isInteger(sshPort)||sshPort<1||sshPort>65535){toast('Порт SSH должен быть целым числом от 1 до 65535',true);return}const corePort=$('manualPorts').checked?Number($('corePort').value):47000,panelPort=$('manualPorts').checked?Number($('warpPort').value):47002;if(!Number.isInteger(corePort)||corePort<1||corePort>65535||!Number.isInteger(panelPort)||panelPort<1||panelPort>65535){toast('Порты CSQTT и веб-панели должны быть от 1 до 65535',true);return}if(new Set([sshPort,corePort,panelPort]).size!==3){toast('Порты SSH, CSQTT и веб-панели должны быть разными',true);return}if(!host){toast('Укажите хост сервера',true);return}if(auth==='password'&&!$('deployPassword').value){toast('Укажите SSH пароль',true);return}if(auth==='key'&&!$('deployKey').value.trim()){toast('Укажите путь к SSH-ключу на NanoPi',true);return}if(!confirm('Установить изолированный сервер CSQTT Core на '+host+'? Устанавливается отдельная служба CSQTT Core на UDP 47000 и TCP 47002; оригинальная служба CSQTT и основные маршруты не должны изменяться. Продолжить?'))return;if(!deploySecrets.mainPassword||!deploySecrets.webLogin||!deploySecrets.webPassword){toast('Сначала задайте данные в окне «Авторизация»',true);return}const secretRe=/^[A-Za-z0-9]+$/;if(!secretRe.test(deploySecrets.mainPassword)||!secretRe.test(deploySecrets.webLogin)||!secretRe.test(deploySecrets.webPassword)){toast('Данные авторизации должны содержать только латиницу и цифры',true);return}const deviceId=String(state.settings?.deviceId||'').trim();if(!/^[A-Za-z0-9-]+$/.test(deviceId)){toast('Не удалось получить ID устройства CSQTT Core из настроек',true);return}const payload={protocol:'CSQTT',host,sshPort:Number($('deploySshPort').value)||22,user:$('deployUser').value.trim()||'root',usePassword:auth==='password',password:auth==='password'?$('deployPassword').value:'',keyPath:auth==='key'?$('deployKey').value.trim():'',manualPorts:$('manualPorts').checked,corePort:Number($('corePort').value)||47000,warpPort:Number($('warpPort').value)||47002,listenPort:0,mainPassword:deploySecrets.mainPassword,webUser:deploySecrets.webLogin,webPassword:deploySecrets.webPassword,deviceId,dockerInstall:$('dockerInstall').checked};try{const r=await req('/deploy','POST',payload);if(!r.ok)throw new Error('DeployManager не запустился. Проверьте журнал.');state.deployStarted=true;toast('Деплой запущен');await refreshAll()}catch(e){toast(e.message,true)}});
 function renderLogs(){const el=$('logs');const lines=(state.logs||[]).slice(-160);if(!lines.length){el.textContent='Записей пока нет.';return}el.innerHTML=lines.map(line=>{let html=esc(line);html=html.replace(/\bOK\b/g,'<span class="log-ok">OK</span>').replace(/\bTURN\b/g,'<span class="log-turn">TURN</span>').replace(/\b(x\d+)\b/g,'<span class="log-count">$1</span>');return '<div class="log-line">'+html+'</div>'}).join('');el.scrollTop=el.scrollHeight}
 $('logsActive').addEventListener('change',()=>{state.logsActive=$('logsActive').checked;if(state.logsActive)refreshLogsOnly()});$('copyLogs').addEventListener('click',async()=>{const value=(state.logs||[]).join('\n');try{await navigator.clipboard.writeText(value);toast('Журнал скопирован')}catch(e){const el=$('logs');const range=document.createRange();range.selectNodeContents(el);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);toast('Журнал выделен — скопируйте вручную')}});$('clearLogs').addEventListener('click',async()=>{if(!confirm('Очистить журнал?'))return;try{const r=await req('/logs/clear','POST');if(!r.ok)throw new Error('Не удалось очистить журнал');await refreshAll();toast('Журнал очищен')}catch(e){toast(e.message,true)}});
-$('checkCoreUpdate').addEventListener('click',async()=>{const b=$('checkCoreUpdate'),update=$('updateCore'),m=$('updateMessage');b.disabled=true;update.disabled=true;try{const v=await req('/updates/core/check');state.coreUpdate=v;const local=String(v.installedCommit||'').slice(0,10),remote=String(v.sourceCommit||'').slice(0,10);m.textContent=(v.message||v.error||'Нет подтверждённой информации об обновлении')+(remote?' · Код: '+local+' → '+remote:'');m.className='notice '+(v.error?'error':(v.canInstall?'success':''));m.classList.remove('hidden');update.disabled=!v.canInstall||!!v.error;}catch(e){state.coreUpdate={};m.textContent='Проверка CSQTT Core не выполнена: '+e.message;m.className='notice error';m.classList.remove('hidden')}finally{b.disabled=false}});
-$('updateCore').addEventListener('click',async()=>{const v=state.coreUpdate||{},b=$('updateCore');if(!v.canInstall||!v.releaseTag){toast('Сначала проверьте наличие совместимого ARM64-релиза',true);return}if(!confirm('Установить только проверенный ARM64-контроллер CSQTT Core '+v.releaseTag+'? Подключение будет прервано; Sing-box и оригинальный CSQTT не заменяются. При ошибке предусмотрен откат.'))return;b.disabled=true;try{const r=await req('/updates/core/wait','POST');if(!r.ok||!r.scheduled)throw new Error(r.message||'Обновление не запущено');const m=$('updateMessage');m.textContent=r.message||'Обновление передано отдельной службе';m.className='notice success';m.classList.remove('hidden');toast('Проверенное обновление запущено. Страница может перезагрузиться.')}catch(e){toast('Обновление не запущено: '+e.message,true)}finally{state.coreUpdate={}}});
-renderDeploy();refreshAll(true);refreshSocks5Status();void consumeCaptchaBridgeResult();setInterval(()=>{if(!document.hidden){refreshAll();refreshSocks5Status()}},5000);
+$('checkCoreUpdate').addEventListener('click',async()=>{
+  const b=$('checkCoreUpdate'),update=$('updateCore'),m=$('updateMessage');
+  b.disabled=true;update.disabled=true;
+  showCoreUpdatePopup('info','Проверка CSQTT Core','Получаем сведения о коммитах и проверенных ARM64-релизах…');
+  try{
+    const v=await req('/updates/core/check');state.coreUpdate=v;
+    const local=String(v.installedCommit||'').slice(0,10),remote=String(v.sourceCommit||'').slice(0,10);
+    const description=(v.message||v.error||'Нет подтверждённой информации об обновлении')+(remote?'\nКоммит: '+local+' → '+remote:'');
+    m.textContent=description;m.className='notice '+(v.error?'error':(v.canInstall?'success':''));m.classList.remove('hidden');
+    if(v.error)showCoreUpdatePopup('error','Проверка CSQTT Core не удалась',description,12000);
+    else if(v.canInstall)showCoreUpdatePopup('success','Доступно обновление CSQTT Core',description,14000);
+    else if(v.sourceAhead)showCoreUpdatePopup('info','Новые исходники CSQTT Core',description,11000);
+    else showCoreUpdatePopup('info','Проверка CSQTT Core завершена',description,10000);
+    update.disabled=!v.canInstall||!!v.error;
+  }catch(e){
+    state.coreUpdate={};
+    const message='Проверка CSQTT Core не выполнена: '+e.message;
+    m.textContent=message;m.className='notice error';m.classList.remove('hidden');
+    showCoreUpdatePopup('error','Ошибка проверки CSQTT Core',message,12000);
+  }finally{b.disabled=false}
+});
+$('updateCore').addEventListener('click',async()=>{
+  const v=state.coreUpdate||{},b=$('updateCore');
+  if(!v.canInstall||!v.releaseTag){showCoreUpdatePopup('error','Обновление CSQTT Core недоступно','Сначала проверьте наличие совместимого ARM64-релиза.',10000);return}
+  if(!confirm('Установить только проверенный ARM64-контроллер CSQTT Core '+v.releaseTag+'? Подключение будет прервано; Sing-box и оригинальный CSQTT не заменяются. При ошибке предусмотрен откат.'))return;
+  b.disabled=true;
+  showCoreUpdatePopup('info','Подготовка обновления CSQTT Core','Скачиваем проверенный пакет и запускаем отдельную службу. Это ещё не завершённая установка.');
+  try{
+    const r=await req('/updates/core/wait','POST');
+    if(!r.ok||!r.scheduled)throw new Error(r.message||'Обновление не запущено');
+    const m=$('updateMessage');m.textContent=r.message||'Обновление передано отдельной службе';m.className='notice';m.classList.remove('hidden');
+    showCoreUpdatePopup('info','Обновление CSQTT Core запущено','Запрошена установка '+(r.releaseTag||v.releaseTag)+'. Результат появится после проверки службы; успех пока не подтверждён.');
+    startCoreUpdateMonitoring();
+  }catch(e){
+    showCoreUpdatePopup('error','Не удалось запустить обновление CSQTT Core',e.message,0);
+    const m=$('updateMessage');m.textContent=e.message;m.className='notice error';m.classList.remove('hidden');
+  }finally{state.coreUpdate={}}
+});
+
+renderDeploy();refreshAll(true);refreshSocks5Status();void consumeCaptchaBridgeResult();void pollCoreUpdateState();setInterval(()=>{if(!document.hidden){refreshAll();refreshSocks5Status()}},5000);
 })();
 </script>
 </body></html>

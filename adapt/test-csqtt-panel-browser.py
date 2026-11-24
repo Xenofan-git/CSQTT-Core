@@ -49,6 +49,7 @@ def main():
     calls = []
     fail_paths = set()
     core_release_available = {"value": False}
+    core_update_server_state = {"value":"idle"}
     fail_requests = set()  # (verb, path): inject only a readback failure, not a failed save.
     readback_unconfigured = {"value": False}
 
@@ -151,8 +152,11 @@ def main():
                 "message":"Доступен проверенный релиз" if yes else "Совместимого ARM64-релиза пока нет",
                 "error":"",
             }
+        elif path == "/updates/core/status" and method == "GET":
+            body = {"downloading":core_update_server_state["value"].startswith(("scheduled:","applying:")),"state":core_update_server_state["value"]}
         elif path == "/updates/core/wait" and method == "POST":
             if core_release_available["value"]:
+                core_update_server_state["value"] = "scheduled:csqtt-core-v1.0.0"
                 body = {"ok":True,"scheduled":True,"releaseTag":"csqtt-core-v1.0.0","message":"Отдельная systemd-служба запущена"}
             else:
                 status = 409
@@ -200,16 +204,43 @@ def main():
             page.wait_for_function("document.querySelector('#updateMessage').textContent.includes('Совместимого ARM64-релиза пока нет')")
             assert page.locator('#updateCore').is_disabled()
             assert page.locator('#updateMessage').is_visible()
+            assert page.locator('#coreUpdatePopup').is_visible()
+            assert page.locator('#coreUpdatePopupTitle').inner_text() == "Проверка CSQTT Core завершена"
+            assert 'Совместимого ARM64-релиза пока нет' in page.locator('#coreUpdatePopupDescription').inner_text()
             assert 'Endlad2/csqtt-core' not in page.locator('#updateMessage').inner_text()
+            page.locator('#coreUpdatePopupClose').click()
+            assert page.locator('#coreUpdatePopup').is_hidden()
             assert not any(method == 'POST' and path == '/updates/core/wait' for method,path,_ in calls)
             core_release_available["value"] = True
             page.locator('#checkCoreUpdate').click()
             page.wait_for_function("!document.querySelector('#updateCore').disabled")
             assert page.locator('#updateMessage').inner_text().startswith('Доступен проверенный релиз')
+            assert page.locator('#coreUpdatePopupTitle').inner_text() == "Доступно обновление CSQTT Core"
             page.locator('#updateCore').click()
             page.wait_for_function("document.querySelector('#updateMessage').textContent.includes('systemd-служба запущена')")
             assert any(method == 'POST' and path == '/updates/core/wait' for method,path,_ in calls)
             assert page.locator('#updateCore').is_disabled()
+            assert 'Обновление CSQTT Core' in page.locator('#coreUpdatePopupTitle').inner_text()
+            assert 'успешно обновлён' not in page.locator('#coreUpdatePopupTitle').inner_text()
+            # Mimic the panel's restart while a detached updater completes.
+            core_update_server_state["value"] = "success:" + "a"*64
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_function("document.querySelector('#coreUpdatePopupTitle').textContent==='CSQTT Core успешно обновлён'")
+            assert page.locator('#coreUpdatePopup').is_visible()
+            assert 'aaaaaaaaaaaa' in page.locator('#coreUpdatePopupDescription').inner_text()
+            # A failed replacement must never appear as a successful update.
+            core_update_server_state["value"] = "rolled-back:" + "b"*64
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_function("document.querySelector('#coreUpdatePopupTitle').textContent.includes('восстановлен')")
+            assert page.locator('#coreUpdatePopup').get_attribute('data-kind') == "error"
+            # An API failure should be a distinct visible error notification.
+            core_update_server_state["value"] = "idle"
+            fail_paths.add("/updates/core/check")
+            page.locator('button[data-page="settings"]').click()
+            page.locator('#checkCoreUpdate').click()
+            page.wait_for_function("document.querySelector('#coreUpdatePopupTitle').textContent==='Ошибка проверки CSQTT Core'")
+            assert page.locator('#coreUpdatePopup').get_attribute('data-kind') == "error"
+            fail_paths.discard("/updates/core/check")
             core_release_available["value"] = False
 
             # Regression for the real tunnel/profile UI controls.
