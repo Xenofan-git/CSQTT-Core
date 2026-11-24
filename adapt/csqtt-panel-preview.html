@@ -883,6 +883,31 @@ input[type="number"]::-webkit-outer-spin-button{
 
 
 
+
+/* Deploy live progress window: no fake percentages; activity and log are sourced from API. */
+.deploy-progress-modal{width:min(640px,100%);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;gap:0}
+.deploy-progress-modal h2{margin:0 0 8px}
+.deploy-progress-modal .deploy-status-header{flex:0 0 auto}
+.deploy-progress-headline{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 13px}
+.deploy-progress-modal .deploy-status-pill{margin:0}
+.deploy-progress-elapsed{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.deploy-progress-indicator{height:3px;flex:0 0 3px;border-radius:4px;background:var(--line);overflow:hidden;margin:1px 0 18px}
+.deploy-progress-indicator>span{display:block;width:32%;height:100%;background:var(--blue);border-radius:inherit;animation:deploy-moving 1.5s ease-in-out infinite alternate}
+.deploy-progress-indicator[data-active="false"]>span{animation:none;width:100%;background:var(--line)}
+.deploy-progress-indicator[data-result="success"]>span{background:var(--green)}
+.deploy-progress-indicator[data-result="error"]>span{background:var(--red)}
+@keyframes deploy-moving{from{transform:translateX(0)}to{transform:translateX(215%)}}
+@media(prefers-reduced-motion:reduce){.deploy-progress-indicator>span{animation:none}}
+.deploy-progress-log{flex:1 1 auto;min-height:140px;max-height:min(42dvh,350px);padding:15px 16px;margin:0 0 12px;
+ border-radius:15px;background:#111723;color:#e6edf6;border:1px solid #344457;
+ overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace}
+.deploy-progress-outcome{padding:12px 14px;min-height:45px;border:1px solid var(--line);
+ border-radius:14px;background:var(--surface2);color:var(--text);font-size:13px;line-height:1.5;margin-bottom:14px}
+.deploy-progress-outcome[data-kind="error"]{color:var(--red);border-color:color-mix(in srgb,var(--red) 28%,var(--line))}
+.deploy-progress-outcome[data-kind="success"]{color:var(--green)}
+.deploy-progress-modal .deploy-confirm-actions{margin-top:auto}
+@media(max-width:430px){.deploy-progress-modal .deploy-confirm-actions>button{font-size:13px;padding:10px 8px}}
+
 /* Deploy controls: the switch itself is the only click target, not its description. */
 #page-deploy .mode{cursor:default}
 #page-deploy .mode>span{cursor:default;user-select:text}
@@ -1073,7 +1098,30 @@ input[type="number"]::-webkit-outer-spin-button{
   </div>
   <div class="deploy-status-explanation" id="deployStatusExplanation" role="status" aria-live="polite">Получаем данные…</div>
   <p class="deploy-confirm-warning">Проверяется состояние контроллера Deploy на этом устройстве. Отсутствие выполняемой операции само по себе не подтверждает установку на удалённом сервере.</p>
-  <div class="deploy-confirm-actions"><button type="button" class="secondary" id="deployStatusClose">Закрыть</button><button type="button" id="deployStatusRetry">Повторить проверку</button></div>
+  <div class="deploy-confirm-actions"><button type="button" class="secondary" id="deployStatusClose">Закрыть</button><button type="button" id="deployStatusRetry">Повторить проверку</button></div><button type="button" class="secondary block-button" id="deployStatusViewProgress">Показать журнал установки</button>
+ </div>
+</div>
+<div id="deployProgressOverlay" class="overlay deploy-confirm-overlay hidden">
+ <div class="modal deploy-confirm-modal deploy-progress-modal" role="dialog" aria-modal="true" aria-labelledby="deployProgressTitle" aria-describedby="deployProgressDescription">
+  <div class="deploy-status-header">
+   <div class="deploy-confirm-emblem" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a8 8 0 0 1 15-5"/><path d="M19 9V4h-5"/><path d="M20 9a8 8 0 0 1-15 5"/><path d="M5 15v5h5"/></svg>
+   </div>
+   <button type="button" id="deployProgressCloseIcon" class="modal-close" aria-label="Закрыть окно установки">×</button>
+  </div>
+  <h2 id="deployProgressTitle">Установка CSQTT Core</h2>
+  <p class="muted" id="deployProgressDescription">Ход установки будет отображаться по мере поступления сообщений установщика.</p>
+  <div class="deploy-progress-headline">
+   <span class="deploy-status-pill" id="deployProgressPhase" data-kind="busy" role="status">Подготовка…</span>
+   <span class="deploy-progress-elapsed" id="deployProgressElapsed">00:00</span>
+  </div>
+  <div class="deploy-progress-indicator" id="deployProgressIndicator" data-active="true" data-result="running" aria-label="Выполняется установка, время окончания неизвестно"><span></span></div>
+  <pre id="deployProgressLog" class="deploy-progress-log" role="log" aria-live="polite" aria-relevant="additions text">Ожидаем ответа контроллера…</pre>
+  <div class="deploy-progress-outcome" id="deployProgressOutcome" data-kind="busy" role="status" aria-live="polite">Установка ещё не запущена.</div>
+  <div class="deploy-confirm-actions">
+   <button type="button" class="secondary" id="deployProgressCopy">Копировать журнал</button>
+   <button type="button" id="deployProgressClose">Закрыть</button>
+  </div>
  </div>
 </div>
 <div id="captchaOverlay" class="overlay hidden"><div class="modal"><h2>🔐 Требуется CAPTCHA VK</h2><p id="captchaModalText" class="muted">CSQTT ожидает подтверждение.</p><button id="openCaptchaModal" class="secondary">Открыть страницу проверки</button><div class="field"><label>Ответ CAPTCHA</label><input id="captchaModalAnswer" autocomplete="off"></div><div class="row"><button id="submitCaptchaModal">Отправить</button><button class="secondary" id="dismissCaptcha">Скрыть</button></div></div></div>
@@ -1133,7 +1181,7 @@ document.addEventListener('keydown',e=>{
 });
 const API='/api';
 const $=id=>document.getElementById(id);
-const state={configs:[],selected:null,settings:null,tunnelAuth:{configured:false},socks5Status:null,socks5StatusAvailable:false,connected:false,statusAvailable:false,vpnStatus:{},vk:{},captcha:{},deploying:false,deployStatusAvailable:false,deployStatusError:null,deployLog:'',deployLogAvailable:false,logs:[],version:{},coreUpdate:{},settingsLoaded:false,deployStarted:false,logsActive:true};
+const state={configs:[],selected:null,settings:null,tunnelAuth:{configured:false},socks5Status:null,socks5StatusAvailable:false,connected:false,statusAvailable:false,vpnStatus:{},vk:{},captcha:{},deploying:false,deployStatusAvailable:false,deployStatusError:null,deployLog:'',deployLogAvailable:false,deployResult:'idle',logs:[],version:{},coreUpdate:{},settingsLoaded:false,deployStarted:false,logsActive:true};
 // Browser holds only nonsecret metadata; credentials stay in a private server file.
 const deploySecrets={configured:false,host:'',webLogin:'admin'};
 const DEPLOY_HOST_KEY='csqtt-deploy-host';
@@ -1433,7 +1481,7 @@ function renderStatus(){const known=state.statusAvailable,connected=known&&!!sta
 function fillSettings(){const s=state.settings||{};const set=(id,v)=>{if($(id))$(id).value=v??''};set('autoApiWorkers',Math.max(9,Math.min(27,Number(s.autoApiWorkers)||9)));$('autoApiWorkersValue').textContent=$('autoApiWorkers').value;set('workers',Math.max(9,Math.min(127,Number(s.workers)||9)));$('workersValue').textContent=$('workers').value;set('vkHashes',(state.selected&&state.selected.id)?(state.selected.hashes||''):(s.vkHashes||''));$('vkHashes').readOnly=!!(state.selected&&state.selected.id);$('hashHelp').textContent=($('vkHashes').readOnly?'Hash берётся из выбранного профиля. Чтобы изменить его, обновите ссылку подключения.':'Без профиля: укажите до 6 hash через запятую, пробел или с новой строки.');set('obfs',s.obfs||'video');set('fingerprint',s.fingerprint||'firefox');set('turnTransport',s.turnTransport||'udp');set('captchaMode',s.captchaMode||'auto');set('vkAuthMode',s.vkAuthMode||'vkcalls');set('clientIds',s.clientIds||'8202606,6287487');set('directDomains',s.directDomains||'');set('directIPs',s.directIPs||'');if($('directCount'))$('directCount').textContent='Распознано: '+['directDomains','directIPs'].reduce((sum,key)=>sum+$(key).value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).length,0);$('allowHashRedistribution').checked=!!s.allowHashRedistribution;$('validateVkHashes').checked=!!s.validateVkHashes;set('authMode',s.authMode||'manual');state.settingsLoaded=true;}
 function captchaIsActionable(c){if(!c||!c.pending||!['manual','selected'].includes(String(c.mode||'').toLowerCase())||!c.sessionToken||!c.redirectUri)return false;try{const u=new URL(c.redirectUri);const exp=Number(u.searchParams.get('expired_at'));return Number.isFinite(exp)&&exp>Date.now()/1000}catch(_){return false}}
 function renderVK(){const v=state.vk||{};$('vkDot').className='dot '+(v.hasToken?'ok':(v.fetching?'':'bad'));$('vkState').textContent=v.hasToken?'VK токен сохранён':(v.fetching?'Получение токена… '+(v.progress||0)+'%':'Нет активного токена');$('vkDetails').textContent=v.message|| (v.fetcherOk?'Модуль авторизации установлен.':'При первом входе может потребоваться загрузка компонента авторизации.');$('vkLogin').disabled=!!v.fetching;$('vkLogin').innerHTML=v.fetching?'<span class="spinner"></span> Авторизация…':'Войти через VK';const c=state.captcha||{};const actionable=captchaArmed&&captchaIsActionable(c);const modalVisible=actionable&&captchaDismissedSession!==c.sessionToken;$('captchaStatus').textContent=actionable?'VK требует ручного подтверждения CAPTCHA. Автоматические попытки завершены.':'Активного запроса ручной CAPTCHA нет.';$('captchaInline').classList.toggle('hidden',!actionable);if(actionable){if(modalVisible)$('captchaOverlay').classList.remove('hidden');else $('captchaOverlay').classList.add('hidden');$('captchaModalText').textContent='Автоматические попытки завершены. Откройте страницу проверки VK и завершите CAPTCHA.';captchaLastSession=c.sessionToken;}else{$('captchaOverlay').classList.add('hidden');captchaLastSession='';}}
-async function refreshAll(force=false){if(refreshBusy)return;refreshBusy=true;try{const jobs={configs:req('/configs'),selected:req('/configs/selected'),tunnelAuth:req('/tunnel/auth'),status:req('/vpn/status'),vk:req('/vk/state'),captcha:req('/captcha/state'),deployStatus:req('/deploy/status'),deployLog:req('/deploy/log'),version:req('/version')};if(!state.settingsLoaded||force)jobs.settings=req('/settings');if($('page-logs').classList.contains('active')&&state.logsActive)jobs.logs=req('/logs');const names=Object.keys(jobs),results=await Promise.allSettled(Object.values(jobs)),data={},failed=[],errors={};results.forEach((r,i)=>{if(r.status==='fulfilled')data[names[i]]=r.value;else{failed.push(names[i]);errors[names[i]]=r.reason;}});if('configs'in data)state.configs=Array.isArray(data.configs)?data.configs:[];if('tunnelAuth'in data)state.tunnelAuth=data.tunnelAuth||{configured:false};if('selected'in data)state.selected=data.selected;if('settings'in data){state.settings=data.settings}if('selected'in data||'settings'in data){if(!state.settingsLoaded||force||'selected'in data)fillSettings()}if('status'in data){state.vpnStatus=data.status||{};state.connected=!!data.status.connected;state.statusAvailable=true;}else state.statusAvailable=false;if('vk'in data)state.vk=data.vk;if('captcha'in data)state.captcha=data.captcha;if('deployStatus'in data){state.deploying=!!data.deployStatus.deploying;state.deployStatusAvailable=true;state.deployStatusError=null;}else{state.deployStatusAvailable=false;state.deployStatusError=errors.deployStatus?.status??null;}if('deployLog'in data){state.deployLog=typeof data.deployLog==='string'?data.deployLog:JSON.stringify(data.deployLog);state.deployLogAvailable=true;}else state.deployLogAvailable=false;if('logs'in data)state.logs=Array.isArray(data.logs)?data.logs:[];if('version'in data)state.version=data.version;renderProfiles();renderTunnelAuth();renderStatus();renderVK();renderDeploy();renderLogs();$('backendVersion').textContent=state.version.backend?`${state.version.backend} · UI ${state.version.ui||'—'}`:'API недоступен';$('coreBuildCommit').textContent=/^[a-f0-9]{40}$/.test(String(state.version.commit||''))?state.version.commit.slice(0,12):'Неизвестно';$('apiStatus').textContent=!('version'in data)?'API ошибка':(failed.length?'API частично · '+failed.length:'API онлайн');$('apiStatus').className='badge '+(!('version'in data)?'err':(failed.length?'warn':'ok'));$('apiStatus').title=failed.length?'Нет ответа от: '+failed.join(', '):'Все проверенные API-маршруты отвечают';}finally{refreshBusy=false}}
+async function refreshAll(force=false){if(refreshBusy)return;refreshBusy=true;try{const jobs={configs:req('/configs'),selected:req('/configs/selected'),tunnelAuth:req('/tunnel/auth'),status:req('/vpn/status'),vk:req('/vk/state'),captcha:req('/captcha/state'),deployStatus:req('/deploy/status'),deployLog:req('/deploy/log'),version:req('/version')};if(!state.settingsLoaded||force)jobs.settings=req('/settings');if($('page-logs').classList.contains('active')&&state.logsActive)jobs.logs=req('/logs');const names=Object.keys(jobs),results=await Promise.allSettled(Object.values(jobs)),data={},failed=[],errors={};results.forEach((r,i)=>{if(r.status==='fulfilled')data[names[i]]=r.value;else{failed.push(names[i]);errors[names[i]]=r.reason;}});if('configs'in data)state.configs=Array.isArray(data.configs)?data.configs:[];if('tunnelAuth'in data)state.tunnelAuth=data.tunnelAuth||{configured:false};if('selected'in data)state.selected=data.selected;if('settings'in data){state.settings=data.settings}if('selected'in data||'settings'in data){if(!state.settingsLoaded||force||'selected'in data)fillSettings()}if('status'in data){state.vpnStatus=data.status||{};state.connected=!!data.status.connected;state.statusAvailable=true;}else state.statusAvailable=false;if('vk'in data)state.vk=data.vk;if('captcha'in data)state.captcha=data.captcha;if('deployStatus'in data){state.deploying=!!data.deployStatus.deploying;state.deployResult=String(data.deployStatus.result||'idle');state.deployStatusAvailable=true;state.deployStatusError=null;}else{state.deployStatusAvailable=false;state.deployStatusError=errors.deployStatus?.status??null;}if('deployLog'in data){state.deployLog=typeof data.deployLog==='string'?data.deployLog:JSON.stringify(data.deployLog);state.deployLogAvailable=true;}else state.deployLogAvailable=false;if('logs'in data)state.logs=Array.isArray(data.logs)?data.logs:[];if('version'in data)state.version=data.version;renderProfiles();renderTunnelAuth();renderStatus();renderVK();renderDeploy();renderLogs();$('backendVersion').textContent=state.version.backend?`${state.version.backend} · UI ${state.version.ui||'—'}`:'API недоступен';$('coreBuildCommit').textContent=/^[a-f0-9]{40}$/.test(String(state.version.commit||''))?state.version.commit.slice(0,12):'Неизвестно';$('apiStatus').textContent=!('version'in data)?'API ошибка':(failed.length?'API частично · '+failed.length:'API онлайн');$('apiStatus').className='badge '+(!('version'in data)?'err':(failed.length?'warn':'ok'));$('apiStatus').title=failed.length?'Нет ответа от: '+failed.join(', '):'Все проверенные API-маршруты отвечают';}finally{refreshBusy=false}}
 async function refreshLogsOnly(){try{const data=await req('/logs');state.logs=Array.isArray(data)?data:[];renderLogs()}catch(e){toast('Не удалось загрузить журнал: '+e.message,true)}}
 
 $('power').addEventListener('click',async()=>{try{if(state.connected){captchaArmed=false;const r=await req('/vpn/disconnect','POST');if(r.ok===false)throw new Error('Не удалось отключить клиент');toast('Отключение запрошено')}else{if(!state.tunnelAuth?.configured){showPage('settings');toast('Сначала задайте пароль туннеля в разделе «Авторизация»',true);return}const id=selectedId();if(id==null){toast('Сначала выберите профиль',true);return}captchaArmed=true;const r=await req('/vpn/connect','POST',{id});if(r.ok===false){captchaArmed=false;throw new Error('Не удалось запустить клиент')}toast('Подключение запрошено')}setTimeout(()=>refreshAll(true),250)}catch(e){toast(e.message,true)} });
@@ -1469,7 +1517,7 @@ async function consumeCaptchaBridgeResult(){
  }catch(error){toast('Не удалось передать CAPTCHA: '+error.message,true)}
 }
 $('submitCaptcha').addEventListener('click',()=>submitCaptcha($('captchaAnswer').value));$('submitCaptchaModal').addEventListener('click',()=>submitCaptcha($('captchaModalAnswer').value));$('cancelCaptcha').addEventListener('click',async()=>{try{const r=await req('/captcha/cancel','POST');if(r.ok===false)throw new Error('Не удалось отменить CAPTCHA: активная сессия отсутствует или уже завершена');await refreshAll();toast('CAPTCHA отменена')}catch(e){toast(e.message,true)}});
-function renderDeploy(){const busy=state.deployStatusAvailable&&state.deploying;$('startDeploy').disabled=busy||!state.deployStatusAvailable;$('uninstallCsqtt').disabled=busy||!state.deployStatusAvailable;$('startDeploy').innerHTML=busy?'<span class="spinner"></span> Выполняется…':'Установить';const done=state.deployLogAvailable&&!busy&&state.deployLog.includes('CSQTT_LALUNE_DEPLOY_OK');const failed=state.deployLogAvailable&&(state.deployLog.toLowerCase().includes('ошибка')||state.deployLog.toLowerCase().includes('error'));$('deployState').textContent=!state.deployStatusAvailable?(state.deployStatusError===403?'Не удалось получить состояние деплоя (HTTP 403). Для установки откройте панель напрямую из локальной сети или через Tailscale и повторите проверку.':state.deployStatusError===401?'Не удалось получить состояние деплоя (HTTP 401). Войдите в панель заново.':'Не удалось получить состояние деплоя'+(state.deployStatusError?' (HTTP '+state.deployStatusError+')':'')+'. Установка заблокирована, пока API не подтвердит состояние операции. Повторите проверку.'):(!state.deployLogAvailable?'Состояние операции получено, но журнал недоступен. Повторите обновление журнала.':(busy?'Деплой выполняется. Дождитесь завершения.':(done?'Установка изолированного сервера CSQTT Core завершена.':(state.deployLog.includes('CSQTT_LALUNE_UNINSTALL_OK')?'CSQTT удалён.':(failed?'Операция завершилась с ошибкой. Проверьте журнал.':(state.deployStarted?'Операция завершена. Проверьте журнал.':'Деплой не запущен.'))))));$('deployLog').textContent=state.deployLog||'Журнал пока пуст.';$('portFields').classList.toggle('hidden',!$('manualPorts').checked);const auth=$('sshKeyToggle').checked?'key':'password';$('deployPasswordWrap').classList.toggle('hidden',auth!=='password');$('deployKeyWrap').classList.toggle('hidden',auth!=='key');$('authSummary').textContent=hasDeployCredentials($('deployHost').value)?'Данные авторизации сохранены на контроллере для этого сервера. Пароли не показываются в панели.':'Для установки сохраните пароль туннеля, логин WEB и пароль WEB в окне «Авторизация». SSH-пароль хранится отдельно.';const match=done?state.deployLog.match(/https?:\/\/[^\s"'<>]+/i):null;const url=match?match[0].replace(/[),.;]+$/,''):'';$('panelLinkWrap').classList.toggle('hidden',!url);if(url){$('panelLink').value=url}else{$('panelLink').value='';if(done)$('deployState').textContent+=' Ссылка не найдена в ответе установщика — не формирую её предположительно.';}}
+function renderDeploy(){const busy=state.deployStatusAvailable&&state.deploying;$('startDeploy').disabled=busy||!state.deployStatusAvailable;$('uninstallCsqtt').disabled=busy||!state.deployStatusAvailable;$('startDeploy').innerHTML=busy?'<span class="spinner"></span> Выполняется…':'Установить';const done=state.deployLogAvailable&&!busy&&state.deployResult==='success';const failed=state.deployResult==='error'||(state.deployLogAvailable&&(state.deployLog.toLowerCase().includes('ошибка')||state.deployLog.toLowerCase().includes('error')));$('deployState').textContent=!state.deployStatusAvailable?(state.deployStatusError===403?'Не удалось получить состояние деплоя (HTTP 403). Для установки откройте панель напрямую из локальной сети или через Tailscale и повторите проверку.':state.deployStatusError===401?'Не удалось получить состояние деплоя (HTTP 401). Войдите в панель заново.':'Не удалось получить состояние деплоя'+(state.deployStatusError?' (HTTP '+state.deployStatusError+')':'')+'. Установка заблокирована, пока API не подтвердит состояние операции. Повторите проверку.'):(!state.deployLogAvailable?'Состояние операции получено, но журнал недоступен. Повторите обновление журнала.':(busy?'Деплой выполняется. Дождитесь завершения.':(done?'Установка изолированного сервера CSQTT Core завершена.':(state.deployLog.includes('CSQTT_CORE_UNINSTALL_OK')?'CSQTT удалён.':(failed?'Операция завершилась с ошибкой. Проверьте журнал.':(state.deployStarted?'Операция завершена. Проверьте журнал.':'Деплой не запущен.'))))));$('deployLog').textContent=state.deployLog||'Журнал пока пуст.';$('portFields').classList.toggle('hidden',!$('manualPorts').checked);const auth=$('sshKeyToggle').checked?'key':'password';$('deployPasswordWrap').classList.toggle('hidden',auth!=='password');$('deployKeyWrap').classList.toggle('hidden',auth!=='key');$('authSummary').textContent=hasDeployCredentials($('deployHost').value)?'Данные авторизации сохранены на контроллере для этого сервера. Пароли не показываются в панели.':'Для установки сохраните пароль туннеля, логин WEB и пароль WEB в окне «Авторизация». SSH-пароль хранится отдельно.';const match=done?state.deployLog.match(/https?:\/\/[^\s"'<>]+/i):null;const url=match?match[0].replace(/[),.;]+$/,''):'';$('panelLinkWrap').classList.toggle('hidden',!url);if(url){$('panelLink').value=url}else{$('panelLink').value='';if(done)$('deployState').textContent+=' Ссылка не найдена в ответе установщика — не формирую её предположительно.';}}
 $('editTunnelAuth').addEventListener('click',async()=>{try{await refreshAll(true);$('tunnelPassword').value='';$('tunnelPassword').type='password';$('toggleTunnelPassword').textContent='Показать';$('tunnelAuthOverlay').classList.remove('hidden')}catch(e){toast('Не удалось проверить авторизацию: '+e.message,true)}});
 $('toggleTunnelPassword').addEventListener('click',()=>{const field=$('tunnelPassword');const visible=field.type==='password';field.type=visible?'text':'password';$('toggleTunnelPassword').textContent=visible?'Скрыть':'Показать'});
 $('cancelTunnelAuth').addEventListener('click',()=>$('tunnelAuthOverlay').classList.add('hidden'));
@@ -1490,7 +1538,7 @@ function renderDeployStatusDialog(loading=false){
  pill.textContent=loading?'Проверка…':!available?'Состояние недоступно':active?'Деплой выполняется':'Контроллер отвечает';
  $('deployStatusDescription').textContent=loading?'Получаем сведения о текущей операции…':!available?'Не удалось получить состояние операции.':'Ответ контроллера получен. Ниже приведены текущие сведения.';
  $('deployStatusApi').textContent=loading?'Проверка…':available?'Доступен':errorCode?'Ошибка HTTP '+errorCode:'Недоступен';
- $('deployStatusOperation').textContent=loading?'—':!available?'Неизвестно':active?'Выполняется':'Нет активной операции';
+ $('deployStatusOperation').textContent=loading?'—':!available?'Неизвестно':active?'Выполняется':state.deployResult==='error'?'Ошибка операции':state.deployResult==='success'?'Установка подтверждена журналом':state.deployResult==='completed'?'Команда завершена':'Нет активной операции';
  $('deployStatusLog').textContent=loading?'—':logAvailable?'Доступен':'Недоступен';
  $('deployStatusChecked').textContent=loading?'—':new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
  $('deployStatusExplanation').textContent=loading?'Проверка не выполняет установку или удаление.':$('deployState').textContent;
@@ -1650,7 +1698,167 @@ function showDeployConfirmation(host,corePort,panelPort){
   overlay.addEventListener('keydown',onKeydown);
  });
 }
-$('startDeploy').addEventListener('click',async()=>{const host=$('deployHost').value.trim(),auth= $('sshKeyToggle').checked?'key':'password' ;const sshPort=Number($('deploySshPort').value);if(!Number.isInteger(sshPort)||sshPort<1||sshPort>65535){toast('Порт SSH должен быть целым числом от 1 до 65535',true);return}const corePort=$('manualPorts').checked?Number($('corePort').value):47000,panelPort=$('manualPorts').checked?Number($('warpPort').value):47002;if(!Number.isInteger(corePort)||corePort<1||corePort>65535||!Number.isInteger(panelPort)||panelPort<1||panelPort>65535){toast('Порты CSQTT и веб-панели должны быть от 1 до 65535',true);return}if(new Set([sshPort,corePort,panelPort]).size!==3){toast('Порты SSH, CSQTT и веб-панели должны быть разными',true);return}if(!host){toast('Укажите хост сервера',true);return}if(auth==='password'&&!await ensureSSHPassword(host))return;if(auth==='key'&&!$('deployKey').value.trim()){toast('Укажите путь к SSH-ключу на NanoPi',true);return}try{await loadDeployCredentials()}catch(e){toast('Не удалось проверить сохранённую авторизацию: '+e.message,true);return}if(!hasDeployCredentials(host)){await openDeployAuthModal(true);return}if(!await showDeployConfirmation(host,corePort,panelPort))return;try{await loadDeployCredentials()}catch(e){toast('Не удалось повторно проверить авторизацию: '+e.message,true);return}if(!hasDeployCredentials(host)){toast('Авторизация больше не сохранена для этого сервера. Укажите данные заново.',true);await openDeployAuthModal(true);return}const deviceId=String(state.settings?.deviceId||'').trim();if(!/^[A-Za-z0-9-]+$/.test(deviceId)){toast('Не удалось получить ID устройства CSQTT Core из настроек',true);return}const payload={protocol:'CSQTT',host,sshPort:Number($('deploySshPort').value)||22,user:$('deployUser').value.trim()||'root',usePassword:auth==='password',password:'',keyPath:auth==='key'?$('deployKey').value.trim():'',manualPorts:$('manualPorts').checked,corePort:Number($('corePort').value)||47000,warpPort:Number($('warpPort').value)||47002,listenPort:0,deviceId,dockerInstall:$('dockerInstall').checked};try{const r=await req('/deploy','POST',payload);if(!r.ok)throw new Error('DeployManager не запустился. Проверьте журнал.');state.deployStarted=true;toast('Деплой запущен');await refreshAll()}catch(e){toast(e.message,true)}});
+
+let deployProgressPollTimer=null;
+let deployProgressPollInFlight=false;
+let deployProgressGeneration=0;
+let deployProgressStarted=0;
+let deployProgressSeenRunning=false;
+let deployProgressEmptyPolls=0;
+let deployProgressFailures=0;
+let deployProgressFinal=false;
+let deployProgressCurrentLog='';
+function safeDeployLog(raw){
+ // Logs are always rendered with textContent (never as HTML); mask common
+ // credential shapes in stdout/stderr without altering the server-side log.
+ return String(raw||'').slice(-48000)
+  .replace(/(--(?:password|token|secret)(?:=|\s+))[^\s]+/gi,'$1[скрыто]')
+  .replace(/((?:mainPassword|webPassword|sshPassword|access_token|Authorization|Bearer)\s*[:=]\s*)[^\s,;]+/gi,'$1[скрыто]');
+}
+function setDeployProgressPhase(kind,title,message){
+ const badge=$('deployProgressPhase');
+ badge.dataset.kind=kind;
+ badge.textContent=title;
+ const outcome=$('deployProgressOutcome');
+ outcome.dataset.kind=kind;
+ outcome.textContent=message;
+ $('deployProgressIndicator').dataset.active=String(kind==='busy');
+ $('deployProgressIndicator').dataset.result=kind;
+}
+function deployProgressLogUpdate(raw){
+ const log=safeDeployLog(raw);
+ if(log===deployProgressCurrentLog)return;
+ const el=$('deployProgressLog');
+ const wasNearBottom=el.scrollHeight-el.scrollTop-el.clientHeight<70;
+ deployProgressCurrentLog=log;
+ el.textContent=log||'Ожидаем сообщений установщика…';
+ if(wasNearBottom)el.scrollTop=el.scrollHeight;
+}
+function clearDeployProgressTimer(){
+ if(deployProgressPollTimer!==null){clearTimeout(deployProgressPollTimer);deployProgressPollTimer=null}
+}
+function finishDeployProgress(kind,title,message){
+ deployProgressFinal=true;
+ clearDeployProgressTimer();
+ setDeployProgressPhase(kind,title,message);
+ $('deployProgressElapsed').textContent='Проверка завершена · '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function closeDeployProgressDialog(){
+ $('deployProgressOverlay').classList.add('hidden');
+ clearDeployProgressTimer();
+ deployProgressGeneration++;
+ $('deployProgressClose').blur();
+}
+function openDeployProgressDialog(host,fresh=true){
+ clearDeployProgressTimer();
+ deployProgressGeneration++;
+ deployProgressPollInFlight=false;
+ deployProgressFinal=false;
+ deployProgressSeenRunning=false;
+ deployProgressEmptyPolls=0;
+ deployProgressFailures=0;
+ deployProgressStarted=Date.now();
+ const previousLog=fresh?'':deployProgressCurrentLog;
+ if(fresh)deployProgressCurrentLog='';
+ $('deployProgressDescription').textContent='Сервер: '+(host||'не указан')+'. Журнал обновляется по ответам контроллера, без искусственных процентов.';
+ $('deployProgressLog').textContent=previousLog||'Ожидаем ответа контроллера…';
+ setDeployProgressPhase('busy','Подготовка…','Проверяем возможность запуска установки.');
+ $('deployProgressElapsed').textContent='00:00';
+ $('deployProgressOverlay').classList.remove('hidden');
+ $('deployProgressClose').focus();
+ return deployProgressGeneration;
+}
+function queueDeployProgressPoll(generation){
+ if(deployProgressFinal||generation!==deployProgressGeneration||$('deployProgressOverlay').classList.contains('hidden'))return;
+ clearDeployProgressTimer();
+ deployProgressPollTimer=setTimeout(()=>{void pollDeployProgress(generation)},900);
+}
+async function pollDeployProgress(generation){
+ if(generation!==deployProgressGeneration||deployProgressFinal||deployProgressPollInFlight)return;
+ deployProgressPollInFlight=true;
+ const [statusResult,logResult]=await Promise.allSettled([req('/deploy/status'),req('/deploy/log')]);
+ if(generation!==deployProgressGeneration){deployProgressPollInFlight=false;return}
+ if(logResult.status==='fulfilled'){
+  deployProgressLogUpdate(typeof logResult.value==='string'?logResult.value:JSON.stringify(logResult.value));
+ }
+ const seconds=Math.max(0,Math.floor((Date.now()-deployProgressStarted)/1000));
+ $('deployProgressElapsed').textContent=String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0');
+ if(statusResult.status==='rejected'){
+  deployProgressFailures++;
+  setDeployProgressPhase('busy','Связь с API прервана','Не удаётся получить статус: '+statusResult.reason.message+'. Повторяем запрос.');
+  if(deployProgressFailures>=5)finishDeployProgress('error','Результат неизвестен','Связь с контроллером потеряна. Это НЕ подтверждает ошибку установки. Проверьте сервер и журнал.');
+ }else{
+  deployProgressFailures=0;
+  const x=statusResult.value||{};
+  const result=String(x.result||'');
+  if(x.deploying){
+   deployProgressSeenRunning=true;
+   deployProgressEmptyPolls=0;
+   setDeployProgressPhase('busy','Установка выполняется','Получаем новые сообщения установщика каждые 900 мс.');
+  }else if(result==='success'){
+   finishDeployProgress('success','Установка завершена','Установщик сообщил о завершении без ошибки и подтвердил результат. Проверьте доступность веб-панели на целевом сервере.');
+  }else if(result==='error'){
+   finishDeployProgress('error','Ошибка установки','Установщик завершился с ошибкой. Подробности приведены в журнале выше.');
+  }else if(result==='completed'){
+   finishDeployProgress('neutral','Команда завершена','Процесс завершился без ошибки, но проверка установки на целевом сервере не подтверждена. Проверьте доступность сервера.');
+  }else{
+   deployProgressEmptyPolls++;
+   if(deployProgressSeenRunning && deployProgressEmptyPolls>=3){
+    finishDeployProgress('error','Результат неизвестен','Процесс больше не выполняется, но явного результата нет. Проверьте журнал и сервер.');
+   }else if(!deployProgressSeenRunning && deployProgressEmptyPolls>=6){
+    finishDeployProgress('error','Запуск не подтверждён','Контроллер не подтвердил выполнение установки. Проверьте журнал и наличие DeployManager.');
+   }else{
+    setDeployProgressPhase('busy','Проверка процесса…','Ожидаем подтверждения запуска и записи журнала.');
+   }
+  }
+ }
+ deployProgressPollInFlight=false;
+ if(!deployProgressFinal)queueDeployProgressPoll(generation);
+}
+async function showDeployStartProgress(host,payload){
+ const generation=openDeployProgressDialog(host);
+ try{
+  const response=await req('/deploy','POST',payload);
+  if(generation!==deployProgressGeneration)return;
+  if(!response.ok){
+   try{const log=await req('/deploy/log');if(generation!==deployProgressGeneration)return;
+    deployProgressLogUpdate(typeof log==='string'?log:JSON.stringify(log));}catch(_){}
+   const detail=deployProgressCurrentLog.includes('не найден deploy-manager')?
+    'На устройстве отсутствует компонент DeployManager. Серверная установка НЕ запускалась.':
+    (response.error||'Контроллер отказал в запуске установки. Проверьте журнал.');
+   finishDeployProgress('error','Установка не запущена',detail);
+   return;
+  }
+  state.deployStarted=true;
+  setDeployProgressPhase('busy','Установка запускается…','Команда принята контроллером. Ожидаем журнал установщика.');
+  await pollDeployProgress(generation);
+ }catch(error){
+  if(generation!==deployProgressGeneration)return;
+  finishDeployProgress('error','Ошибка отправки команды','Не удалось подтвердить запуск: '+(error.message||'Неизвестная ошибка')+'. Установка может требовать дополнительной проверки.');
+ }
+}
+$('deployProgressClose').addEventListener('click',closeDeployProgressDialog);
+$('deployProgressCloseIcon').addEventListener('click',closeDeployProgressDialog);
+$('deployProgressOverlay').addEventListener('click',e=>{if(e.target===$('deployProgressOverlay'))closeDeployProgressDialog()});
+$('deployProgressOverlay').addEventListener('keydown',e=>{
+ if(e.key==='Escape'){e.preventDefault();closeDeployProgressDialog()}
+ if(e.key!=='Tab')return;
+ const list=[$('deployProgressCloseIcon'),$('deployProgressCopy'),$('deployProgressClose')];
+ if(e.shiftKey&&document.activeElement===list[0]){e.preventDefault();list[list.length-1].focus()}
+ else if(!e.shiftKey&&document.activeElement===list[list.length-1]){e.preventDefault();list[0].focus()}
+});
+$('deployProgressCopy').addEventListener('click',async()=>{
+ try{await navigator.clipboard.writeText(deployProgressCurrentLog||$('deployProgressLog').textContent);toast('Журнал установки скопирован')}
+ catch(_){const sel=window.getSelection(),range=document.createRange();range.selectNodeContents($('deployProgressLog'));sel.removeAllRanges();sel.addRange(range);toast('Журнал выделен. Нажмите Ctrl+C')}
+});
+$('deployStatusViewProgress').addEventListener('click',()=>{
+ const host=$('deployHost').value.trim();
+ closeDeployStatusDialog();
+ const generation=openDeployProgressDialog(host,false);
+ void pollDeployProgress(generation);
+});
+
+$('startDeploy').addEventListener('click',async()=>{const host=$('deployHost').value.trim(),auth= $('sshKeyToggle').checked?'key':'password' ;const sshPort=Number($('deploySshPort').value);if(!Number.isInteger(sshPort)||sshPort<1||sshPort>65535){toast('Порт SSH должен быть целым числом от 1 до 65535',true);return}const corePort=$('manualPorts').checked?Number($('corePort').value):47000,panelPort=$('manualPorts').checked?Number($('warpPort').value):47002;if(!Number.isInteger(corePort)||corePort<1||corePort>65535||!Number.isInteger(panelPort)||panelPort<1||panelPort>65535){toast('Порты CSQTT и веб-панели должны быть от 1 до 65535',true);return}if(new Set([sshPort,corePort,panelPort]).size!==3){toast('Порты SSH, CSQTT и веб-панели должны быть разными',true);return}if(!host){toast('Укажите хост сервера',true);return}if(auth==='password'&&!await ensureSSHPassword(host))return;if(auth==='key'&&!$('deployKey').value.trim()){toast('Укажите путь к SSH-ключу на NanoPi',true);return}try{await loadDeployCredentials()}catch(e){toast('Не удалось проверить сохранённую авторизацию: '+e.message,true);return}if(!hasDeployCredentials(host)){await openDeployAuthModal(true);return}if(!await showDeployConfirmation(host,corePort,panelPort))return;try{await loadDeployCredentials()}catch(e){toast('Не удалось повторно проверить авторизацию: '+e.message,true);return}if(!hasDeployCredentials(host)){toast('Авторизация больше не сохранена для этого сервера. Укажите данные заново.',true);await openDeployAuthModal(true);return}const deviceId=String(state.settings?.deviceId||'').trim();if(!/^[A-Za-z0-9-]+$/.test(deviceId)){toast('Не удалось получить ID устройства CSQTT Core из настроек',true);return}const payload={protocol:'CSQTT',host,sshPort:Number($('deploySshPort').value)||22,user:$('deployUser').value.trim()||'root',usePassword:auth==='password',password:'',keyPath:auth==='key'?$('deployKey').value.trim():'',manualPorts:$('manualPorts').checked,corePort:Number($('corePort').value)||47000,warpPort:Number($('warpPort').value)||47002,listenPort:0,deviceId,dockerInstall:$('dockerInstall').checked};void showDeployStartProgress(host,payload)});
 function renderLogs(){const el=$('logs');const lines=(state.logs||[]).slice(-160);if(!lines.length){el.textContent='Записей пока нет.';return}el.innerHTML=lines.map(line=>{let html=esc(line);html=html.replace(/\bOK\b/g,'<span class="log-ok">OK</span>').replace(/\bTURN\b/g,'<span class="log-turn">TURN</span>').replace(/\b(x\d+)\b/g,'<span class="log-count">$1</span>');return '<div class="log-line">'+html+'</div>'}).join('');el.scrollTop=el.scrollHeight}
 $('logsActive').addEventListener('change',()=>{state.logsActive=$('logsActive').checked;if(state.logsActive)refreshLogsOnly()});$('selectLogs').addEventListener('click',()=>{const el=$('logs'),r=document.createRange();r.selectNodeContents(el);const selected=window.getSelection();selected.removeAllRanges();selected.addRange(r);toast('Журнал выделен — нажмите Ctrl+C для копирования')});$('copyLogs').addEventListener('click',async()=>{const value=(state.logs||[]).join('\n');try{await navigator.clipboard.writeText(value);toast('Журнал скопирован')}catch(e){const el=$('logs');const range=document.createRange();range.selectNodeContents(el);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);toast('Журнал выделен — скопируйте вручную')}});$('clearLogs').addEventListener('click',async()=>{if(!confirm('Очистить журнал?'))return;try{const r=await req('/logs/clear','POST');if(!r.ok)throw new Error('Не удалось очистить журнал');await refreshAll();toast('Журнал очищен')}catch(e){toast(e.message,true)}});
 $('checkCoreUpdate').addEventListener('click',async()=>{

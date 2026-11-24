@@ -329,7 +329,7 @@ if "setInterval(()=>{if(!document.hidden){refreshAll();refreshSocks5Status()}},5
     raise SystemExit("panel polling must pause while hidden and refresh the SOCKS5 listener every 5 seconds")
 
 # Deployment completion is derived from the backend log, so a reload keeps the result visible.
-if "const done=state.deployLogAvailable&&!busy&&state.deployLog.includes('CSQTT_LALUNE_DEPLOY_OK')" not in js:
+if "const done=state.deployLogAvailable&&!busy&&state.deployResult==='success'" not in js:
     raise SystemExit("deployment completion must come from an available backend log and active status")
 if "state.statusAvailable=false" not in js or "Статус недоступен" not in js:
     raise SystemExit("VPN status API failure can be misreported as disconnected")
@@ -475,3 +475,16 @@ assert '<select id="themeMode"' not in html
 assert 'data-theme-choice="light"' in html and 'data-theme-choice="dark"' in html
 assert 'document.querySelectorAll(\'[data-theme-choice]\')' in js
 assert 'chooser.open=false' in js
+
+# Live Deploy window uses actual 900ms backend status/log polling and
+# an explicit terminal result. It may not fabricate installation progress.
+for elid in ("deployProgressOverlay","deployProgressLog","deployProgressOutcome",
+             "deployProgressPhase","deployProgressIndicator","deployProgressClose",
+             "deployStatusViewProgress"):
+    assert f'id="{elid}"' in html
+assert "setTimeout(()=>{void pollDeployProgress(generation)},900)" in js
+assert "async function showDeployStartProgress(host,payload)" in js
+assert "void showDeployStartProgress(host,payload)" in js
+assert "function finishDeployProgress(kind,title,message)" in js
+assert "response.error||'Контроллер отказал" in js
+assert "textContent=log||'Ожидаем сообщений установщика" in js

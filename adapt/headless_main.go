@@ -1222,7 +1222,7 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
 			http.Error(w, "deployment status is available only from LAN or Tailscale", http.StatusForbidden)
 			return
 		}
-		writeJSON(w, map[string]bool{"deploying": libs.DeployBusy()})
+		writeJSON(w, deployProgressSnapshot(libs.DeployBusy(), libs.DeployLog()))
 	})
 
 	// The inherited upstream updater is NOT safe for this hybrid: it could
@@ -2255,4 +2255,33 @@ func main() {
 	_ = app.Disconnect()
 	_ = srv.Shutdown(context.Background())
 	_ = panelSrv.Shutdown(context.Background())
+}
+
+// deployProgressSnapshot reports only observed process state, not a speculative
+// percentage. Success requires both a verified install marker and exit code 0.
+// An exit code 0 without verification is "completed", not "success".
+func deployProgressSnapshot(busy bool, logText string) map[string]any {
+	result := "idle"
+	switch {
+	case busy:
+		result = "running"
+	case strings.Contains(logText, "[deploy] завершено с ошибкой") ||
+		strings.Contains(logText, "[deploy] не найден deploy-manager") ||
+		strings.Contains(logText, "[deploy] не удалось запустить") ||
+		strings.Contains(logText, "[deploy] ошибка") ||
+		strings.Contains(logText, "[deploy] не указан хост"):
+		result = "error"
+	case strings.Contains(logText, "[deploy] завершено успешно"):
+		result = "completed"
+		for _, line := range strings.Split(logText, "\n") {
+			marker := strings.TrimSpace(line)
+			if strings.HasPrefix(marker, "CSQTT_") && strings.HasSuffix(marker, "_DEPLOY_OK") {
+				result = "success"
+				break
+			}
+		}
+	case strings.TrimSpace(logText) != "":
+		result = "unknown"
+	}
+	return map[string]any{"deploying": busy, "result": result, "hasLog": strings.TrimSpace(logText) != ""}
 }

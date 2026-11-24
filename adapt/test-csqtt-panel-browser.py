@@ -62,6 +62,7 @@ def main():
     socks5_state = {"interface":"eth1","protocol":"SOCKS5","auth":"no-auth","monitoring":True,"listening":True,"address":"192.168.4.26:12500"}
     calls = []
     deploy_auth_saved = {}  # backend fixture keeps secrets across browser reloads
+    deploy_fixture = {"phase":"idle", "ticks":0, "log":"", "fail":False}
     ssh_password_saved = {}  # root-only SSH store emulated for browser checks
     fail_paths = set()
     fail_http_status = {}
@@ -179,9 +180,20 @@ def main():
             deploy_auth_saved.pop(host,None)
             body = {"ok":True}
         elif path == "/deploy/status":
-            body = {"deploying": False}
+            if deploy_fixture["phase"] == "running":
+                deploy_fixture["ticks"] += 1
+                if deploy_fixture["ticks"] >= 4:
+                    deploy_fixture["phase"] = "success"
+                    deploy_fixture["log"] = ("[deploy] подключение по SSH\n"
+                        "Проверены порты UDP 47000, TCP 47002\n"
+                        "CSQTT_CORE_DEPLOY_OK\n[deploy] завершено успешно\n")
+                elif deploy_fixture["ticks"] >= 2:
+                    deploy_fixture["log"] = "[deploy] подключение по SSH\nПроверены порты UDP 47000, TCP 47002\n"
+                else:
+                    deploy_fixture["log"] = "[deploy] DeployManager запущен\n"
+            body = {"deploying":deploy_fixture["phase"]=="running", "result":deploy_fixture["phase"], "hasLog":bool(deploy_fixture["log"])}
         elif path == "/deploy/log":
-            body = ""
+            body = deploy_fixture["log"]
         elif path == "/version":
             body = {"backend": "fixture", "ui": "test"}
         elif path == "/logs":
@@ -189,7 +201,15 @@ def main():
         elif path == "/logs/clear" and method == "POST":
             body = {"ok": True}
         elif path == "/deploy" and method == "POST":
-            body = {"ok": True}
+            if deploy_fixture["fail"]:
+                deploy_fixture["phase"] = "error"
+                deploy_fixture["log"] = "[deploy] не найден deploy-manager рядом с приложением\n"
+                body = {"ok":False}
+            else:
+                deploy_fixture["phase"] = "running"
+                deploy_fixture["ticks"] = 0
+                deploy_fixture["log"] = ""
+                body = {"ok":True}
         elif path == "/updates/core/check" and method == "GET":
             yes = core_release_available["value"]
             body = {
@@ -1362,7 +1382,46 @@ def main():
             page.locator("#startDeploy").click()
             page.locator("#deployConfirmOverlay").wait_for(state="visible")
             page.locator("#deployConfirmAccept").click()
-            page.wait_for_function("""() => document.querySelector("#toast").textContent.includes("Деплой запущен")""")
+            page.locator("#deployProgressOverlay").wait_for(state="visible")
+            assert page.locator("#deployProgressTitle").inner_text()=="Установка CSQTT Core"
+            assert "192.0.2.50" in page.locator("#deployProgressDescription").inner_text()
+            assert page.locator("#deployProgressIndicator").get_attribute("data-active") == "true"
+            page.wait_for_function("""() => document.querySelector('#deployProgressLog').textContent.includes('47002')""", timeout=12000)
+            page.wait_for_function("""() => document.querySelector('#deployProgressPhase').textContent.includes('Установка завершена')""", timeout=12000)
+            assert page.locator("#deployProgressIndicator").get_attribute("data-active") == "false"
+            assert page.locator("#deployProgressOutcome").get_attribute("data-kind") == "success"
+            assert "CSQTT_CORE_DEPLOY_OK" in page.locator("#deployProgressLog").inner_text()
+            assert len([1 for method,path,_ in calls if path=="/deploy/status" and method=="GET"])>=3
+            # All light/dark viewports keep the complete progress window visible.
+            for theme_name in ("light","dark"):
+                choose_theme(page,theme_name)
+                for viewport_width in (390,768,1280,1920):
+                    page.set_viewport_size({"width":viewport_width,"height":850})
+                    rect=page.evaluate("""() => {
+                      const r=document.querySelector('#deployProgressOverlay [role="dialog"]').getBoundingClientRect();
+                      return {x:r.x,right:r.right,centerX:r.x+r.width/2,centerY:r.y+r.height/2,w:innerWidth,h:innerHeight,
+                        overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth};
+                    }""")
+                    assert abs(rect["centerX"]-rect["w"]/2)<2,(theme_name,viewport_width,rect)
+                    assert abs(rect["centerY"]-rect["h"]/2)<2,(theme_name,viewport_width,rect)
+                    assert rect["x"]>=0 and rect["right"]<=rect["w"]+1 and rect["overflow"]<=1,(theme_name,viewport_width,rect)
+            page.set_viewport_size({"width":1280,"height":850})
+            choose_theme(page,"light")
+            page.locator("#deployProgressClose").click()
+            assert page.locator("#deployProgressOverlay").is_hidden()
+            # A second attempt with no DeployManager must report it immediately,
+            # not show a fake progress bar or assert a completed remote install.
+            deploy_fixture["fail"]=True
+            page.locator("#startDeploy").click()
+            page.locator("#deployConfirmOverlay").wait_for(state="visible")
+            page.locator("#deployConfirmAccept").click()
+            page.locator("#deployProgressOverlay").wait_for(state="visible")
+            page.wait_for_function("""() => document.querySelector('#deployProgressPhase').textContent.includes('Установка не запущена')""")
+            assert page.locator("#deployProgressIndicator").get_attribute("data-active")=="false"
+            assert "отсутствует компонент DeployManager" in page.locator("#deployProgressOutcome").inner_text()
+            assert "не найден deploy-manager" in page.locator("#deployProgressLog").inner_text()
+            page.locator("#deployProgressCloseIcon").click()
+            deploy_fixture["fail"]=False
             deploy_requests = [json.loads(raw) for method, path, raw in calls
                                if method == "POST" and path == "/deploy" and raw]
             assert deploy_requests, "Deploy button did not call /deploy"
@@ -1398,12 +1457,21 @@ def main():
             assert page.locator("#refreshDeployStatus").is_enabled()
             page.locator('button[data-page="deploy"]').click()
             fail_paths.discard("/deploy/status")
+            fail_paths.discard("/deploy/log")
             initial_deploy_posts=len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])
             page.locator("#refreshDeployStatus").click()
             page.locator("#deployStatusOverlay").wait_for(state="visible")
             page.wait_for_function("() => document.querySelector('#deployStatusPill').textContent.includes('Контроллер отвечает')")
             assert page.locator("#deployStatusApi").inner_text()=="Доступен"
-            assert page.locator("#deployStatusOperation").inner_text()=="Нет активной операции"
+            assert page.locator("#deployStatusOperation").inner_text()=="Ошибка операции"
+            # Historical process output opens read-only; no additional POST.
+            page.locator("#deployStatusViewProgress").click()
+            page.locator("#deployProgressOverlay").wait_for(state="visible")
+            page.wait_for_function("""() => document.querySelector('#deployProgressLog').textContent.includes('не найден deploy-manager')""")
+            page.locator("#deployProgressClose").click()
+            page.locator("#refreshDeployStatus").click()
+            page.locator("#deployStatusOverlay").wait_for(state="visible")
+            page.wait_for_function("""() => document.querySelector('#deployStatusApi').textContent === 'Доступен'""")
             assert page.locator("#startDeploy").is_enabled(), "retry did not re-enable deploy after confirmed idle status"
             assert "не подтверждает установку" in page.locator("#deployStatusOverlay").inner_text()
             for theme_name in ("light","dark"):
