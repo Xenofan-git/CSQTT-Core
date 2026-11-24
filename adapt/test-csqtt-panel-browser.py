@@ -194,7 +194,30 @@ def main():
             assert page.locator("#power").inner_text().strip() == "", "old C glyph is still visible"
             navicons = page.locator('.tabs button[data-page="direct"] path').get_attribute("d"), page.locator('.tabs button[data-page="route"] path').get_attribute("d")
             assert navicons[0] != navicons[1], "Direct and Route must have different symbols"
-
+            assert 'm7 4-4 4' in navicons[0], "old Route arrow icon must move to Direct"
+            assert 'M3 5.5h18' in navicons[1] and 'M9 16.5h6' in navicons[1], "Route must use decreasing centered bars"
+            assert page.locator('.tabs button[data-page="settings"] svg.nav-key').count() == 1
+            assert page.locator('.tabs button[data-page="settings"] svg.nav-key circle').count() == 1
+            assert page.locator('.tabs button[data-page="settings"] svg.nav-key path').count() == 1
+            assert page.locator('.tabs button[data-page="singbox"] svg.nav-singbox-logo').count() == 1
+            assert page.locator('.tabs button[data-page="singbox"] svg.nav-singbox-logo path').count() >= 7
+            assert 'SagerNet/sing-box' in page.locator('svg.nav-singbox-logo').inner_html()
+            nav_style = page.evaluate("""() => {
+                const key=document.querySelector('.tabs [data-page="settings"] svg.nav-key');
+                const keyPath=key.querySelector('path');
+                const logo=document.querySelector('.tabs [data-page="singbox"] svg.nav-singbox-logo');
+                const logoTape=logo.querySelectorAll('path')[5];
+                return {
+                    keyFill:getComputedStyle(keyPath).fill,
+                    keyStroke:getComputedStyle(keyPath).stroke,
+                    keyWidth:parseFloat(getComputedStyle(key).width),
+                    logoWidth:parseFloat(getComputedStyle(logo).width),
+                    tapeColor:getComputedStyle(logoTape).fill
+                };
+            }""")
+            assert nav_style['keyFill']=='none' and nav_style['keyStroke']!='none', nav_style
+            assert nav_style['keyWidth']>=28 and nav_style['logoWidth']>=28, nav_style
+            assert nav_style['tapeColor']!='none', nav_style
 
             # The release update UI is fail-closed by default and never
             # offers the legacy Endlad2/csqtt-core download path.
