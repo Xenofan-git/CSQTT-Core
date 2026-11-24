@@ -20,7 +20,7 @@
 
 ## Исходники и состояние разработки
 
-Основа CSQTT — открытая версия **2.5.0** с выборочным переносом изменений **2.5.3**. Linux ARM64 адаптация, общая панель и интеграция Sing-box разрабатываются в рамках этого репозитория.
+Основа CSQTT — открытая версия **[2.5.0](https://github.com/amurcanov/csqtt/releases/tag/v2.5.0)** с выборочным переносом изменений **[2.5.3](https://github.com/Afteroid/csqttr/releases/tag/v2.5.3)**. Linux ARM64 адаптация, общая панель и интеграция Sing-box разрабатываются в рамках этого репозитория.
 
 - **Исходный код:** [Xenofan-git/CSQTT-Core](https://github.com/Xenofan-git/CSQTT-Core)
 - **Актуальная рабочая ветка:** [test/csqtt-core-linux-unified-253-20261122](https://github.com/Xenofan-git/CSQTT-Core/tree/test/csqtt-core-linux-unified-253-20261122)
