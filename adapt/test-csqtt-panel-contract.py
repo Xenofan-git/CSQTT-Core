@@ -409,3 +409,14 @@ assert html.count('id="themeMode"') == 1
 assert 'value="system"' not in html
 assert 'Как в системе' not in html
 assert 'matchMedia' not in html.split("const THEME_KEY=")[1].split("const API=",1)[0]
+
+
+# The SSH form, buttons, auth and status are within one Deploy card.
+deploy_section=html.split('<section class="page" id="page-deploy">',1)[1].split('</section>',1)[0]
+assert deploy_section.count('class="deploy-action-group"')==1
+assert deploy_section.index('class="deploy-action-group"')<deploy_section.index('<div class="card"><h2>Журнал деплоя')
+assert 'id="deployConfirmOverlay"' in html
+assert 'aria-modal="true"' in html
+assert 'id="deployConfirmAccept"' in html and 'id="deployConfirmCancel"' in html
+assert 'showDeployConfirmation(host,corePort,panelPort)' in js
+assert "confirm('Установить изолированный сервер CSQTT Core" not in js

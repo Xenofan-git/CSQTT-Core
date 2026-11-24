@@ -819,6 +819,22 @@ def main():
                 assert abs(target["left"]-dims["status"]["left"]) <= 1.5, (width,dims)
                 assert abs(target["right"]-dims["status"]["right"]) <= 1.5, (width,dims)
                 assert dims["status"]["top"] >= dims["authorize"]["top"] + dims["authorize"]["height"], (width,dims)
+                # Deploy buttons must be structurally and visually inside the SSH card.
+                card_check=page.evaluate("""() => {
+                    const card=document.querySelector('#page-deploy>.card:first-of-type');
+                    const group=card.querySelector('.deploy-action-group');
+                    const log=document.querySelector('#deployLog').closest('.card');
+                    const b=card.getBoundingClientRect(),g=group.getBoundingClientRect(),l=log.getBoundingClientRect();
+                    return {within:card.contains(group),cardBottom:b.bottom,groupBottom:g.bottom,
+                            cardLeft:b.left,cardRight:b.right,groupLeft:g.left,groupRight:g.right,logTop:l.top,
+                            innerLeft:card.querySelector('.field').getBoundingClientRect().left,
+                            innerRight:card.querySelector('.field').getBoundingClientRect().right};
+                }""")
+                assert card_check["within"],(width,card_check)
+                assert abs(card_check["innerLeft"]-card_check["groupLeft"]) <= 1.5,(width,card_check)
+                assert abs(card_check["innerRight"]-card_check["groupRight"]) <= 1.5,(width,card_check)
+                assert card_check["groupBottom"]<card_check["cardBottom"],(width,card_check)
+                assert card_check["cardBottom"]<card_check["logTop"],(width,card_check)
 
             # Check the other three layouts at the same breakpoints.
             for width in WIDTHS:
@@ -1137,7 +1153,41 @@ def main():
             page.locator("#webPassword").fill("fixturewebpassword")
             page.locator("#saveDeployAuth").click()
             page.wait_for_function("""() => document.querySelector("#deploySecretsOverlay").classList.contains("hidden")""")
+            # Install requires a centered in-app confirmation, not a browser dialog.
+            # Cancel, Escape and backdrop must never send the Deploy request.
+            initial_posts=len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])
             page.locator("#startDeploy").click()
+            assert page.locator("#deployConfirmOverlay").is_visible()
+            assert page.locator("#deployConfirmHost").inner_text()=="192.0.2.50"
+            assert page.locator("#deployConfirmCorePort").inner_text()=="UDP 47000"
+            assert page.locator("#deployConfirmPanelPort").inner_text()=="TCP 47002"
+            page.locator("#deployConfirmCancel").click()
+            assert page.locator("#deployConfirmOverlay").is_hidden()
+            assert len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])==initial_posts
+            page.locator("#startDeploy").click()
+            page.locator("#deployConfirmCancel").press("Escape")
+            assert page.locator("#deployConfirmOverlay").is_hidden()
+            assert len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])==initial_posts
+            # Modal stays centered for mobile and desktop and in both visual themes.
+            for theme_name in ("light","dark"):
+                page.locator("#themeMode").select_option(theme_name)
+                for viewport_width in (390,768,1280,1920):
+                    page.set_viewport_size({"width":viewport_width,"height":850})
+                    page.locator("#startDeploy").click()
+                    dialog=page.evaluate("""() => {
+                        const rect=document.querySelector('#deployConfirmOverlay [role="dialog"]').getBoundingClientRect();
+                        return {x:rect.x,right:rect.right,centerX:rect.x+rect.width/2,centerY:rect.y+rect.height/2,
+                                width:rect.width,height:rect.height,visible:innerWidth,viewHeight:innerHeight,
+                                overflow:document.documentElement.scrollWidth-document.documentElement.clientWidth};
+                    }""")
+                    assert abs(dialog["centerX"]-dialog["visible"]/2)<2,(theme_name,viewport_width,dialog)
+                    assert abs(dialog["centerY"]-dialog["viewHeight"]/2)<2,(theme_name,viewport_width,dialog)
+                    assert dialog["x"]>=0 and dialog["right"]<=viewport_width+1 and dialog["overflow"]<=1,(theme_name,viewport_width,dialog)
+                    page.locator("#deployConfirmCancel").click()
+            page.set_viewport_size({"width":1280,"height":850})
+            page.locator("#themeMode").select_option("light")
+            page.locator("#startDeploy").click()
+            page.locator("#deployConfirmAccept").click()
             page.wait_for_function("""() => document.querySelector("#toast").textContent.includes("Деплой запущен")""")
             deploy_requests = [json.loads(raw) for method, path, raw in calls
                                if method == "POST" and path == "/deploy" and raw]
