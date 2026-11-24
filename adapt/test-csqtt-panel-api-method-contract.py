@@ -64,12 +64,12 @@ def parse_frontend_requests(html: str) -> list[tuple[str,str,bool]]:
         dynamic=bool(args[0][path.end():].strip())
         # A fixed backend route may append only an encoded host query value.
         # Other dynamic paths still require a trailing "/" as before.
-        if dynamic and not prefix.endswith("/") and prefix != "/deploy/credentials?host=":
+        if dynamic and not prefix.endswith("/") and prefix not in ("/deploy/credentials?host=", "/deploy/ssh-credentials?host="):
             raise AssertionError("dynamic path lacks explicit backend prefix")
-        if prefix == "/deploy/credentials?host=":
+        if prefix in ("/deploy/credentials?host=", "/deploy/ssh-credentials?host="):
             if "encodeURIComponent(host)" not in args[0]:
                 raise AssertionError("Deploy host query is not URL-encoded")
-            prefix = "/deploy/credentials"
+            prefix = prefix.split("?",1)[0]
         if len(args)>1:
             method=METHOD_RX.fullmatch(args[1])
             if not method:

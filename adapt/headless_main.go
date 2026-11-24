@@ -303,6 +303,139 @@ func deleteDeployCredentials(host string) error {
 }
 
 // Inject only for the exact target host, never for other servers. Uninstall unchanged.
+// SSH passwords are deliberately separate from the Deploy server tunnel/WEB
+// credentials. They are never returned by API GET or stored in the browser.
+var deploySSHMu sync.Mutex
+
+func deploySSHPath() (string, error) {
+	authPath, err := deployCredentialsPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(authPath), "deploy-ssh-passwords.json"), nil
+}
+func readDeploySSH(path string) (map[string]string, error) {
+	values := make(map[string]string)
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return values, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 1<<20 {
+		return nil, fmt.Errorf("небезопасный файл SSH-паролей")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(data, &values); err != nil || values == nil {
+		return nil, fmt.Errorf("повреждён файл SSH-паролей")
+	}
+	return values, nil
+}
+func writeDeploySSH(path string, values map[string]string) error {
+	data, err := json.Marshal(values)
+	if err != nil {
+		return err
+	}
+	if len(data) > 1<<20 {
+		return fmt.Errorf("превышен лимит хранения SSH-паролей")
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".deploy-ssh-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err := f.Chmod(0600); err != nil {
+		f.Close()
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	if dir, err := os.Open(filepath.Dir(path)); err == nil {
+		defer dir.Close()
+		if err := dir.Sync(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func getDeploySSHPassword(host string) (string, bool, error) {
+	key, err := deployHostKey(host)
+	if err != nil {
+		return "", false, err
+	}
+	deploySSHMu.Lock()
+	defer deploySSHMu.Unlock()
+	path, err := deploySSHPath()
+	if err != nil {
+		return "", false, err
+	}
+	saved, err := readDeploySSH(path)
+	if err != nil {
+		return "", false, err
+	}
+	value, ok := saved[key]
+	return value, ok && value != "", nil
+}
+func saveDeploySSHPassword(host, password string) error {
+	key, err := deployHostKey(host)
+	if err != nil {
+		return err
+	}
+	if len(password) < 1 || len(password) > 1024 || strings.ContainsAny(password, "\x00\r\n") {
+		return fmt.Errorf("SSH-пароль должен содержать 1–1024 символа без переводов строк")
+	}
+	deploySSHMu.Lock()
+	defer deploySSHMu.Unlock()
+	path, err := deploySSHPath()
+	if err != nil {
+		return err
+	}
+	saved, err := readDeploySSH(path)
+	if err != nil {
+		return err
+	}
+	if _, exists := saved[key]; !exists && len(saved) >= 32 {
+		return fmt.Errorf("предел 32 сохранённых SSH-паролей")
+	}
+	saved[key] = password
+	return writeDeploySSH(path, saved)
+}
+func deleteDeploySSHPassword(host string) error {
+	key, err := deployHostKey(host)
+	if err != nil {
+		return err
+	}
+	deploySSHMu.Lock()
+	defer deploySSHMu.Unlock()
+	path, err := deploySSHPath()
+	if err != nil {
+		return err
+	}
+	saved, err := readDeploySSH(path)
+	if err != nil {
+		return err
+	}
+	delete(saved, key)
+	return writeDeploySSH(path, saved)
+}
+
 func enrichDeployRequest(raw json.RawMessage) (json.RawMessage, error) {
 	var body map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &body); err != nil || body == nil {
@@ -311,12 +444,30 @@ func enrichDeployRequest(raw json.RawMessage) (json.RawMessage, error) {
 	var protocol, host string
 	_ = json.Unmarshal(body["protocol"], &protocol)
 	_ = json.Unmarshal(body["host"], &host)
-	var uninstall bool
-	_ = json.Unmarshal(body["uninstall"], &uninstall)
-	if uninstall || !strings.EqualFold(protocol, "CSQTT") {
+	if !strings.EqualFold(protocol, "CSQTT") {
 		return raw, nil
 	}
 	read := func(key string) string { var v string; _ = json.Unmarshal(body[key], &v); return v }
+	var usePassword, uninstall bool
+	_ = json.Unmarshal(body["usePassword"], &usePassword)
+	_ = json.Unmarshal(body["uninstall"], &uninstall)
+	// Both install and uninstall use the saved SSH password only for this host.
+	if usePassword && read("password") == "" {
+		saved, ok, err := getDeploySSHPassword(host)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("для этого сервера не сохранён SSH-пароль")
+		}
+		body["password"], err = json.Marshal(saved)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if uninstall {
+		return json.Marshal(body)
+	}
 	count := 0
 	for _, key := range []string{"mainPassword", "webUser", "webPassword"} {
 		if read(key) != "" {
@@ -324,20 +475,22 @@ func enrichDeployRequest(raw json.RawMessage) (json.RawMessage, error) {
 		}
 	}
 	if count == 3 {
-		return raw, nil
-	} // backwards-compatible explicit API credentials
+		return json.Marshal(body)
+	} // explicit API credential compatibility
 	if count != 0 {
 		return nil, fmt.Errorf("частично заполненные данные авторизации")
 	}
-	v, ok, err := getDeployCredentials(host)
+	saved, ok, err := getDeployCredentials(host)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, fmt.Errorf("для сервера не сохранена авторизация")
 	}
-	for key, val := range map[string]string{"mainPassword": v.MainPassword, "webUser": v.WebLogin, "webPassword": v.WebPassword} {
-		body[key], err = json.Marshal(val)
+	for key, value := range map[string]string{
+		"mainPassword": saved.MainPassword, "webUser": saved.WebLogin, "webPassword": saved.WebPassword,
+	} {
+		body[key], err = json.Marshal(value)
 		if err != nil {
 			return nil, err
 		}
@@ -983,6 +1136,46 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
 		case http.MethodDelete:
 			if err := deleteDeployCredentials(r.URL.Query().Get("host")); err != nil {
 				http.Error(w, "не удалось удалить авторизацию", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string]bool{"ok": true})
+		default:
+			w.Header().Set("Allow", "GET, PUT, DELETE")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/deploy/ssh-credentials", func(w http.ResponseWriter, r *http.Request) {
+		if !privateClient(r) {
+			http.Error(w, "LAN or Tailscale only", http.StatusForbidden)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			_, ok, err := getDeploySSHPassword(r.URL.Query().Get("host"))
+			if err != nil {
+				http.Error(w, "не удалось прочитать SSH-пароль", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string]bool{"configured": ok})
+		case http.MethodPut:
+			var body struct {
+				Host     string `json:"host"`
+				Password string `json:"password"`
+			}
+			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&body); err != nil {
+				http.Error(w, "некорректный запрос сохранения SSH-пароля", http.StatusBadRequest)
+				return
+			}
+			if err := saveDeploySSHPassword(body.Host, body.Password); err != nil {
+				http.Error(w, "не удалось сохранить SSH-пароль", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, map[string]bool{"ok": true, "configured": true})
+		case http.MethodDelete:
+			if err := deleteDeploySSHPassword(r.URL.Query().Get("host")); err != nil {
+				http.Error(w, "не удалось удалить SSH-пароль", http.StatusBadRequest)
 				return
 			}
 			writeJSON(w, map[string]bool{"ok": true})

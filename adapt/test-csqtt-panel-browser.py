@@ -48,6 +48,7 @@ def main():
     socks5_state = {"interface":"eth1","protocol":"SOCKS5","auth":"no-auth","monitoring":True,"listening":True,"address":"192.168.4.26:12500"}
     calls = []
     deploy_auth_saved = {}  # backend fixture keeps secrets across browser reloads
+    ssh_password_saved = {}  # root-only SSH store emulated for browser checks
     fail_paths = set()
     fail_http_status = {}
     core_release_available = {"value": False}
@@ -131,6 +132,21 @@ def main():
             body = {"ok": True}
         elif path == "/socks5/status":
             body = dict(socks5_state)
+        elif path == "/deploy/ssh-credentials" and method == "GET":
+            from urllib.parse import parse_qs
+            host=parse_qs(urlparse(request.url).query).get("host",[""])[0].lower()
+            body={"configured":bool(ssh_password_saved.get(host))}
+        elif path == "/deploy/ssh-credentials" and method == "PUT":
+            content=json.loads(request.post_data or "{}")
+            assert set(content)=={"host","password"}
+            assert content["password"] and len(content["password"])<=1024
+            ssh_password_saved[content["host"].lower()]=content["password"]
+            body={"ok":True,"configured":True}
+        elif path == "/deploy/ssh-credentials" and method == "DELETE":
+            from urllib.parse import parse_qs
+            host=parse_qs(urlparse(request.url).query).get("host",[""])[0].lower()
+            ssh_password_saved.pop(host,None)
+            body={"ok":True}
         elif path == "/deploy/credentials" and method == "GET":
             from urllib.parse import parse_qs
             host = parse_qs(urlparse(request.url).query).get("host", [""])[0].lower()
@@ -1210,15 +1226,23 @@ def main():
             assert page.locator("#mainPassword").input_value() == ""
             assert page.locator("#webPassword").input_value() == ""
             assert "сохранены" in page.locator("#authSummary").inner_text()
-            # Persisted credentials survive a fresh page and never appear in
-            # GET / localStorage, while the SSH password remains deliberately transient.
+            # SSH password is saved on focus loss, controller-side, and never
+            # returned in plaintext. It survives page reload with other credentials.
+            page.locator("#deployPassword").fill("fixture-ssh-password")
+            page.locator("#deployUser").focus()
+            page.wait_for_function("""() => document.querySelector('#deploySSHPasswordStatus').textContent.includes('сохранён для этого сервера')""")
+            assert ssh_password_saved["192.0.2.50"]=="fixture-ssh-password"
+            assert page.locator("#deployPassword").input_value()==""
             page.reload(wait_until="domcontentloaded")
             page.locator('button[data-page="deploy"]').click()
             page.wait_for_function("""() => document.querySelector('#authSummary').textContent.includes('сохранены')""")
             assert page.locator("#deployHost").input_value()=="192.0.2.50"
+            page.wait_for_function("""() => document.querySelector('#deploySSHPasswordStatus').textContent.includes('сохранён для этого сервера')""")
+            assert page.locator("#deployPassword").input_value()==""
+            assert "Сохранён" in page.locator("#deployPassword").get_attribute("placeholder")
             storage=page.evaluate("JSON.stringify(localStorage)")
-            assert "fixturetunnelpassword" not in storage and "fixturewebpassword" not in storage
-            assert "fixturetunnelpassword" not in page.content() and "fixturewebpassword" not in page.content()
+            assert "fixturetunnelpassword" not in storage and "fixturewebpassword" not in storage and "fixture-ssh-password" not in storage
+            assert "fixturetunnelpassword" not in page.content() and "fixturewebpassword" not in page.content() and "fixture-ssh-password" not in page.content()
             page.locator("#editDeployAuth").click()
             page.locator("#deploySecretsOverlay").wait_for(state="visible")
             assert page.locator("#webLogin").input_value()=="fixtureadmin"
@@ -1228,7 +1252,8 @@ def main():
             page.locator("#saveDeployAuth").click()
             page.wait_for_function("""() => document.querySelector("#deploySecretsOverlay").classList.contains("hidden")""")
             assert deploy_auth_saved["192.0.2.50"]["mainPassword"]=="fixturetunnelpassword"
-            page.locator("#deployPassword").fill("fixture-ssh-password")
+            # Saved SSH credentials work with an empty UI password field.
+            assert page.locator("#deployPassword").input_value()==""
             # Install requires a centered in-app confirmation, not a browser dialog.
             # Cancel, Escape and backdrop must never send the Deploy request.
             initial_posts=len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])
@@ -1272,7 +1297,21 @@ def main():
             assert deploy_requests[-1]["deviceId"] == "fixture-device"
             assert deploy_requests[-1]["corePort"] == 47000 and deploy_requests[-1]["warpPort"] == 47002
             assert not any(k in deploy_requests[-1] for k in ("mainPassword","webPassword","webUser")), "browser must not resend saved server passwords"
+            assert deploy_requests[-1]["password"]=="", "browser must not resend saved SSH password"
 
+            # Remove only saved SSH password and ensure web/tunnel auth survives.
+            page.locator("#deleteDeploySSHPassword").click()
+            page.wait_for_function("""() => document.querySelector('#deploySSHPasswordStatus').textContent.includes('не сохранён')""")
+            assert "192.0.2.50" not in ssh_password_saved
+            assert deploy_auth_saved["192.0.2.50"]["mainPassword"]=="fixturetunnelpassword"
+            # Host isolation: switching away must never reuse another host's SSH secret.
+            page.locator("#deployHost").fill("192.0.2.51")
+            page.locator("#deployHost").press("Tab")
+            page.wait_for_function("""() => document.querySelector('#deploySSHPasswordStatus').textContent.includes('не сохранён')""")
+            assert page.locator("#deployPassword").input_value()==""
+            assert page.locator("#deleteDeploySSHPassword").is_hidden()
+            page.locator("#deployHost").fill("192.0.2.50")
+            page.locator("#deployHost").press("Tab")
             # A failed status endpoint must not be misreported as a real disconnect,
             # and deployment actions must remain blocked when operation state is unknown.
             fail_paths.update({"/vpn/status", "/deploy/status", "/deploy/log"})

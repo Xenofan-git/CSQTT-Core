@@ -438,3 +438,14 @@ assert 'loadDeployCredentials()' in js
 assert 'csqtt-deploy-host' in js  # only nonsecret host persistence
 assert "deploySecrets.mainPassword" not in js and "deploySecrets.webPassword" not in js
 assert 'Данные авторизации заданы до перезагрузки страницы' not in js
+
+# Persistent SSH password is keyed per target and never saved in localStorage.
+assert 'mux.HandleFunc("/deploy/ssh-credentials"' in backend
+assert 'deploy-ssh-passwords.json' in backend
+assert 'getDeploySSHPassword(host)' in backend
+assert 'req(\'/deploy/ssh-credentials\',\'PUT\'' in js
+assert "loadSSHPasswordStatus()" in js
+assert "ensureSSHPassword(host)" in js
+assert "password:''" in js
+assert 'deploySSHPasswordStatus' in html
+assert 'deleteDeploySSHPassword' in html
