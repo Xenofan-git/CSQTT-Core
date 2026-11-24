@@ -1,23 +1,29 @@
-# LaLune-NanoPi-ARM64
+# CSQTT Core ARM64
 
-ARM64 build and NanoPi integration for LaLune.
+**CSQTT Core ARM64** — программная система для **Debian и Ubuntu на архитектуре ARM64 (AArch64)**. Единая русскоязычная панель объединяет два независимых сетевых ядра: **CSQTT** и **Sing-box**.
 
-## Upstream
+Проект предназначен для Linux ARM64 и **не привязан к определённой модели компьютера, плате или производителю оборудования**.
 
-Builds are based on upstream Endlad2/LaLune, pinned to commit e4a6d08.
+## Возможности
 
-## Target
+- **CSQTT:** подключение, настройка туннеля, авторизация VK, управление клиентскими и серверными компонентами.
+- **Sing-box:** единый входящий SOCKS5, выбор исходящего подключения, правила маршрутизации по доменам, IP/CIDR и категориям **Rule Sets**.
+- **Маршрут:** правила обрабатываются по приоритету сверху вниз. Системное правило **DIRECT** располагается первым; правило **CSQTT** можно включать, выключать и перемещать ниже DIRECT; дополнительные правила направляют трафик в выбранные исходящие SOCKS5, включая внешние прокси локальной сети.
+- **Изоляция:** у CSQTT и Sing-box отдельные процессы, настройки и жизненные циклы. Приложение не должно подменять глобальный маршрут Linux.
+- **Деплой:** серверная часть CSQTT Core отделена от оригинального Android-приложения; для неё предусмотрены собственные порты **47000/47002**.
 
-- NanoPi R3S LTS
-- Debian ARM64
-- Linux ARM64
-- Isolated LaLune/CSQTT tunnel path
-- Keenetic-selectable connection without replacing the existing 3x-ui path
+## Панель управления
 
-The first stage validates a native ARM64 desktop build. Network/gateway integration is intentionally kept separate from the existing 3x-ui, Tailscale, CSQTT and HydraRoute configurations.
+Семь вкладок: **Подключение · Туннель · Деплой · Логи · Директ · Маршрут · Sing-box**.
 
-## Build
+Вкладка «Маршрут» заменяет классические чёрные и белые списки: доменные условия и Rule Sets обрабатываются через Sing-box. Во вкладке «Sing-box» находятся настройки ядра и управление наборами правил.
 
-GitHub Actions uses the public ARM64 runner ubuntu-24.04-arm.
+## Исходники и состояние разработки
 
-The build workflow checks out the pinned upstream source, prepares the Flutter web frontend, and produces a Linux ARM64 artifact.
+Основа CSQTT — открытая версия **2.5.0** с выборочным переносом изменений **2.5.3**. Linux ARM64 адаптация, общая панель и интеграция Sing-box разрабатываются в рамках этого репозитория.
+
+- **Исходный код:** [Xenofan-git/CSQTT-Core](https://github.com/Xenofan-git/CSQTT-Core)
+- **Актуальная рабочая ветка:** [test/csqtt-core-linux-unified-253-20261122](https://github.com/Xenofan-git/CSQTT-Core/tree/test/csqtt-core-linux-unified-253-20261122)
+- **CI и испытания:** [GitHub Actions](https://github.com/Xenofan-git/CSQTT-Core/actions)
+
+**Статус:** проект находится в разработке. Ветка `main` пока не содержит всей текущей интеграции двух ядер; актуальная реализация и результаты тестов находятся в рабочей ветке. Не считайте старые сборки из истории репозитория готовыми релизами CSQTT Core ARM64. Для автоматического обновления требуется отдельно опубликованный и проверенный совместимый релиз.
