@@ -773,10 +773,37 @@ input[type="number"]::-webkit-outer-spin-button{
  #page-route .route-rule{padding:10px 9px}
 }
 
+
+/* Theme selector moved next to the connection profiles shortcut. */
+.top-actions .top-theme-select{
+  appearance:none;-webkit-appearance:none;
+  flex:0 0 112px;width:112px;min-width:0;height:40px;
+  box-sizing:border-box;padding:0 29px 0 12px;margin:0;
+  border:1px solid var(--line);border-radius:13px;
+  background-color:var(--surface);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='m6 9 6 6 6-6' stroke='%235f6067' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center;background-size:16px;
+  color:var(--text);font-size:13px;font-weight:600;line-height:1.2;
+  box-shadow:none;cursor:pointer;
+}
+:root[data-theme="dark"] .top-actions .top-theme-select{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='m6 9 6 6 6-6' stroke='%23d9d3e9' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.top-actions .top-theme-select:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+@media(max-width:700px){
+  .top-actions .top-theme-select{flex-basis:98px;width:98px;height:36px;padding-left:8px;padding-right:23px;background-position:right 5px center;background-size:14px;font-size:12px;border-radius:11px}
+}
+@media(max-width:380px){
+  .top-actions{gap:2px}
+  .top-actions .top-theme-select{flex-basis:87px;width:87px;padding-left:6px;padding-right:18px;background-size:12px;background-position:right 3px center;font-size:11px}
+  .top-icon,.top-logout .top-logout-button{min-width:32px;width:32px;min-height:34px;height:34px}
+  .brand{font-size:25px}
+}
+
 </style>
 </head>
 <body>
-<header class="top"><div class="brand">CSQTT<small>Core · Linux ARM64</small></div><div class="top-actions" aria-label="Быстрые действия"><button type="button" class="top-icon" aria-label="Профили подключения" id="topSwitch"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3 5 7h3v7h2V7h3L9 3z"/></svg></button><a class="top-icon top-github-link" id="topGitHub" href="https://github.com/Xenofan-git/CSQTT-Core" target="_blank" rel="noopener noreferrer" aria-label="Репозиторий CSQTT Core на GitHub" title="GitHub · CSQTT Core"><svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.016-2.04-3.338.727-4.043-1.416-4.043-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.838 1.237 1.838 1.237 1.07 1.834 2.807 1.304 3.492.997.108-.775.418-1.304.762-1.604-2.665-.3-5.466-1.334-5.466-5.932 0-1.31.468-2.381 1.236-3.221-.124-.303-.536-1.524.117-3.176 0 0 1.008-.322 3.301 1.23a11.52 11.52 0 0 1 6.007 0c2.291-1.552 3.297-1.23 3.297-1.23.655 1.652.243 2.873.12 3.176.77.84 1.235 1.911 1.235 3.221 0 4.61-2.805 5.629-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.015 2.898-.015 3.293 0 .319.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a><form class="top-logout" action="/auth/logout" method="post"><button type="submit" class="top-icon top-logout-button" title="Выйти" aria-label="Выйти из CSQTT Core"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5M15 7l5 5-5 5M8 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form></div><span id="apiStatus" class="badge api-indicator" role="status" aria-live="polite">Проверка API…</span></header>
+<header class="top"><div class="brand">CSQTT<small>Core · Linux ARM64</small></div><div class="top-actions" aria-label="Быстрые действия"><button type="button" class="top-icon" aria-label="Профили подключения" id="topSwitch"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3 5 7h3v7h2V7h3L9 3z"/></svg></button><select id="themeMode" class="top-theme-select" aria-label="Тема интерфейса" title="Тема интерфейса"><option value="light">Светлая</option><option value="dark">Тёмная</option></select><a class="top-icon top-github-link" id="topGitHub" href="https://github.com/Xenofan-git/CSQTT-Core" target="_blank" rel="noopener noreferrer" aria-label="Репозиторий CSQTT Core на GitHub" title="GitHub · CSQTT Core"><svg class="github-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.016-2.04-3.338.727-4.043-1.416-4.043-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.838 1.237 1.838 1.237 1.07 1.834 2.807 1.304 3.492.997.108-.775.418-1.304.762-1.604-2.665-.3-5.466-1.334-5.466-5.932 0-1.31.468-2.381 1.236-3.221-.124-.303-.536-1.524.117-3.176 0 0 1.008-.322 3.301 1.23a11.52 11.52 0 0 1 6.007 0c2.291-1.552 3.297-1.23 3.297-1.23.655 1.652.243 2.873.12 3.176.77.84 1.235 1.911 1.235 3.221 0 4.61-2.805 5.629-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.015 2.898-.015 3.293 0 .319.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a><form class="top-logout" action="/auth/logout" method="post"><button type="submit" class="top-icon top-logout-button" title="Выйти" aria-label="Выйти из CSQTT Core"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5M15 7l5 5-5 5M8 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form></div><span id="apiStatus" class="badge api-indicator" role="status" aria-live="polite">Проверка API…</span></header>
 <main>
 <section class="page active" id="page-connect">
  <div class="card hero connect-hero"><button id="power" class="power" aria-label="Подключить" aria-pressed="false"><svg class="power-symbol" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.8v9.1M6.2 5.9a9 9 0 1 0 11.6 0"/></svg></button><div id="connState" class="bigstate">Проверка состояния…</div><div id="connMessage" class="muted connect-timer">00:00:00</div><div class="metrics" aria-hidden="true"><div class="metric"><strong id="profileCount">—</strong><span>Профили</span></div><div class="metric"><strong id="workerCount">—</strong><span>Потоки</span></div><div class="metric"><strong id="vkBadge">—</strong><span>VK</span></div></div></div>
@@ -808,7 +835,6 @@ input[type="number"]::-webkit-outer-spin-button{
  <div class="card"><button class="secondary" id="toggleVkImport">Резервная авторизация в браузере</button><div id="vkImportPanel" class="hidden"><p class="muted">Если автоматический браузерный вход на headless NanoPi не может показать окно VK, откройте OAuth на телефоне/компьютере, войдите и скопируйте конечный URL из адресной строки. Не отправляйте эту ссылку никому.</p><button class="secondary" id="openVkOAuth">Открыть VK OAuth</button><div class="field"><label>URL после входа VK или access_token</label><textarea id="vkTokenInput" rows="3" autocomplete="off" placeholder="Вставьте конечный URL или токен"></textarea></div><button id="importVkToken">Сохранить токен</button></div></div>
  <div class="card"><h2>CAPTCHA</h2><div id="captchaStatus" class="muted">Ожидание запросов CAPTCHA…</div><div id="captchaInline" class="hidden"><div class="notice">Если CSQTT запросил подтверждение, откройте страницу проверки и затем отправьте ответ в активную сессию.</div><button id="openCaptcha" class="secondary">Открыть CAPTCHA</button><div class="field"><label>Ответ / результат CAPTCHA</label><input id="captchaAnswer" autocomplete="off" placeholder="Введите результат проверки"></div><div class="row"><button id="submitCaptcha">Отправить</button><button class="secondary" id="cancelCaptcha">Отменить</button></div></div></div>
  
- <div class="card"><h2>Оформление CSQTT</h2><div class="field"><label for="themeMode">Тема приложения</label><select id="themeMode"><option value="system">Как в системе</option><option value="light">Светлая</option><option value="dark">Тёмная</option></select></div><p class="muted">Оформление CSQTT Core на основе CSQTT 2.5.0.</p></div>
  <div class="card"><h2>Система и версия</h2><div class="statusline"><span class="dot ok"></span><span>CSQTT Core · Linux ARM64</span></div><p class="muted">CSQTT Core — клиент и сервер для ARM64. Автоматическое получение VK-токена реализовано отдельным компонентом.</p><div class="row"><div><div class="muted">Backend</div><strong id="backendVersion">—</strong><div class="muted" style="font-size:12px;margin-top:6px">Коммит сборки: <span id="coreBuildCommit">—</span></div></div></div><div class="row" style="margin-top:12px"><button class="secondary" id="checkCoreUpdate">Проверить CSQTT Core</button><button id="updateCore" disabled>Обновить CSQTT Core</button></div><p class="muted" style="font-size:12px;margin:12px 0">Источник — Xenofan-git/CSQTT-Core. Проверка сравнивает коммит рабочей ветки и опубликованные ARM64-релизы. Установка доступна только для совместимого релиза с подтверждённой SHA-256, резервной копией и автоматическим откатом. CSQTT и Sing-box обновляются отдельно.</p><div id="updateMessage" class="notice hidden"></div></div>
 </section>
 <section class="page route-page" id="page-direct"><div class="route-dialog card direct-editor-card">
@@ -901,21 +927,32 @@ input[type="number"]::-webkit-outer-spin-button{
 <script>
 (() => {
 'use strict';
-// CSQTT 2.1.9 BrandLightColorScheme / BrandDarkColorScheme parity.
+// Only explicit light/dark theme choices. Legacy "system" preference becomes light.
 const THEME_KEY='csqtt-theme-mode';
 function applyTheme(mode){
- const dark=mode==='dark'||(mode==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);
- document.documentElement.dataset.theme=dark?'dark':'light';
- document.documentElement.style.colorScheme=dark?'dark':'light';
- const select=document.getElementById('themeMode');if(select&&select.value!==mode)select.value=mode;
+ const selected=mode==='dark'?'dark':'light';
+ document.documentElement.dataset.theme=selected;
+ document.documentElement.style.colorScheme=selected;
+ const select=document.getElementById('themeMode');
+ if(select&&select.value!==selected)select.value=selected;
 }
 function loadTheme(){
- let mode='system';try{const saved=localStorage.getItem(THEME_KEY);if(['system','light','dark'].includes(saved))mode=saved;}catch(_){}
- const select=document.getElementById('themeMode');if(select)select.value=mode;applyTheme(mode);
+ let mode='light';
+ try{
+   const saved=localStorage.getItem(THEME_KEY);
+   if(saved==='dark')mode='dark';
+   else if(saved==='system')localStorage.setItem(THEME_KEY,'light');
+ }catch(_){}
+ applyTheme(mode);
 }
 document.addEventListener('DOMContentLoaded',loadTheme);
-if(window.matchMedia){const mq=window.matchMedia('(prefers-color-scheme: dark)');mq.addEventListener?.('change',()=>{let mode='system';try{mode=localStorage.getItem(THEME_KEY)||'system'}catch(_){}if(mode==='system')applyTheme(mode);});}
-document.addEventListener('change',e=>{if(e.target&&e.target.id==='themeMode'){const mode=e.target.value;try{localStorage.setItem(THEME_KEY,mode)}catch(_){}applyTheme(mode);}});
+document.addEventListener('change',e=>{
+ if(e.target&&e.target.id==='themeMode'){
+  const mode=e.target.value==='dark'?'dark':'light';
+  try{localStorage.setItem(THEME_KEY,mode)}catch(_){}
+  applyTheme(mode);
+ }
+});
 const API='/api';
 const $=id=>document.getElementById(id);
 const state={configs:[],selected:null,settings:null,tunnelAuth:{configured:false},socks5Status:null,socks5StatusAvailable:false,connected:false,statusAvailable:false,vpnStatus:{},vk:{},captcha:{},deploying:false,deployStatusAvailable:false,deployLog:'',deployLogAvailable:false,logs:[],version:{},coreUpdate:{},settingsLoaded:false,deployStarted:false,logsActive:true};

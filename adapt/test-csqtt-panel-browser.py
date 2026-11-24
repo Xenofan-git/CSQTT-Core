@@ -190,6 +190,51 @@ def main():
             assert page.locator("#page-connect > .card").count() == 1, "Connect must retain the clean 2.5.0 single-card composition"
             assert page.locator("#topHeart, #topSettings").count() == 0, "old donation and gear buttons must be absent"
             assert page.locator("#topSwitch").count() == 1, "profile selector should be retained"
+            # Theme selector belongs in the top bar beside Profiles, with
+            # only manual light/dark modes and no dependency on OS preference.
+            theme = page.locator("#themeMode")
+            assert theme.count() == 1
+            assert page.locator("#page-settings #themeMode").count() == 0
+            assert theme.locator("option").all_text_contents() == ["Светлая", "Тёмная"]
+            assert theme.locator("option").evaluate_all("(opts) => opts.map(o => o.value)") == ["light", "dark"]
+            assert page.locator("#topSwitch + #themeMode").count() == 1
+            assert theme.get_attribute("aria-label") == "Тема интерфейса"
+            theme.select_option("dark")
+            assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+            assert page.evaluate("localStorage.getItem('csqtt-theme-mode')") == "dark"
+            page.reload(wait_until="domcontentloaded")
+            assert page.locator("#themeMode").input_value() == "dark"
+            assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+            theme.select_option("light")
+            assert page.evaluate("document.documentElement.dataset.theme") == "light"
+            page.reload(wait_until="domcontentloaded")
+            assert page.locator("#themeMode").input_value() == "light"
+            # Migrate the previous automatic preference to light explicitly.
+            page.evaluate("localStorage.setItem('csqtt-theme-mode', 'system')")
+            page.emulate_media(color_scheme="dark")
+            page.reload(wait_until="domcontentloaded")
+            assert page.locator("#themeMode").input_value() == "light"
+            assert page.evaluate("localStorage.getItem('csqtt-theme-mode')") == "light"
+            assert page.evaluate("document.documentElement.dataset.theme") == "light"
+            page.emulate_media(color_scheme="light")
+            assert page.evaluate("document.documentElement.dataset.theme") == "light"
+            # Header content must not collide even on a 320 px phone.
+            for vw in (320, 360, 390, 768, 1280, 1440, 1920):
+                page.set_viewport_size({"width":vw, "height":840})
+                bounds=page.evaluate("""() => {
+                  const bounds=s=>{const b=document.querySelector(s).getBoundingClientRect();return {left:b.left,right:b.right,width:b.width}};
+                  return {brand:bounds('.top .brand'), profile:bounds('#topSwitch'),
+                    theme:bounds('#themeMode'), github:bounds('#topGitHub'),
+                    logout:bounds('.top-logout-button'),
+                    scroll:document.documentElement.scrollWidth-document.documentElement.clientWidth};
+                }""")
+                assert bounds["brand"]["right"] <= bounds["profile"]["left"] + 1, (vw,bounds)
+                assert bounds["profile"]["right"] < bounds["theme"]["left"] + 3, (vw,bounds)
+                assert bounds["theme"]["right"] < bounds["github"]["left"] + 3, (vw,bounds)
+                assert bounds["github"]["right"] < bounds["logout"]["left"] + 3, (vw,bounds)
+                assert bounds["scroll"] <= 1, (vw,bounds)
+            page.set_viewport_size({"width":1280, "height":850})
+
             github=page.locator("#topGitHub")
             assert github.count() == 1
             assert github.get_attribute("href") == "https://github.com/Xenofan-git/CSQTT-Core"

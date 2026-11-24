@@ -118,6 +118,11 @@ for token in (
     "border-width:1px!important;",
     'id="topGitHub" href="https://github.com/Xenofan-git/CSQTT-Core"',
     'class="top-icon top-github-link"',
+    'id="themeMode" class="top-theme-select"',
+    '<option value="light">Светлая</option>',
+    '<option value="dark">Тёмная</option>',
+    'const THEME_KEY=',
+    'localStorage.setItem(THEME_KEY',
     'class="github-mark"',
     'class="deploy-action-group"',
     'id="deployState" class="notice" role="status" aria-live="polite"',
@@ -387,3 +392,10 @@ if any(marker in html for marker in ('id="topHeart"', 'id="topSettings"',
     raise SystemExit("obsolete heart/gear still present")
 if "github.com/amurcanov/csqtt" in html:
     raise SystemExit("old heart target still present")
+
+
+# The only theme choices are manual Light and Dark in the header.
+assert html.count('id="themeMode"') == 1
+assert 'value="system"' not in html
+assert 'Как в системе' not in html
+assert 'matchMedia' not in html.split("const THEME_KEY=")[1].split("const API=",1)[0]
