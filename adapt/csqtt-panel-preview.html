@@ -868,6 +868,24 @@ input[type="number"]::-webkit-outer-spin-button{
 }
 
 
+
+/* Deploy controls: the switch itself is the only click target, not its description. */
+#page-deploy .mode{cursor:default}
+#page-deploy .mode>span{cursor:default;user-select:text}
+#page-deploy .mode>input[type=checkbox]{cursor:pointer}
+#page-deploy .mode>input[type=checkbox]:disabled{cursor:not-allowed}
+#page-deploy .mode>input[type=checkbox]:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.deploy-status-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.deploy-status-header .deploy-confirm-emblem{margin-bottom:14px}
+.deploy-status-header .modal-close{position:static;flex:0 0 auto;border:1px solid var(--line);background:var(--surface2);color:var(--text);width:36px;height:36px;min-height:36px;border-radius:12px;padding:0;display:grid;place-items:center}
+.deploy-status-modal #deployStatusDescription{margin:0 0 14px;font-size:14px;line-height:1.5}
+.deploy-status-pill{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:6px 12px;margin-bottom:16px;font-size:13px;font-weight:650;background:var(--surface2);color:var(--text);border:1px solid var(--line)}
+.deploy-status-pill[data-kind="success"]{color:var(--green);border-color:color-mix(in srgb,var(--green) 36%,var(--line));background:color-mix(in srgb,var(--green) 8%,var(--surface))}
+.deploy-status-pill[data-kind="error"]{color:var(--red);border-color:color-mix(in srgb,var(--red) 38%,var(--line));background:color-mix(in srgb,var(--red) 7%,var(--surface))}
+.deploy-status-pill[data-kind="busy"]{color:var(--blue);border-color:color-mix(in srgb,var(--blue) 38%,var(--line));background:color-mix(in srgb,var(--blue) 8%,var(--surface))}
+.deploy-status-explanation{font-size:14px;line-height:1.5;background:var(--surface2);border:1px solid var(--line);padding:13px 15px;border-radius:15px;margin-top:15px;overflow-wrap:anywhere}
+.deploy-status-modal .deploy-confirm-warning{margin:15px 0 19px}
+
 /* Authorization: draw a single, evenly rounded focus border on the
    password wrapper, never a second outline around its inner input. */
 #deploySecretsOverlay .password-inline{
@@ -946,12 +964,12 @@ input[type="number"]::-webkit-outer-spin-button{
   <div class="notice">Изолированная установка CSQTT Core: создаётся отдельная служба CSQTT Core и используются выделенные ресурсы проекта. Это не штатная установка оригинального CSQTT. Перед запуском проверьте хост и порты.</div>
   <div class="field"><label for="deployHost">Адрес сервера для установки по SSH (без порта)</label><input id="deployHost" autocomplete="off" placeholder="server.example.com"><small class="muted">Используется только для установки и удаления сервера. Адрес подключения CSQTT определяется выбранным профилем.</small></div>
   <div class="row deploy-credentials"><div class="field"><label>Логин SSH</label><input id="deployUser" value="root" autocomplete="username"></div><div class="field"><label for="deployPassword">Пароль SSH</label><input id="deployPassword" type="password" autocomplete="new-password" placeholder="Введите пароль SSH"><div class="deploy-ssh-password-actions"><small id="deploySSHPasswordStatus" class="muted" role="status">Пароль SSH не сохранён.</small><button type="button" id="deleteDeploySSHPassword" class="secondary hidden">Удалить сохранённый</button></div></div></div>
-  <label class="mode deploy-ssh-toggle"><span><b>Ключи SSH</b></span><input id="sshKeyToggle" type="checkbox" aria-label="Использовать ключи SSH"></label>
+  <div class="mode deploy-ssh-toggle"><span><b>Ключи SSH</b></span><input id="sshKeyToggle" type="checkbox" aria-label="Использовать ключи SSH"></div>
   <div class="field hidden" id="deployKeyWrap"><label>Путь к SSH-ключу на NanoPi</label><input id="deployKey" placeholder="/home/pi/.ssh/id_ed25519"></div>
   <div class="hidden" id="deployPasswordWrap"></div><input type="hidden" id="deploySshPort" value="22">
-  <label class="mode"><input type="checkbox" id="manualPorts"><span><b>Ручные порты</b><small>По умолчанию: CSQTT Core 47000/UDP, веб-панель 47002/TCP. Установщик обязан отказать при чужом или неопределённом владельце занятого порта; существующие службы и основные маршруты не должны изменяться.</small></span></label>
+  <div class="mode"><input type="checkbox" id="manualPorts" aria-label="Ручные порты"><span><b>Ручные порты</b><small>По умолчанию: CSQTT Core 47000/UDP, веб-панель 47002/TCP. Установщик обязан отказать при чужом или неопределённом владельце занятого порта; существующие службы и основные маршруты не должны изменяться.</small></span></div>
   <div id="portFields" class="hidden"><div class="row"><div class="field"><label>Порт CSQTT (UDP)</label><input id="corePort" type="number" value="47000"></div><div class="field"><label>Порт веб-панели (TCP)</label><input id="warpPort" type="number" value="47002"></div></div></div>
-  <label class="mode"><input type="checkbox" id="dockerInstall" disabled><span><b>Установить в Docker</b><small>Для изолированного форка используется отдельная systemd-служба.</small></span></label>
+  <div class="mode"><input type="checkbox" id="dockerInstall" disabled aria-label="Установить в Docker"><span><b>Установить в Docker</b><small>Для изолированного форка используется отдельная systemd-служба.</small></span></div>
   <div id="panelLinkWrap" class="panel-link-wrap hidden"><b>Секретный путь и ссылка панели</b><div class="panel-link-field"><input id="panelLink" readonly aria-label="Секретный путь и ссылка панели"><button class="secondary" id="copyPanelLink" type="button" aria-label="Копировать ссылку">▢</button><button class="secondary" id="openPanelLink" type="button" aria-label="Открыть панель">↗</button></div></div>
  <div class="deploy-action-group">
   <div class="row deploy-actions"><button class="danger" id="uninstallCsqtt">Удалить</button><button id="startDeploy">Установить</button></div>
@@ -1020,6 +1038,28 @@ input[type="number"]::-webkit-outer-spin-button{
   </div>
   <p class="deploy-confirm-warning">Оригинальная служба CSQTT и существующие маршруты не должны изменяться. Установщик проверит занятость портов перед развёртыванием.</p>
   <div class="deploy-confirm-actions"><button type="button" class="secondary" id="deployConfirmCancel">Отмена</button><button type="button" id="deployConfirmAccept">Установить</button></div>
+ </div>
+</div>
+<div id="deployStatusOverlay" class="overlay deploy-confirm-overlay hidden">
+ <div class="modal deploy-confirm-modal deploy-status-modal" role="dialog" aria-modal="true" aria-labelledby="deployStatusTitle" aria-describedby="deployStatusDescription">
+  <div class="deploy-status-header">
+   <div class="deploy-confirm-emblem" id="deployStatusEmblem" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="27" height="27" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 1-9 9"/><path d="M3 4v5h5"/><path d="M8 12l3 3 5-6"/></svg>
+   </div>
+   <button type="button" id="deployStatusCloseIcon" class="modal-close" aria-label="Закрыть окно состояния установки">×</button>
+  </div>
+  <h2 id="deployStatusTitle">Состояние установки</h2>
+  <p class="muted" id="deployStatusDescription">Проверяем состояние контроллера CSQTT Core…</p>
+  <div class="deploy-status-pill" id="deployStatusPill" data-kind="loading" role="status">Проверка…</div>
+  <div class="deploy-confirm-summary">
+   <div class="deploy-confirm-detail"><span>API деплоя</span><strong id="deployStatusApi">Проверка…</strong></div>
+   <div class="deploy-confirm-detail"><span>Операция</span><strong id="deployStatusOperation">—</strong></div>
+   <div class="deploy-confirm-detail"><span>Журнал</span><strong id="deployStatusLog">—</strong></div>
+   <div class="deploy-confirm-detail"><span>Проверено</span><strong id="deployStatusChecked">—</strong></div>
+  </div>
+  <div class="deploy-status-explanation" id="deployStatusExplanation" role="status" aria-live="polite">Получаем данные…</div>
+  <p class="deploy-confirm-warning">Проверяется состояние контроллера Deploy на этом устройстве. Отсутствие выполняемой операции само по себе не подтверждает установку на удалённом сервере.</p>
+  <div class="deploy-confirm-actions"><button type="button" class="secondary" id="deployStatusClose">Закрыть</button><button type="button" id="deployStatusRetry">Повторить проверку</button></div>
  </div>
 </div>
 <div id="captchaOverlay" class="overlay hidden"><div class="modal"><h2>🔐 Требуется CAPTCHA VK</h2><p id="captchaModalText" class="muted">CSQTT ожидает подтверждение.</p><button id="openCaptchaModal" class="secondary">Открыть страницу проверки</button><div class="field"><label>Ответ CAPTCHA</label><input id="captchaModalAnswer" autocomplete="off"></div><div class="row"><button id="submitCaptchaModal">Отправить</button><button class="secondary" id="dismissCaptcha">Скрыть</button></div></div></div>
@@ -1404,7 +1444,65 @@ $('editTunnelAuth').addEventListener('click',async()=>{try{await refreshAll(true
 $('toggleTunnelPassword').addEventListener('click',()=>{const field=$('tunnelPassword');const visible=field.type==='password';field.type=visible?'text':'password';$('toggleTunnelPassword').textContent=visible?'Скрыть':'Показать'});
 $('cancelTunnelAuth').addEventListener('click',()=>$('tunnelAuthOverlay').classList.add('hidden'));
 $('saveTunnelAuth').addEventListener('click',async()=>{const password=$('tunnelPassword').value;const valid=password.length>0&&password.length<=256&&/^[a-zA-Z0-9_.!?:#/-]+$/.test(password);const msg=$('tunnelAuthMessage');if(!valid){msg.textContent='Введите пароль: буквы, цифры и знаки . ! ? : # - _ /';msg.className='notice error';msg.classList.remove('hidden');return}try{const result=await req('/tunnel/auth','PUT',{password});if(!result.ok)throw new Error('Пароль не сохранён');state.tunnelAuth={configured:!!result.configured};renderTunnelAuth();$('tunnelPassword').value='';$('tunnelAuthOverlay').classList.add('hidden');toast('Пароль туннеля сохранён')}catch(e){msg.textContent=e.message;msg.className='notice error';msg.classList.remove('hidden')}});
-$('refreshDeployStatus').addEventListener('click',async()=>{const button=$('refreshDeployStatus');button.disabled=true;try{await refreshAll(true);toast(state.deployStatusAvailable?'Состояние установки получено':'Состояние установки недоступно',!state.deployStatusAvailable);}finally{button.disabled=false;}});$('manualPorts').addEventListener('change',renderDeploy);$('sshKeyToggle').addEventListener('change',()=>{ $('deployPassword').closest('.field').classList.toggle('hidden',$('sshKeyToggle').checked);$('deployKeyWrap').classList.toggle('hidden',!$('sshKeyToggle').checked);renderDeploy();});document.querySelectorAll('[data-reveal]').forEach(b=>b.addEventListener('click',()=>{const i=$(b.dataset.reveal);const show=i.type==='password';i.type=show?'text':'password';b.textContent=show?'Скрыть':'Показать'}));$('topSwitch').addEventListener('click',async()=>{await refreshAll(true);$('profileManagerOverlay').classList.remove('hidden')});$('closeProfiles').addEventListener('click',()=>$('profileManagerOverlay').classList.add('hidden'));$('profileManagerOverlay').addEventListener('click',e=>{if(e.target===$('profileManagerOverlay'))$('profileManagerOverlay').classList.add('hidden')});
+let deployStatusDialogReturnFocus=null;
+let deployStatusChecking=false;
+function closeDeployStatusDialog(){
+ $('deployStatusOverlay').classList.add('hidden');
+ if(deployStatusDialogReturnFocus&&deployStatusDialogReturnFocus.isConnected)deployStatusDialogReturnFocus.focus();
+ deployStatusDialogReturnFocus=null;
+}
+function renderDeployStatusDialog(loading=false){
+ const available=state.deployStatusAvailable,active=available&&state.deploying;
+ const logAvailable=state.deployLogAvailable;
+ const errorCode=state.deployStatusError;
+ const pill=$('deployStatusPill');
+ pill.dataset.kind=loading?'loading':!available?'error':active?'busy':'success';
+ pill.textContent=loading?'Проверка…':!available?'Состояние недоступно':active?'Деплой выполняется':'Контроллер отвечает';
+ $('deployStatusDescription').textContent=loading?'Получаем сведения о текущей операции…':!available?'Не удалось получить состояние операции.':'Ответ контроллера получен. Ниже приведены текущие сведения.';
+ $('deployStatusApi').textContent=loading?'Проверка…':available?'Доступен':errorCode?'Ошибка HTTP '+errorCode:'Недоступен';
+ $('deployStatusOperation').textContent=loading?'—':!available?'Неизвестно':active?'Выполняется':'Нет активной операции';
+ $('deployStatusLog').textContent=loading?'—':logAvailable?'Доступен':'Недоступен';
+ $('deployStatusChecked').textContent=loading?'—':new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+ $('deployStatusExplanation').textContent=loading?'Проверка не выполняет установку или удаление.':$('deployState').textContent;
+ $('deployStatusRetry').disabled=loading;
+ $('refreshDeployStatus').disabled=loading;
+}
+async function checkDeployStatusDialog(){
+ if(deployStatusChecking)return;
+ deployStatusChecking=true;
+ renderDeployStatusDialog(true);
+ try{
+  await refreshAll(true);
+  if(!$('deployStatusOverlay').classList.contains('hidden'))renderDeployStatusDialog(false);
+ }catch(e){
+  if(!$('deployStatusOverlay').classList.contains('hidden')){
+   renderDeployStatusDialog(false);
+   $('deployStatusPill').dataset.kind='error';
+   $('deployStatusExplanation').textContent='Ошибка проверки: '+(e.message||'неизвестная ошибка');
+  }
+ }finally{
+  deployStatusChecking=false;
+  $('deployStatusRetry').disabled=false;
+  $('refreshDeployStatus').disabled=false;
+ }
+}
+$('refreshDeployStatus').addEventListener('click',()=>{
+ deployStatusDialogReturnFocus=document.activeElement;
+ $('deployStatusOverlay').classList.remove('hidden');
+ $('deployStatusClose').focus();
+ void checkDeployStatusDialog();
+});
+$('deployStatusRetry').addEventListener('click',()=>{void checkDeployStatusDialog()});
+$('deployStatusClose').addEventListener('click',closeDeployStatusDialog);
+$('deployStatusCloseIcon').addEventListener('click',closeDeployStatusDialog);
+$('deployStatusOverlay').addEventListener('click',e=>{if(e.target===$('deployStatusOverlay'))closeDeployStatusDialog()});
+$('deployStatusOverlay').addEventListener('keydown',e=>{
+ if(e.key==='Escape'){e.preventDefault();closeDeployStatusDialog()}
+ if(e.key!=='Tab')return;
+ const focusables=[$('deployStatusCloseIcon'),$('deployStatusClose'),$('deployStatusRetry')].filter(el=>!el.disabled);
+ if(e.shiftKey&&document.activeElement===focusables[0]){e.preventDefault();focusables[focusables.length-1].focus()}
+ else if(!e.shiftKey&&document.activeElement===focusables[focusables.length-1]){e.preventDefault();focusables[0].focus()}
+});$('manualPorts').addEventListener('change',renderDeploy);$('sshKeyToggle').addEventListener('change',()=>{ $('deployPassword').closest('.field').classList.toggle('hidden',$('sshKeyToggle').checked);$('deployKeyWrap').classList.toggle('hidden',!$('sshKeyToggle').checked);renderDeploy();});document.querySelectorAll('[data-reveal]').forEach(b=>b.addEventListener('click',()=>{const i=$(b.dataset.reveal);const show=i.type==='password';i.type=show?'text':'password';b.textContent=show?'Скрыть':'Показать'}));$('topSwitch').addEventListener('click',async()=>{await refreshAll(true);$('profileManagerOverlay').classList.remove('hidden')});$('closeProfiles').addEventListener('click',()=>$('profileManagerOverlay').classList.add('hidden'));$('profileManagerOverlay').addEventListener('click',e=>{if(e.target===$('profileManagerOverlay'))$('profileManagerOverlay').classList.add('hidden')});
 $('deployPassword').addEventListener('change',()=>{void saveSSHPassword()});
 $('deleteDeploySSHPassword').addEventListener('click',async()=>{
  const host=$('deployHost').value.trim();

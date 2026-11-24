@@ -1179,6 +1179,31 @@ def main():
             # Deploy: validate the one-button flow against a deterministic API fixture.
             # This proves the page constructs the expected request without SSHing anywhere.
             page.locator('button[data-page="deploy"]').click()
+            # Explanatory text and whitespace must not toggle Deploy switches.
+            for vw in (390,1280):
+                page.set_viewport_size({"width":vw,"height":850})
+                assert not page.locator("#sshKeyToggle").is_checked()
+                page.locator(".deploy-ssh-toggle > span").click()
+                assert not page.locator("#sshKeyToggle").is_checked()
+                page.locator("#sshKeyToggle").click()
+                assert page.locator("#sshKeyToggle").is_checked()
+                assert page.locator("#deployKeyWrap").is_visible()
+                page.locator("#sshKeyToggle").click()
+                assert not page.locator("#sshKeyToggle").is_checked()
+                assert page.locator("#deployKeyWrap").is_hidden()
+                assert not page.locator("#manualPorts").is_checked()
+                page.locator("#manualPorts + span").click()
+                assert not page.locator("#manualPorts").is_checked()
+                page.locator("#manualPorts").click()
+                assert page.locator("#manualPorts").is_checked()
+                assert page.locator("#portFields").is_visible()
+                page.locator("#manualPorts").click()
+                assert not page.locator("#manualPorts").is_checked()
+                assert page.locator("#portFields").is_hidden()
+                assert page.locator("#dockerInstall").is_disabled()
+                page.locator("#dockerInstall + span").click()
+                assert not page.locator("#dockerInstall").is_checked()
+            page.set_viewport_size({"width":1280,"height":850})
             page.locator("#deployHost").fill("192.0.2.50")
             page.locator("#deployPassword").fill("fixture-ssh-password")
             page.locator("#editDeployAuth").click()
@@ -1325,17 +1350,43 @@ def main():
             assert page.locator("#refreshDeployStatus").is_enabled()
             page.locator('button[data-page="deploy"]').click()
             fail_paths.discard("/deploy/status")
+            initial_deploy_posts=len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])
             page.locator("#refreshDeployStatus").click()
-            page.wait_for_function("() => !document.querySelector('#startDeploy').disabled")
+            page.locator("#deployStatusOverlay").wait_for(state="visible")
+            page.wait_for_function("() => document.querySelector('#deployStatusPill').textContent.includes('Контроллер отвечает')")
+            assert page.locator("#deployStatusApi").inner_text()=="Доступен"
+            assert page.locator("#deployStatusOperation").inner_text()=="Нет активной операции"
             assert page.locator("#startDeploy").is_enabled(), "retry did not re-enable deploy after confirmed idle status"
+            assert "не подтверждает установку" in page.locator("#deployStatusOverlay").inner_text()
+            for theme_name in ("light","dark"):
+                page.locator("#themeMode").select_option(theme_name)
+                for vw in (390,768,1280,1920):
+                    page.set_viewport_size({"width":vw,"height":850})
+                    rect=page.evaluate("""() => {
+                      const r=document.querySelector('#deployStatusOverlay [role="dialog"]').getBoundingClientRect();
+                      return {x:r.x,right:r.right,midX:r.left+r.width/2,midY:r.top+r.height/2,w:innerWidth,h:innerHeight,
+                        horizontalOverflow:document.documentElement.scrollWidth-document.documentElement.clientWidth};
+                    }""")
+                    assert abs(rect["midX"]-rect["w"]/2)<2,(theme_name,vw,rect)
+                    assert abs(rect["midY"]-rect["h"]/2)<2,(theme_name,vw,rect)
+                    assert rect["x"]>=0 and rect["right"]<=rect["w"]+1 and rect["horizontalOverflow"]<=1,(theme_name,vw,rect)
+            page.set_viewport_size({"width":1280,"height":850})
+            page.locator("#themeMode").select_option("light")
+            page.locator("#deployStatusClose").press("Escape")
+            assert page.locator("#deployStatusOverlay").is_hidden()
             fail_http_status["/deploy/status"]=403
             page.locator("#refreshDeployStatus").click()
-            page.wait_for_function("() => document.querySelector('#deployState').textContent.includes('HTTP 403')")
-            assert "Tailscale" in page.locator("#deployState").inner_text()
+            page.wait_for_function("() => document.querySelector('#deployStatusApi').textContent.includes('HTTP 403')")
+            assert page.locator("#deployStatusPill").get_attribute("data-kind")=="error"
+            assert "Tailscale" in page.locator("#deployStatusExplanation").inner_text()
             assert page.locator("#startDeploy").is_disabled(), "403 deployment denial must fail closed"
             fail_http_status.pop("/deploy/status")
-            page.locator("#refreshDeployStatus").click()
-            page.wait_for_function("() => !document.querySelector('#startDeploy').disabled")
+            page.locator("#deployStatusRetry").click()
+            page.wait_for_function("() => document.querySelector('#deployStatusApi').textContent === 'Доступен'")
+            assert page.locator("#startDeploy").is_enabled()
+            assert len([1 for method,path,_ in calls if method=="POST" and path=="/deploy"])==initial_deploy_posts, "status check triggered Deploy"
+            page.locator("#deployStatusOverlay").click(position={"x":3,"y":3})
+            assert page.locator("#deployStatusOverlay").is_hidden()
             assert not page_errors, f"uncaught browser errors: {page_errors}"
 
             # Exercise the split MAIN/ISOLATED CAPTCHA Bridge. Page-controlled

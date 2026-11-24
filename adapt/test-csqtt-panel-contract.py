@@ -449,3 +449,13 @@ assert "ensureSSHPassword(host)" in js
 assert "password:''" in js
 assert 'deploySSHPasswordStatus' in html
 assert 'deleteDeploySSHPassword' in html
+
+# Deploy switch hit targets must be the input elements, not wrapping labels.
+assert '<label class="mode deploy-ssh-toggle">' not in html
+assert '<div class="mode deploy-ssh-toggle">' in html
+assert '<div class="mode"><input type="checkbox" id="manualPorts"' in html
+assert '<div class="mode"><input type="checkbox" id="dockerInstall" disabled' in html
+assert 'id="deployStatusOverlay"' in html and 'id="deployStatusRetry"' in html
+assert 'aria-labelledby="deployStatusTitle"' in html
+assert 'function renderDeployStatusDialog(loading=false)' in js
+assert 'function checkDeployStatusDialog()' in js
