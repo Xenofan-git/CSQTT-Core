@@ -1804,7 +1804,11 @@ async function pollDeployProgress(generation){
    const observed=state.deployMode!=='inventory-only'&&typeof x.progress==='number'&&Number.isFinite(x.progress)&&x.progress>=0&&x.progress<=100&&typeof x.stage==='string'&&x.stage.trim();
    setDeployProgressPhase('busy',state.deployMode==='inventory-only'?'Проверка сервера выполняется':'Установка выполняется',observed?x.stage+' · '+Math.round(x.progress)+'%':'Получаем новые сообщения установщика каждые 900 мс.');
   }else if(result==='preflight'){
-   finishDeployProgress('neutral','Проверка сервера завершена','SSH-инвентаризация получена, но установленный DeployManager работает только в режиме проверки. Установка на VPS НЕ запускалась.');
+   const inv=x.inventory;
+   const labels={server:{running:'работает',stopped:'остановлена',absent:'не обнаружена'},interface:{present:'обнаружен (владелец не подтверждён)',absent:'не обнаружен'},database:{present:'обнаружена',absent:'не обнаружена'},udp:{free:'свободен',core_candidate:'занят предполагаемым Core'},tcp:{free:'свободен',core_candidate:'занят предполагаемым Core'}};
+   const valid=inv&&typeof inv==='object'&&Object.keys(labels).every(key=>Object.prototype.hasOwnProperty.call(labels[key],inv[key]));
+   const summary=valid?' Служба: '+labels.server[inv.server]+'. UDP 47000: '+labels.udp[inv.udp]+'. TCP 47002: '+labels.tcp[inv.tcp]+'. TUN: '+labels.interface[inv.interface]+'. SQLite: '+labels.database[inv.database]+'. Версия сервера не определена.':' Подробная инвентаризация недоступна.';
+   finishDeployProgress('neutral','Проверка сервера завершена','SSH-инвентаризация получена, но установленный DeployManager работает только в режиме проверки. Установка на VPS НЕ запускалась.'+summary);
   }else if(result==='success'){
    finishDeployProgress('success','Установка завершена','Установщик сообщил о завершении без ошибки и подтвердил результат. Проверьте доступность веб-панели на целевом сервере.');
   }else if(result==='uninstalled'){

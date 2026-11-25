@@ -2342,5 +2342,77 @@ func deployProgressSnapshot(busy bool, logText string) map[string]any {
 	if rollback != "" {
 		snapshot["rollback"] = rollback
 	}
+	if result == "preflight" {
+		if summary := deployInventorySummary(logText); summary != nil {
+			snapshot["inventory"] = summary
+		}
+	}
 	return snapshot
+}
+
+// Adapt the check-first presentation from CSQTTR 2.5.3 ServerCheck.kt.
+// The pinned inventory-only helper emits a narrower schema. Accept only
+// complete, exact known records; this is display data, not authorization.
+// Do not infer the installed version from the locally bundled candidate.
+func deployInventorySummary(logText string) map[string]string {
+	allowed := map[string]map[string]string{
+		"server":    {},
+		"interface": {},
+		"database":  {},
+		"udp":       {},
+		"tcp":       {},
+	}
+	for _, state := range []string{"running", "stopped", "absent"} {
+		owner := "core_candidate"
+		if state == "absent" {
+			owner = "none"
+		}
+		allowed["server"]["CSQTT_INV|server|place=core|runtime=systemd|state="+state+"|owner="+owner] = state
+	}
+	for _, state := range []string{"present", "absent"} {
+		allowed["interface"]["CSQTT_INV|interface|name=csqtt-core0|state="+state+"|owner=unverified"] = state
+		allowed["database"]["CSQTT_INV|database|state="+state+"|name=csqtt.db"] = state
+	}
+	for _, key := range []string{"udp", "tcp"} {
+		port := "47000"
+		if key == "tcp" {
+			port = "47002"
+		}
+		prefix := "CSQTT_INV|port|proto=" + key + "|port=" + port + "|state="
+		allowed[key][prefix+"free|owner=none"] = "free"
+		allowed[key][prefix+"busy|owner=core_candidate"] = "core_candidate"
+	}
+	result := map[string]string{}
+	ended := false
+	for _, raw := range strings.Split(logText, "\n") {
+		line := strings.TrimSpace(raw)
+		if !strings.HasPrefix(line, "CSQTT_INV|") {
+			continue
+		}
+		if ended {
+			return nil
+		}
+		if line == "CSQTT_INV|end" {
+			ended = true
+			continue
+		}
+		matched := false
+		for key, options := range allowed {
+			if value, ok := options[line]; ok {
+				if _, duplicate := result[key]; duplicate {
+					return nil
+				}
+				result[key] = value
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return nil
+		}
+	}
+	if !ended || len(result) != len(allowed) {
+		return nil
+	}
+	return result
 }

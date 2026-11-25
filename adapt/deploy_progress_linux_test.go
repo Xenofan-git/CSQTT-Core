@@ -2,7 +2,10 @@
 
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDeployProgressSnapshotReportsObservedCompletion(t *testing.T) {
 	cases := []struct {
@@ -74,6 +77,52 @@ func TestDeploy253ExactOperationMarkersAndObservedProgress(t *testing.T) {
 		x := deployProgressSnapshot(true, line)
 		if _, ok := x["progress"]; ok {
 			t.Errorf("invalid progress accepted: %q", line)
+		}
+	}
+}
+
+func TestDeploy253InventorySummaryRequiresCompleteReport(t *testing.T) {
+	rows := []string{
+		"CSQTT_INV|server|place=core|runtime=systemd|state=running|owner=core_candidate",
+		"CSQTT_INV|interface|name=csqtt-core0|state=present|owner=unverified",
+		"CSQTT_INV|database|state=present|name=csqtt.db",
+		"CSQTT_INV|port|proto=udp|port=47000|state=busy|owner=core_candidate",
+		"CSQTT_INV|port|proto=tcp|port=47002|state=free|owner=none",
+		"CSQTT_INV|end",
+	}
+	base := strings.Join(rows, "\n")
+	done := "\nCSQTT_ISOLATION_REQUIRED\n[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась"
+	got := deployProgressSnapshot(false, base+done)
+	inv, ok := got["inventory"].(map[string]string)
+	if !ok || inv["server"] != "running" || inv["interface"] != "present" || inv["database"] != "present" || inv["udp"] != "core_candidate" || inv["tcp"] != "free" || len(inv) != 5 {
+		t.Fatalf("unexpected inventory %v", got)
+	}
+	for _, row := range rows {
+		if x := deployInventorySummary(strings.Replace(base, row, "", 1)); x != nil {
+			t.Errorf("incomplete inventory accepted: %q", row)
+		}
+	}
+	for _, raw := range []string{
+		base + "\n" + rows[0],
+		rows[0] + "\n" + base,
+		strings.Replace(base, "owner=core_candidate", "owner=foreign", 1),
+		strings.Replace(base, "state=running", "state=unknown", 1),
+		strings.Replace(base, "name=csqtt.db", "name=other.db", 1),
+		strings.Replace(base, "port=47002", "port=46002", 1),
+		strings.Replace(base, "owner=unverified", "owner=core_candidate", 1),
+		strings.Replace(base, "CSQTT_INV|end", "CSQTT_INV|error|reason=fixture\nCSQTT_INV|end", 1),
+	} {
+		if x := deployInventorySummary(raw); x != nil {
+			t.Errorf("invalid inventory accepted %q", raw)
+		}
+	}
+	for _, x := range []map[string]any{
+		deployProgressSnapshot(true, base+done),
+		deployProgressSnapshot(false, base),
+		deployProgressSnapshot(false, base+done+"\n[deploy] завершено с ошибкой"),
+	} {
+		if _, ok := x["inventory"]; ok {
+			t.Errorf("unconfirmed inventory exposed: %v", x)
 		}
 	}
 }

@@ -204,6 +204,8 @@ def main():
                 body.update(progress=60.0,stage="Бинарник...")
             if deploy_fixture.get("rollback"):
                 body["rollback"]=deploy_fixture["rollback"]
+            if deploy_fixture["phase"]=="preflight":
+                body["inventory"]={"server":"running","interface":"present","database":"present","udp":"core_candidate","tcp":"free"}
         elif path == "/deploy/log":
             body = deploy_fixture["log"]
         elif path == "/version":
@@ -1477,6 +1479,9 @@ def main():
             page.wait_for_function("""() => document.querySelector('#deployProgressPhase').textContent === 'Проверка сервера завершена'""",timeout=12000)
             assert page.locator("#deployProgressOutcome").get_attribute("data-kind")=="neutral"
             assert "Установка на VPS НЕ запускалась" in page.locator("#deployProgressOutcome").inner_text()
+            assert "Служба: работает" in page.locator("#deployProgressOutcome").inner_text()
+            assert "TCP 47002: свободен" in page.locator("#deployProgressOutcome").inner_text()
+            assert "Версия сервера не определена" in page.locator("#deployProgressOutcome").inner_text()
             assert "CSQTT_INV|end" in page.locator("#deployProgressLog").inner_text()
             assert page.locator("#deployProgressIndicator").get_attribute("data-active")=="false"
             page.locator("#deployProgressClose").click()
