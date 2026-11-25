@@ -49,3 +49,41 @@ func Test253PreservedUpdateConfig(t *testing.T) {
 		})
 	}
 }
+
+func Test253UpdateEnvironmentSubset(t *testing.T) {
+	for _, tc := range []struct{ name, env, user, pass string }{
+		{"legacy", "CSQTT_WEB_USER=example\nCSQTT_WEB_PASS=fixture\n", "example", "fixture"},
+		{"upstream quoted", "CSQTT_WEB_USER=\"example\"\nCSQTT_WEB_PASS=\"a b#\\\"c\\\\d\"\n", "example", "a b#\"c\\d"},
+		{"unicode", "CSQTT_WEB_USER=\"example\"\nCSQTT_WEB_PASS=\"тест\"\n", "example", "тест"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := validateUpdateEnvironment([]byte(tc.env))
+			if err != nil || got["CSQTT_WEB_USER"] != tc.user || got["CSQTT_WEB_PASS"] != tc.pass {
+				t.Fatal("valid single-line fixture rejected")
+			}
+			result, err := preparePreservedUpdateConfig([]byte(tc.env), nil, true)
+			if err != nil || !bytes.Equal(result.webEnvironment, []byte(tc.env)) {
+				t.Fatal("original bytes not preserved")
+			}
+		})
+	}
+	for _, tc := range []struct{ name, env string }{
+		{"fake required keys inside quote", "OTHER=\"begin\nCSQTT_WEB_USER=example\nCSQTT_WEB_PASS=fixture\n\"\n"},
+		{"continuation", "OTHER=abc\\\nCSQTT_WEB_USER=example\nCSQTT_WEB_PASS=fixture\n"},
+		{"unterminated quote", "CSQTT_WEB_USER=example\nCSQTT_WEB_PASS=\"fixture\n"},
+		{"trailing data", "CSQTT_WEB_USER=example\nCSQTT_WEB_PASS=\"fixture\"extra\n"},
+		{"duplicate unknown", "CSQTT_WEB_USER=example\nCSQTT_WEB_PASS=fixture\nOTHER=x\nOTHER=y\n"},
+		{"export alias", "CSQTT_WEB_USER=example\nCSQTT_WEB_PASS=fixture\nexport CSQTT_WEB_PASS=other\n"},
+		{"invalid key", "CSQTT_WEB_USER=example\nCSQTT_WEB_PASS=fixture\n1OTHER=x\n"},
+		{"escaped end", "CSQTT_WEB_USER=example\nCSQTT_WEB_PASS=\"fixture\\\"\n"},
+		{"control", "CSQTT_WEB_USER=example\nCSQTT_WEB_PASS=fix\x01ture\n"},
+		{"bad escape", "CSQTT_WEB_USER=example\nCSQTT_WEB_PASS=\"fix\\qture\"\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := preparePreservedUpdateConfig([]byte(tc.env), nil, true)
+			if err == nil || len(result.webEnvironment) != 0 || len(result.deployOverrides) != 0 {
+				t.Fatal("ambiguous config accepted")
+			}
+		})
+	}
+}

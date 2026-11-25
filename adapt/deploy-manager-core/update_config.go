@@ -24,30 +24,16 @@ func preparePreservedUpdateConfig(existingEnv, existingOverrides []byte, databas
 	if len(existingEnv) == 0 || len(existingEnv) > 65536 || !utf8.Valid(existingEnv) || bytes.IndexByte(existingEnv, 0) >= 0 {
 		return result, errors.New("существующая WEB-конфигурация отсутствует или некорректна")
 	}
-	// Keep the original EnvironmentFile byte-for-byte. Inspect the
-	// required assignments only; never source or evaluate its contents.
-	counts := map[string]int{"CSQTT_WEB_USER": 0, "CSQTT_WEB_PASS": 0}
-	for _, line := range strings.Split(string(existingEnv), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		if _, required := counts[key]; required {
-			value = strings.TrimSpace(value)
-			if value == "" || value == `""` || value == "''" {
-				return result, errors.New("пустое обязательное поле WEB-конфигурации")
-			}
-			counts[key]++
-		}
+	// Keep the original EnvironmentFile byte-for-byte, but recognize
+	// only the single-line format emitted by upstream 2.5.3 plus
+	// simple legacy unquoted assignments. Refuse ambiguous syntax
+	// rather than treat text inside quotes as another assignment.
+	fields, err := validateUpdateEnvironment(existingEnv)
+	if err != nil {
+		return result, err
 	}
-	for _, count := range counts {
-		if count != 1 {
-			return result, errors.New("обязательные поля WEB-конфигурации отсутствуют или повторяются")
-		}
+	if fields["CSQTT_WEB_USER"] == "" || fields["CSQTT_WEB_PASS"] == "" {
+		return result, errors.New("обязательные поля WEB-конфигурации отсутствуют или пусты")
 	}
 	// A verified existing database is required for a preservation-mode
 	// update. This is stricter than upstream's file-existence heuristic.
@@ -94,4 +80,81 @@ func preparePreservedUpdateConfig(existingEnv, existingOverrides []byte, databas
 	result.webEnvironment = bytes.Clone(existingEnv)
 	result.deployOverrides = bytes.Clone(existingOverrides)
 	return result, nil
+}
+
+// Deliberately not a general systemd EnvironmentFile parser. The accepted
+// subset covers the upstream single-line quoted values, including its
+// escaped quotes and backslashes. Unsupported multiline/continuation
+// syntax fails closed. Never evaluate shell expressions or log values.
+func validateUpdateEnvironment(data []byte) (map[string]string, error) {
+	fields := map[string]string{}
+	invalid := errors.New("неподдерживаемый или неоднозначный формат WEB-конфигурации")
+	if !utf8.Valid(data) {
+		return nil, invalid
+	}
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		for _, r := range raw {
+			if r < 32 && r != '\t' || r == 127 || r == 0xfeff {
+				return nil, invalid
+			}
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || key == "" {
+			return nil, invalid
+		}
+		for i, r := range key {
+			if !(r == '_' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || i > 0 && r >= '0' && r <= '9') {
+				return nil, invalid
+			}
+		}
+		if _, duplicate := fields[key]; duplicate {
+			return nil, invalid
+		}
+		value = strings.TrimSpace(value)
+		if value != "" {
+			switch value[0] {
+			case '"':
+				// Match systemd's double-quoted subset as produced by
+				// CSQTTR systemdEnvironmentValue; reject trailing text.
+				var decoded strings.Builder
+				closed := false
+				for i := 1; i < len(value); i++ {
+					ch := value[i]
+					if ch == '"' {
+						if i != len(value)-1 {
+							return nil, invalid
+						}
+						closed = true
+						break
+					}
+					if ch == '\\' {
+						i++
+						if i == len(value) {
+							return nil, invalid
+						}
+						ch = value[i]
+						if ch != '\\' && ch != '"' && ch != '$' && ch != '`' {
+							return nil, invalid
+						}
+					}
+					decoded.WriteByte(ch)
+				}
+				if !closed {
+					return nil, invalid
+				}
+				value = decoded.String()
+			default:
+				// Only straightforward legacy unquoted assignments.
+				if strings.ContainsAny(value, "\\\"'\t ") {
+					return nil, invalid
+				}
+			}
+		}
+		fields[key] = value
+	}
+	return fields, nil
 }
