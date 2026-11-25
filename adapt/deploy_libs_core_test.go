@@ -78,3 +78,13 @@ func TestCSQTTDeployBridgeRejectsUnsafeHelperFiles(t *testing.T) {
 		t.Fatal("unreviewed helper passed the SHA-256 pin")
 	}
 }
+
+func TestCSQTTDeployBridgeRejectsUninstallInInventoryMode(t *testing.T) {
+ if DeployProtocol(`{"protocol":"CSQTT","host":"192.0.2.77","uninstall":true}`) {
+  t.Fatal("inventory-only bridge accepted uninstall")
+ }
+ busy,logText:=DeploySnapshot()
+ if busy || !strings.Contains(logText,"удаление недоступно") {
+  t.Fatalf("unexpected terminal state: busy=%t log=%q",busy,logText)
+ }
+}

@@ -158,6 +158,11 @@ func DeployProtocol(reqJSON string) bool {
 		deployAppend("[deploy] ошибка: разрешён только CSQTT Core с адресом VPS")
 		return false
 	}
+	// Inventory-only is a distinct capability, not a destructive operation.
+	if req.Uninstall {
+		deployAppend("[deploy] ошибка: удаление недоступно в режиме только чтение")
+		return false
+	}
 	binPath := resolveDeployManagerPath()
 	if binPath == "" {
 		deployAppend("[deploy] не найден deploy-manager для CSQTT Core")
@@ -221,7 +226,9 @@ func DeployProtocol(reqJSON string) bool {
 				deployAppend("[deploy] завершено с ошибкой: " + err.Error())
 			}
 		} else {
-			deployAppend("[deploy] завершено успешно; это НЕ подтверждает установку на сервер")
+			// The pinned inventory-only manager must return exit 73. An
+			// unexpected zero exit is not a verified operation.
+			deployAppend("[deploy] завершено с ошибкой: непредусмотренный код завершения проверки")
 		}
 		deployMu.Lock()
 		deployBusy = false
@@ -238,6 +245,13 @@ func DeployMode() string {
 		return "unavailable"
 	}
 	return "inventory-only"
+}
+
+// DeploySnapshot returns a consistent process state and its log under one lock.
+func DeploySnapshot() (bool, string) {
+	deployMu.Lock()
+	defer deployMu.Unlock()
+	return deployBusy, deployLog.String()
 }
 
 // DeployLog возвращает накопленный журнал деплоя.

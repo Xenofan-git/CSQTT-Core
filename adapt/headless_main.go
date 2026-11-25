@@ -1222,7 +1222,8 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
 			http.Error(w, "deployment status is available only from LAN or Tailscale", http.StatusForbidden)
 			return
 		}
-		snapshot := deployProgressSnapshot(libs.DeployBusy(), libs.DeployLog())
+		busy, logText := libs.DeploySnapshot()
+		snapshot := deployProgressSnapshot(busy, logText)
 		snapshot["mode"] = libs.DeployMode()
 		writeJSON(w, snapshot)
 	})
