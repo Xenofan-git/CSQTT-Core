@@ -1385,12 +1385,13 @@ function renderRouteRuleEditor(){
  const root=$('singboxRouteRuleEditor');if(!root)return;
  let rules;try{rules=JSON.parse($('singboxRules').value||'[]');if(!Array.isArray(rules))throw new Error('ожидается JSON-массив')}catch(e){toast('JSON правил: '+e.message,true);return}
  const di=rules.findIndex(r=>(r.ID||r.id)==='system-direct');
- if(di<0)rules.unshift({ID:'system-direct',Enabled:false,RuleSets:[],Domains:[],DomainSuffixes:[],DomainKeywords:[],DomainRegexes:[],IPCIDRs:[],Outbound:'direct'});
+ const legacyDirect=[splitLines('singboxDirectDomains'),splitLines('singboxDirectSuffixes'),splitLines('singboxDirectCIDRs')];
+ if(di<0)rules.unshift({ID:'system-direct',Enabled:legacyDirect.some(values=>values.length>0),RuleSets:[],Domains:[],DomainSuffixes:[],DomainKeywords:[],DomainRegexes:[],IPCIDRs:[],Outbound:'direct'});
  else if(di>0)rules.unshift(rules.splice(di,1)[0]);
  const direct=rules[0],merge=(a,b)=>[...new Set([...(a||[]),...(b||[])].map(x=>String(x).trim()).filter(Boolean))];
- direct.Domains=merge(direct.Domains,splitLines('singboxDirectDomains'));
- direct.DomainSuffixes=merge(direct.DomainSuffixes,splitLines('singboxDirectSuffixes'));
- direct.IPCIDRs=merge(direct.IPCIDRs,splitLines('singboxDirectCIDRs'));
+ direct.Domains=merge(direct.Domains,legacyDirect[0]);
+ direct.DomainSuffixes=merge(direct.DomainSuffixes,legacyDirect[1]);
+ direct.IPCIDRs=merge(direct.IPCIDRs,legacyDirect[2]);
  $('singboxDirectDomains').value='';$('singboxDirectSuffixes').value='';$('singboxDirectCIDRs').value='';
  if(!rules.some(r=>(r.ID||r.id)==='system-csqtt'))rules.push({ID:'system-csqtt',Enabled:false,RuleSets:[],Domains:[],DomainSuffixes:[],DomainKeywords:[],DomainRegexes:[],IPCIDRs:[],Outbound:'csqtt'});
  $('singboxRules').value=JSON.stringify(rules,null,2);

@@ -459,8 +459,8 @@ func buildSingBoxConfig(input singBoxConfigInput) ([]byte, error) {
 		card.Domains = append(card.Domains, directDomains...)
 		card.DomainSuffixes = append(card.DomainSuffixes, directSuffixes...)
 		card.IPCIDRs = append(card.IPCIDRs, directCIDRs...)
-		// Legacy Direct exclusions were always active. Preserve that behavior.
-		if hasDirectLists { card.Enabled = true }
+		// Only a synthesized legacy-only card is enabled by default.
+		// An explicit system-direct card owns its enabled state, even with legacy lists.
 	}
 
 	seenRuleIDs := make(map[string]struct{}, len(routeInput))

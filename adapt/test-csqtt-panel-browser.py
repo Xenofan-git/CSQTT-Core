@@ -596,6 +596,7 @@ def main():
             direct_card_toggle = route_cards.nth(0).locator('[data-toggle-route-rule="system-direct"]')
             csqtt_card_toggle = route_cards.nth(1).locator('[data-toggle-route-rule="system-csqtt"]')
             assert direct_card_toggle.count() == 1 and csqtt_card_toggle.count() == 1
+            assert direct_card_toggle.is_checked(), "legacy-only DIRECT must retain its enabled state"
             direct_card_toggle.check()
             assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Enabled\"]").is_checked()
             direct_card_toggle = page.locator('[data-toggle-route-rule="system-direct"]')
@@ -688,6 +689,7 @@ def main():
             assert singbox_saved["Rules"][1]["ID"] == "system-csqtt" and singbox_saved["Rules"][1]["Enabled"] is True and singbox_saved["Rules"][1]["Domains"] == ["csqtt-route.example"], f"saved CSQTT rule mismatch: {json.dumps(singbox_saved.get('Rules', []), ensure_ascii=False)}"
             assert singbox_saved["Rules"][2]["Domains"] == ["user-route.example"] and singbox_saved["Rules"][2]["Outbound"] == "socks-hydra"
             assert singbox_saved["Rules"][0]["RuleSets"] == ["geo-ru"]
+            assert not any(singbox_saved.get(k) for k in ("DirectDomains", "DirectDomainSuffixes", "DirectIPCIDRs")), "legacy lists must be cleared in canonical UI payload"
             assert singbox_saved["Rules"][1]["RuleSets"] == ["geo-ru", "geo-foreign"]
             assert [x["Tag"] for x in singbox_saved["RuleSets"]] == ["geo-ru", "geo-foreign"]
             page.reload(wait_until="domcontentloaded")
@@ -707,6 +709,20 @@ def main():
             route_cards.nth(2).locator('[data-select-route-rule]').click()
             assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Outbound\"]").input_value() == "socks-hydra"
             assert page.locator("#singboxRouteRuleEditor .route-rule-editor [data-field=\"Domains\"]").input_value() == "user-route.example"
+            page.locator('[data-toggle-route-rule="system-direct"]').uncheck()
+            page.locator("#singboxSave").click()
+            page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('Конфигурация применена: SOCKS5 sing-box проверен.')")
+            assert singbox_saved["Rules"][0]["Enabled"] is False
+            assert singbox_saved["Rules"][0]["Domains"] == ["example.ru", "direct-route.example"]
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_function("document.querySelector('#profileList .profile') !== null")
+            page.locator('button[data-page="route"]').click()
+            page.wait_for_function("document.querySelectorAll('#singboxRouteRuleEditor .route-rule').length === 3")
+            assert not page.locator('[data-toggle-route-rule="system-direct"]').is_checked()
+            page.locator('[data-toggle-route-rule="system-direct"]').check()
+            page.locator("#singboxSave").click()
+            page.wait_for_function("document.querySelector('#singboxConfigMessage').textContent.includes('Конфигурация применена: SOCKS5 sing-box проверен.')")
+            assert singbox_saved["Rules"][0]["Enabled"] is True
             # The limit counts user rules only; DIRECT and CSQTT system cards are excluded.
             for _ in range(15):
                 page.locator("#singboxAddRouteRule").click()

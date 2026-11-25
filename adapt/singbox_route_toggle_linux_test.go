@@ -26,7 +26,9 @@ func TestSingBoxSystemCardToggleActualTraffic(t *testing.T) {
  seen:=make(chan string,16)
  makeSOCKS:=func(label string)*Socks5Server{
   t.Helper()
-  srv:=NewSocks5Server("127.0.0.1:0")
+  // The test fixture needs a fixed endpoint across the monitor's 5s poll.
+  // Port zero would rebind to a new ephemeral port on every poll.
+  srv:=NewSocks5Server(reserveSingBoxTestAddress(t))
   srv.dialTCPOverride=func(target string)(net.Conn,error){
    seen <- label+"|"+target
    return net.DialTimeout("tcp",echo.Addr().String(),2*time.Second)
@@ -93,6 +95,7 @@ func TestSingBoxSystemCardToggleActualTraffic(t *testing.T) {
  }
  for _,tc:=range cases {
   t.Run(tc.name,func(t *testing.T){
+   t.Cleanup(func(){if err:=manager.Stop();err!=nil{t.Errorf("cleanup sing-box: %v",err)}})
    if tc.coreDown { core.Stop() }
    rules:=[]singBoxRouteRule{
     {ID:singBoxDirectRuleID,IPCIDRs:[]string{"127.0.0.1/32"},Outbound:singBoxDirectTag,Enabled:tc.direct},
@@ -103,12 +106,13 @@ func TestSingBoxSystemCardToggleActualTraffic(t *testing.T) {
    input:=singBoxConfigInput{
     ListenAddress:reserveSingBoxTestAddress(t),CSQTTAddress:coreAddress,
     FinalOutbound:"socks-external",
+    DirectIPCIDRs:[]string{"127.0.0.1/32"}, // legacy lists must not override the explicit toggle
     SOCKS5:[]singBoxSOCKS5Outbound{{ID:"external",Server:"127.0.0.1",ServerPort:mustPort(t,external.Status().Address),Enabled:true}},
     Rules:rules,
    }
    if err:=manager.SaveConfig(input);err!=nil{t.Fatalf("save: %v",err)}
    loaded,err:=manager.LoadConfig();if err!=nil{t.Fatalf("load: %v",err)}
-   if len(loaded.Rules)!=3 || loaded.Rules[0].ID!=singBoxDirectRuleID || loaded.Rules[1].ID!=rules[1].ID || loaded.Rules[1].Enabled!=rules[1].Enabled {
+   if len(loaded.Rules)!=3 || loaded.Rules[0].ID!=singBoxDirectRuleID || loaded.Rules[0].Enabled!=tc.direct || loaded.Rules[1].ID!=rules[1].ID || loaded.Rules[1].Enabled!=rules[1].Enabled {
     t.Fatalf("rule priority or state changed after save/load: %+v",loaded.Rules)
    }
    if err:=manager.Start(context.Background());err!=nil{t.Fatalf("start sing-box: %v",err)}

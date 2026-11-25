@@ -1010,3 +1010,37 @@ func TestSingBoxDeadSOCKSOutboundNeverFallsBackToDIRECT(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 	}
 }
+
+func TestLegacyDirectExplicitToggleWins(t *testing.T) {
+ for _, tc := range []struct{name string; explicit, enabled, want bool}{
+  {"legacy-only", false, false, true},
+  {"explicit-disabled", true, false, false},
+  {"explicit-enabled", true, true, true},
+ } {
+  t.Run(tc.name,func(t *testing.T){
+   input:=singBoxConfigInput{
+    ListenAddress:"127.0.0.1:19180",CSQTTAddress:"127.0.0.1:12500",
+    DirectDomains:[]string{"legacy.example"},DirectDomainSuffixes:[]string{".legacy.test"},DirectIPCIDRs:[]string{"192.0.2.1"},
+    FinalOutbound:singBoxCSQTTTag,
+    Rules:[]singBoxRouteRule{{ID:"other",Domains:[]string{"legacy.example"},Outbound:singBoxCSQTTTag,Enabled:true}},
+   }
+   if tc.explicit { input.Rules=append([]singBoxRouteRule{{ID:singBoxDirectRuleID,Domains:[]string{"card.example"},Outbound:singBoxDirectTag,Enabled:tc.enabled}},input.Rules...) }
+   encoded,err:=buildSingBoxConfig(input);if err!=nil{t.Fatal(err)}
+   var c map[string]any;if err:=json.Unmarshal(encoded,&c);err!=nil{t.Fatal(err)}
+   route:=c["route"].(map[string]any)
+   if route["final"]!=singBoxCSQTTTag{t.Fatal("fallback changed")}
+   rules:=route["rules"].([]any)
+   found:=false
+   for i,raw:=range rules{r:=raw.(map[string]any);if r["outbound"]==singBoxDirectTag{
+    found=true
+    if i!=2{t.Fatal("DIRECT not first")}
+    domains:=stringSlice(r["domain"])
+    if !strings.Contains(strings.Join(domains,","),"legacy.example"){t.Fatal("legacy domain lost")}
+    if tc.explicit&&!strings.Contains(strings.Join(domains,","),"card.example"){t.Fatal("card domain lost")}
+    if len(stringSlice(r["domain_suffix"]))!=1||len(stringSlice(r["ip_cidr"]))!=1{t.Fatal("legacy suffix/IP lost")}
+   }}
+   if found!=tc.want{t.Fatalf("DIRECT emitted=%t, want %t",found,tc.want)}
+   if rules[len(rules)-1].(map[string]any)["outbound"]!=singBoxCSQTTTag{t.Fatal("following rule lost")}
+  })
+ }
+}
