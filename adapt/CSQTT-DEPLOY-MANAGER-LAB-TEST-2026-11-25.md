@@ -76,3 +76,28 @@ Assessment: real guest uninstall occurred; old server and essential helpers were
 **Panel/controller tests:** existing Chromium fake-backend UI acceptance PASS across 390/768/1280/1440/1920 widths, all seven tabs, Deploy progress 900ms polling and error display. Frontend contract 66 buttons, seven tabs and 38 API paths PASS. Go tests for per-host tunnel/WEB/SSH secrets, auth, origin/LAN controls, persisted credentials, redacted responses and deployment progress PASS. Added pure source-only Go tests adapt/deploy_libs_core_test.go (reject invalid/foreign protocol and absence of manager without claiming installation, busy resets), and extra progress cases in adapt/deploy_progress_linux_test.go for actual CSQTT_DEPLOY_OK, CSQTT_DEPLOY_ERROR, fail-closed CSQTT_ISOLATION_REQUIRED exit73 and success-marker-plus-error precedence; all PASS.
 
 **Remaining gap:** current experimental Go manager only performs read-only inventory and intentionally returns exit73; a real complete Go panel API to manager to SSH to remote install/uninstall has not been performed. This is NOT a production-ready Deploy release. Fault-injection was a lab-only script modification, not a normal unmodified production failure. Prior uninstall wrapper exit1 remains unresolved even though removal and independent guest recovery succeeded. No experiment was installed on production NanoPi.
+
+## 2026-11-25 — Panel-to-DeployManager safe ARM64 integration package
+
+Goal: advance web-panel -> Go controller -> external DeployManager integration, without installing experimental code on working NanoPi or running remote install via the controller. Previous real QEMU guest install, uninstall/recovery and lab-only failed-upgrade rollback are documented in earlier sections.
+
+SOURCE CHANGES in the isolated experimental branch:
+- adapt/deploy_libs_core.go now accepts only a reviewed Linux ARM64 read-only DeployManager binary SHA256 277e98735d6cb87222c9a908a47c193a8917d6535dd5c6958c9aba681356c731, found adjacent to headless executable or in its bin subdirectory. No cwd or PATH search. Reject symlink, nonregular file, writable executable or parent, non-executable path, or unknown binary hash BEFORE passing secrets. This helper is not capable of remote installation.
+- External manager exit73 is classified as completed PRE-FLIGHT only if authenticated inventory contains CSQTT_INV end AND CSQTT_ISOLATION_REQUIRED, then bridge writes clear terminal text that no remote install occurred. Other nonzero exits remain errors. No SSH credentials in argv or logs.
+- adapt/headless_main.go provides a backward-compatible mode field in GET /deploy/status: inventory-only for the verified helper and unavailable if it is not present. Preflight terminal result is separate from success, completed and error. Actual installation success still needs verified install marker and a zero process exit.
+- adapt/csqtt-panel-preview.html reflects inventory-only mode with action Проверить сервер, a read-only confirmation, no install/uninstall claims, and disabled uninstall action. Completed modal/status display expressly state that no installation was performed. Existing install mode remains in tests for forward compatibility.
+- New and expanded unit/browser tests check unsafe helper path, symlink/permissions/hash, absent manager, malformed inventory result, explicit exit73, UI action, confirmation and status mode. All run without remote mutation or mocked remote installer invocation.
+
+VERIFICATIONS ON MOSCOW SCRATCH:
+- Chromium browser smoke PASSED five widths (390,768,1280,1440,1920) and seven tabs, Deploy read-only UI, progress and status, other panels.
+- HTML contract PASSED: 66 buttons, 7 tabs, 38 API paths.
+- Go Libs/controller tests with Race Detector PASSED; go vet PASSED.
+- Assembled a LOCAL SHA-checked ARM64 bundle /tmp/csqtt-deploy-ui-preflight-bundle-20261125, never installed. Contains embedded updated frontend (source file byte-matched), headless ELF and nested bin/deploy-manager plus bin/server-assets installer and real ARM64 server ELF.
+- Bundle SHA256:
+  controller 96f8e25a03ec2b865eb0b5f74d24a92220bba1d9cccbac8deddbf64c9120bdcd
+  manager 277e98735d6cb87222c9a908a47c193a8917d6535dd5c6958c9aba681356c731
+  installer 18b8fba447a0f6d931f4acea37612326a75aae567e499b4e52ec7d5f6bc0af68
+  server ARM64 ELF 8cd789e33428f96e183ae3da326dee907496f11536fbaf6cdab5da339262701d
+- Local scratch package is a TEST ARTIFACT only, not a release, not delivered to the live NanoPi. No automatic remote install tests were attempted because the earlier integration test had been blocked.
+
+UNVERIFIED: full GO POST /deploy -> external manager -> SSH remote install/uninstall/rollback end-to-end. Current SHA-pinned helper still does only read-only inventory and intentionally exit73. Previous real ARM64 guest installer tests do not by themselves prove the controller-to-installer flow. Production release must remain blocked until a separately authorized and safe full-chain test. No modification to original Android installation or live VPS. Moscow root disk remains 98 percent used, about 844MiB free.

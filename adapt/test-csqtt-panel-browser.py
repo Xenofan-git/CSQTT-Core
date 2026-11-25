@@ -62,7 +62,7 @@ def main():
     socks5_state = {"interface":"eth1","protocol":"SOCKS5","auth":"no-auth","monitoring":True,"listening":True,"address":"192.168.4.26:12500"}
     calls = []
     deploy_auth_saved = {}  # backend fixture keeps secrets across browser reloads
-    deploy_fixture = {"phase":"idle", "ticks":0, "log":"", "fail":False}
+    deploy_fixture = {"phase":"idle", "ticks":0, "log":"", "fail":False, "preflight":False, "mode":"install"}
     ssh_password_saved = {}  # root-only SSH store emulated for browser checks
     fail_paths = set()
     fail_http_status = {}
@@ -183,15 +183,23 @@ def main():
             if deploy_fixture["phase"] == "running":
                 deploy_fixture["ticks"] += 1
                 if deploy_fixture["ticks"] >= 4:
-                    deploy_fixture["phase"] = "success"
-                    deploy_fixture["log"] = ("[deploy] подключение по SSH\n"
-                        "Проверены порты UDP 47000, TCP 47002\n"
-                        "CSQTT_CORE_DEPLOY_OK\n[deploy] завершено успешно\n")
+                    if deploy_fixture["preflight"]:
+                        deploy_fixture["phase"] = "preflight"
+                        deploy_fixture["log"] = ("[deploy] подключение по SSH\n"
+                            "CSQTT_INV|server|place=core|runtime=systemd|state=running|owner=core_candidate\n"
+                            "CSQTT_INV|end\n"
+                            "CSQTT_ISOLATION_REQUIRED\n"
+                            "[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась\n")
+                    else:
+                        deploy_fixture["phase"] = "success"
+                        deploy_fixture["log"] = ("[deploy] подключение по SSH\n"
+                            "Проверены порты UDP 47000, TCP 47002\n"
+                            "CSQTT_CORE_DEPLOY_OK\n[deploy] завершено успешно\n")
                 elif deploy_fixture["ticks"] >= 2:
                     deploy_fixture["log"] = "[deploy] подключение по SSH\nПроверены порты UDP 47000, TCP 47002\n"
                 else:
                     deploy_fixture["log"] = "[deploy] DeployManager запущен\n"
-            body = {"deploying":deploy_fixture["phase"]=="running", "result":deploy_fixture["phase"], "hasLog":bool(deploy_fixture["log"])}
+            body = {"deploying":deploy_fixture["phase"]=="running", "result":deploy_fixture["phase"], "hasLog":bool(deploy_fixture["log"]), "mode":deploy_fixture["mode"]}
         elif path == "/deploy/log":
             body = deploy_fixture["log"]
         elif path == "/version":
@@ -1409,6 +1417,42 @@ def main():
             choose_theme(page,"light")
             page.locator("#deployProgressClose").click()
             assert page.locator("#deployProgressOverlay").is_hidden()
+            # Experimental manager: successful SSH inventory MUST be neutral,
+            # not claim install success or surface it as a failed installation.
+            deploy_fixture["preflight"]=True
+            deploy_fixture["mode"]="inventory-only"
+            page.locator("#refreshDeployStatus").click()
+            page.locator("#deployStatusOverlay").wait_for(state="visible")
+            page.wait_for_function("""() => document.querySelector('#deployStatusApi').textContent === 'Доступен'""")
+            page.locator("#deployStatusClose").click()
+            assert page.locator("#startDeploy").inner_text()=="Проверить сервер"
+            assert page.locator("#uninstallCsqtt").is_disabled()
+            page.locator("#startDeploy").click()
+            page.locator("#deployConfirmOverlay").wait_for(state="visible")
+            assert page.locator("#deployConfirmTitle").inner_text()=="Подтверждение проверки"
+            assert page.locator("#deployConfirmAccept").inner_text()=="Проверить сервер"
+            assert "НЕ выполняются" in page.locator("#deployConfirmWarning").inner_text()
+            page.locator("#deployConfirmAccept").click()
+            page.locator("#deployProgressOverlay").wait_for(state="visible")
+            assert page.locator("#deployProgressTitle").inner_text()=="Проверка сервера CSQTT Core"
+            page.wait_for_function("""() => document.querySelector('#deployProgressPhase').textContent === 'Проверка сервера завершена'""",timeout=12000)
+            assert page.locator("#deployProgressOutcome").get_attribute("data-kind")=="neutral"
+            assert "Установка на VPS НЕ запускалась" in page.locator("#deployProgressOutcome").inner_text()
+            assert "CSQTT_INV|end" in page.locator("#deployProgressLog").inner_text()
+            assert page.locator("#deployProgressIndicator").get_attribute("data-active")=="false"
+            page.locator("#deployProgressClose").click()
+            page.locator("#refreshDeployStatus").click()
+            page.locator("#deployStatusOverlay").wait_for(state="visible")
+            page.wait_for_function("""() => document.querySelector('#deployStatusOperation').textContent === 'Проверка сервера завершена'""")
+            assert "Установка на VPS НЕ запускалась" in page.locator("#deployStatusExplanation").inner_text()
+            page.locator("#deployStatusClose").click()
+            deploy_fixture["preflight"]=False
+            deploy_fixture["mode"]="install"
+            page.locator("#refreshDeployStatus").click()
+            page.locator("#deployStatusOverlay").wait_for(state="visible")
+            page.wait_for_function("""() => document.querySelector('#deployStatusApi').textContent === 'Доступен'""")
+            page.locator("#deployStatusClose").click()
+
             # A second attempt with no DeployManager must report it immediately,
             # not show a fake progress bar or assert a completed remote install.
             deploy_fixture["fail"]=True

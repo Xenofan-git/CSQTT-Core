@@ -1,6 +1,8 @@
 package libs
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -36,5 +38,43 @@ func TestCSQTTDeployBridgeNoManagerDoesNotClaimSuccess(t *testing.T) {
 	}
 	if !strings.Contains(DeployLog(), "не найден deploy-manager") {
 		t.Fatalf("unexpected log: %q", DeployLog())
+	}
+}
+
+// A privileged manager is never selected from cwd or via a writable or
+// symlinked file. These tests cannot initiate SSH or install anything.
+func TestCSQTTDeployBridgeRejectsUnsafeHelperFiles(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "deploy-manager")
+	if err := os.WriteFile(good, []byte("fixture, never executed"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if !validDeployManagerExecutable(good) {
+		t.Fatal("regular executable rejected")
+	}
+	for name, mode := range map[string]os.FileMode{"world-writable": 0777, "group-writable": 0775, "non-executable": 0644} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("fixture, never executed"), mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		if validDeployManagerExecutable(path) {
+			t.Fatalf("unsafe file accepted: %s", name)
+		}
+	}
+	alias := filepath.Join(dir, "alias")
+	if err := os.Symlink(good, alias); err != nil {
+		t.Fatal(err)
+	}
+	if validDeployManagerExecutable(alias) {
+		t.Fatal("symlink helper accepted")
+	}
+	if validDeployManagerExecutable(dir) {
+		t.Fatal("directory accepted as executable")
+	}
+	if isVerifiedInventoryManager(good) {
+		t.Fatal("unreviewed helper passed the SHA-256 pin")
 	}
 }

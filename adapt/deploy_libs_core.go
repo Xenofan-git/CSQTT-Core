@@ -8,6 +8,8 @@ package libs
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
@@ -53,24 +55,63 @@ func deployManagerName() string {
 	return "deploy-manager"
 }
 
-// resolveDeployManagerPath ищет бинарь рядом с exe, затем в cwd.
+// Only the individually reviewed ARM64 inventory-only manager can receive
+// the controller's saved SSH and application credentials in this experiment.
+// Any change to the helper requires updating and re-reviewing this pin.
+const verifiedARM64InventoryManagerSHA = "277e98735d6cb87222c9a908a47c193a8917d6535dd5c6958c9aba681356c731"
+
+// validDeployManagerExecutable refuses untrusted file types and writable
+// helpers. No implicit $PATH/cwd lookup is allowed for privileged Deploy.
+func validDeployManagerExecutable(path string) bool {
+	st, err := os.Lstat(path)
+	if err != nil || !st.Mode().IsRegular() || st.Mode()&os.ModeSymlink != 0 {
+		return false
+	}
+	if st.Mode().Perm()&0022 != 0 {
+		return false
+	}
+	parent, err := os.Lstat(filepath.Dir(path))
+	if err != nil || !parent.IsDir() || parent.Mode()&os.ModeSymlink != 0 ||
+		parent.Mode().Perm()&0022 != 0 {
+		return false
+	}
+	if runtime.GOOS != "windows" && st.Mode().Perm()&0111 == 0 {
+		return false
+	}
+	return true
+}
+
+// isVerifiedInventoryManager never executes an unreviewed binary. This
+// experimental capability is intentionally limited to Linux ARM64 only.
+func isVerifiedInventoryManager(path string) bool {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "arm64" ||
+		!validDeployManagerExecutable(path) {
+		return false
+	}
+	fp, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer fp.Close()
+	hasher := sha256.New()
+	if _, err = io.Copy(hasher, fp); err != nil {
+		return false
+	}
+	return hex.EncodeToString(hasher.Sum(nil)) == verifiedARM64InventoryManagerSHA
+}
+
+// resolveDeployManagerPath accepts only a SHA-pinned, non-writable helper
+// next to the running controller or in its dedicated bin/ directory.
 func resolveDeployManagerPath() string {
 	name := deployManagerName()
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		candidates := []string{
-			filepath.Join(dir, name),
-			filepath.Join(dir, "bin", name),
-		}
-		for _, c := range candidates {
-			if st, err := os.Stat(c); err == nil && !st.IsDir() {
-				return c
-			}
-		}
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
 	}
-	if wd, err := os.Getwd(); err == nil {
-		if st, err := os.Stat(filepath.Join(wd, name)); err == nil && !st.IsDir() {
-			return filepath.Join(wd, name)
+	dir := filepath.Dir(exe)
+	for _, c := range []string{filepath.Join(dir, name), filepath.Join(dir, "bin", name)} {
+		if isVerifiedInventoryManager(c) {
+			return c
 		}
 	}
 	return ""
@@ -168,7 +209,17 @@ func DeployProtocol(reqJSON string) bool {
 		wg.Wait()
 		err := cmd.Wait()
 		if err != nil {
-			deployAppend("[deploy] завершено с ошибкой: " + err.Error())
+			// Exit 73 is explicitly reserved for successful read-only
+			// inspection, followed by a denied mutation. It is never an
+			// installation success. Require the actual inventory end record.
+			if exitErr, ok := err.(*exec.ExitError); ok &&
+				exitErr.ExitCode() == 73 &&
+				strings.Contains(DeployLog(), "CSQTT_INV|end") &&
+				strings.Contains(DeployLog(), "CSQTT_ISOLATION_REQUIRED") {
+				deployAppend("[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась")
+			} else {
+				deployAppend("[deploy] завершено с ошибкой: " + err.Error())
+			}
 		} else {
 			deployAppend("[deploy] завершено успешно; это НЕ подтверждает установку на сервер")
 		}
@@ -177,6 +228,16 @@ func DeployProtocol(reqJSON string) bool {
 		deployMu.Unlock()
 	}()
 	return true
+}
+
+// DeployMode returns the only capability supported by this experimental
+// manager. Presence of a helper does NOT mean remote mutation was approved.
+// Future release candidates must change this only after a full acceptance.
+func DeployMode() string {
+	if resolveDeployManagerPath() == "" {
+		return "unavailable"
+	}
+	return "inventory-only"
 }
 
 // DeployLog возвращает накопленный журнал деплоя.

@@ -1222,7 +1222,9 @@ func apiHandlerWithSingBox(app *App, singBox *SingBoxManager) http.Handler {
 			http.Error(w, "deployment status is available only from LAN or Tailscale", http.StatusForbidden)
 			return
 		}
-		writeJSON(w, deployProgressSnapshot(libs.DeployBusy(), libs.DeployLog()))
+		snapshot := deployProgressSnapshot(libs.DeployBusy(), libs.DeployLog())
+		snapshot["mode"] = libs.DeployMode()
+		writeJSON(w, snapshot)
 	})
 
 	// The inherited upstream updater is NOT safe for this hybrid: it could
@@ -2271,6 +2273,10 @@ func deployProgressSnapshot(busy bool, logText string) map[string]any {
 		strings.Contains(logText, "[deploy] ошибка") ||
 		strings.Contains(logText, "[deploy] не указан хост"):
 		result = "error"
+	case strings.Contains(logText, "[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась") &&
+		strings.Contains(logText, "CSQTT_INV|end") &&
+		strings.Contains(logText, "CSQTT_ISOLATION_REQUIRED"):
+		result = "preflight"
 	case strings.Contains(logText, "[deploy] завершено успешно"):
 		result = "completed"
 		for _, line := range strings.Split(logText, "\n") {
