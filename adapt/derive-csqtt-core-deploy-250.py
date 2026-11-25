@@ -7,7 +7,16 @@ import re
 import subprocess
 from pathlib import Path
 import argparse
-p=argparse.ArgumentParser();p.add_argument('--upstream-root',required=True,type=Path);a=p.parse_args()
+p=argparse.ArgumentParser()
+p.add_argument('--upstream-root',required=True,type=Path)
+p.add_argument('--candidate-output',type=Path,
+               help='Generate the unapproved candidate into a NEW, separate file; never replace the pinned installer')
+a=p.parse_args()
+if a.candidate_output is not None:
+    if a.candidate_output.exists() or a.candidate_output.is_symlink():
+        p.error('candidate output must be a new path')
+    if a.candidate_output.name == 'deploy-csqtt-core-250.sh':
+        p.error('candidate output must have a distinct filename')
 src=(a.upstream_root/'app/src/main/assets/deploy.sh').read_bytes()
 assert hashlib.sha256(src).hexdigest()=='9a82d4ab5f12b0677b4e11be14ca892fb16c0a771eddb7ed5485d8957e9b9895'
 s=src.decode()
@@ -121,8 +130,15 @@ with tempfile.TemporaryDirectory(prefix='csqtt-core-rollback-replay-') as tmp:
     assert result.returncode==0, 'rollback overlay refused: '+result.stderr[-1500:]
     s=candidate.read_text()
 assert hashlib.sha256(s.encode()).hexdigest()==RELEASE_WITH_ROLLBACK, 'rollback reproduction mismatch; refusing generation'
-output=Path('server-assets/deploy-csqtt-core-250.sh')
-output.write_text(s)
+if a.candidate_output is not None:
+    from csqtt_deploy_candidate import candidate_bytes
+    data=candidate_bytes(s.encode())
+    output=a.candidate_output
+    with output.open('xb') as f:
+        f.write(data)
+else:
+    output=Path('server-assets/deploy-csqtt-core-250.sh')
+    output.write_text(s)
 result=subprocess.run(['bash','-n',str(output)],capture_output=True,text=True)
 assert result.returncode==0,result.stderr
 print('Generated',output,'SHA256',hashlib.sha256(output.read_bytes()).hexdigest())

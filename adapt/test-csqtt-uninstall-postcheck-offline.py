@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 root = Path(__file__).resolve().parent.parent
-source = (root / "server-assets/deploy-csqtt-core-250.sh").read_text()
+from csqtt_deploy_candidate import candidate_bytes
+source = candidate_bytes((root / "server-assets/deploy-csqtt-core-250.sh").read_bytes()).decode()
 def fn(name):
     start = source.index(name + "() {")
     return source[start:source.index("\n}\n", start)+2]

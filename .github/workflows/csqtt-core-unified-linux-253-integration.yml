@@ -14,6 +14,10 @@ on:
       - adapt/singbox_manager_rollback_linux_test.go
       - server-assets/deploy-csqtt-core-250.sh
       - adapt/derive-csqtt-core-deploy-250.py
+      - adapt/csqtt_deploy_candidate.py
+      - adapt/csqtt-core-uninstall-candidate.patch
+      - adapt/test-csqtt-deploy-candidate-source.py
+      - adapt/test-csqtt-uninstall-postcheck-offline.py
       - .github/workflows/csqtt-core-unified-linux-253-integration.yml
   workflow_dispatch:
 permissions:
@@ -51,6 +55,10 @@ jobs:
           set -euo pipefail
           python3 -B adapt/test-csqttr-253-selective-patch-offline.py
           python3 -B adapt/derive-csqtt-core-deploy-250.py --upstream-root original-250
+          git diff --exit-code -- server-assets/deploy-csqtt-core-250.sh
+          python3 -B adapt/derive-csqtt-core-deploy-250.py --upstream-root original-250 --candidate-output "$RUNNER_TEMP/deploy-uninstall-candidate.sh"
+          python3 -B adapt/test-csqtt-deploy-candidate-source.py
+          python3 -B adapt/test-csqtt-uninstall-postcheck-offline.py
           git diff --exit-code -- server-assets/deploy-csqtt-core-250.sh
           bash -n server-assets/deploy-csqtt-core-250.sh
           python3 -B adapt/test-csqttr-253-selective-deploy-ports-offline.py
