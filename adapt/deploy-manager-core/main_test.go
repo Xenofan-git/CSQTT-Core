@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -51,7 +54,7 @@ func TestDeployManagerVerifiesPinnedScriptAndArm64Server(t *testing.T) {
 	if assets == "" {
 		t.Skip("set CSQTT_DEPLOY_FIXTURE_ASSETS to pinned isolated fixture")
 	}
-	if err := checkAssets(assets); err != nil {
+	if _, err := verifiedInstaller(assets); err != nil {
 		t.Fatalf("pinned assets: %v", err)
 	}
 	dir := t.TempDir()
@@ -66,7 +69,7 @@ func TestDeployManagerVerifiesPinnedScriptAndArm64Server(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "csqtt-core8-linux-arm64"), []byte("not-an-ELF"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if checkAssets(dir) == nil {
+	if _, err := verifiedInstaller(dir); err == nil {
 		t.Fatal("unverified server ELF was allowed")
 	}
 	if err := os.Remove(filepath.Join(dir, "deploy-csqtt-core-250.sh")); err != nil {
@@ -75,7 +78,7 @@ func TestDeployManagerVerifiesPinnedScriptAndArm64Server(t *testing.T) {
 	if err := os.Symlink(source, filepath.Join(dir, "deploy-csqtt-core-250.sh")); err != nil {
 		t.Fatal(err)
 	}
-	if checkAssets(dir) == nil {
+	if _, err := verifiedInstaller(dir); err == nil {
 		t.Fatal("symlink installer allowed")
 	}
 }
@@ -186,7 +189,7 @@ func TestReadOnlyInventoryCancellation(t *testing.T) {
 	cancel()
 	req := goodRequest()
 	var output bytes.Buffer
-	if err := remoteInventoryWithContext(ctx, req, installer, &output); err == nil {
+	if err := remoteInventoryWithContext(ctx, req, []byte("# read-only fixture"), &output); err == nil {
 		t.Fatal("already-canceled inventory was not stopped")
 	}
 	if strings.Contains(output.String(), "CSQTT_INV|end") {
@@ -231,7 +234,7 @@ func TestReadOnlyInventoryHungSSHTimeout(t *testing.T) {
 	defer cancel()
 	start := time.Now()
 	var output bytes.Buffer
-	err := remoteInventoryWithContext(ctx, goodRequest(), installer, &output)
+	err := remoteInventoryWithContext(ctx, goodRequest(), []byte("# read-only fixture"), &output)
 	if err == nil {
 		t.Fatal("hung SSH unexpectedly succeeded")
 	}
@@ -240,5 +243,112 @@ func TestReadOnlyInventoryHungSSHTimeout(t *testing.T) {
 	}
 	if output.Len() != 0 {
 		t.Fatal("hung SSH produced trusted inventory output")
+	}
+}
+
+// Local artifact verification only. No SSH or installer invocation.
+func Test253AssetBytesIntegrity(t *testing.T) {
+	data := []byte("verified local fixture")
+	sha := fmt.Sprintf("%x", sha256.Sum256(data))
+	dir := t.TempDir()
+	name := filepath.Join(dir, "asset")
+	if err := os.WriteFile(name, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := readVerifiedAsset(name, int64(len(data)), sha)
+	if err != nil || !bytes.Equal(snapshot, data) {
+		t.Fatalf("valid asset: %v", err)
+	}
+	// Replacement after validation must not change the verified snapshot.
+	if err := os.WriteFile(name, bytes.Repeat([]byte("x"), len(data)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(snapshot, data) {
+		t.Fatal("verified bytes changed after replacement")
+	}
+	if _, err := readVerifiedAsset(name, int64(len(data)), sha); err == nil {
+		t.Fatal("same-size tamper accepted")
+	}
+	if err := os.WriteFile(name, append(data, 'x'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readVerifiedAsset(name, int64(len(data)), sha); err == nil {
+		t.Fatal("oversize file accepted")
+	}
+	if err := os.WriteFile(name, data[:len(data)-1], 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readVerifiedAsset(name, int64(len(data)), sha); err == nil {
+		t.Fatal("truncated file accepted")
+	}
+	if _, err := readVerifiedAsset(name, 0, sha); err == nil {
+		t.Fatal("zero expected size accepted")
+	}
+	if _, err := readVerifiedAsset(name, 100_000_001, sha); err == nil {
+		t.Fatal("excessive expected size accepted")
+	}
+	if err := os.Remove(name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readVerifiedAsset(name, int64(len(data)), sha); err == nil {
+		t.Fatal("missing file accepted")
+	}
+	if err := os.Symlink(filepath.Join(dir, "missing"), name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readVerifiedAsset(name, int64(len(data)), sha); err == nil {
+		t.Fatal("dangling symlink accepted")
+	}
+	if err := os.Remove(name); err != nil {
+		t.Fatal(err)
+	}
+	original := filepath.Join(dir, "original")
+	if err := os.WriteFile(original, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(original, name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readVerifiedAsset(name, int64(len(data)), sha); err == nil {
+		t.Fatal("valid-target symlink accepted")
+	}
+	if err := os.Remove(name); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(name, 0600); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if _, err := readVerifiedAsset(name, int64(len(data)), sha); err == nil {
+		t.Fatal("FIFO accepted")
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("FIFO check blocked")
+	}
+	if _, err := readVerifiedAsset(dir, int64(len(data)), sha); err == nil {
+		t.Fatal("directory accepted")
+	}
+}
+
+func Test253PinnedAssetSnapshot(t *testing.T) {
+	assets := os.Getenv("CSQTT_DEPLOY_FIXTURE_ASSETS")
+	if assets == "" {
+		t.Skip("requires pinned local fixtures")
+	}
+	snapshot, err := verifiedInstaller(assets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(snapshot)) != expectedInstallerSize || fmt.Sprintf("%x", sha256.Sum256(snapshot)) != expectedInstallerSHA {
+		t.Fatal("wrong verified script")
+	}
+	// The existing candidate has a different digest. It is deliberately
+	// not substituted for the prior reviewed inventory-only asset.
+	link := filepath.Join(t.TempDir(), "assets")
+	if err := os.Symlink(assets, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifiedInstaller(link); err == nil {
+		t.Fatal("symlink asset directory accepted")
 	}
 }

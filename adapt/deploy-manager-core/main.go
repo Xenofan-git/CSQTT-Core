@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"debug/elf"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -136,56 +136,70 @@ func validate(r Request) error {
 	}
 	return nil
 }
-func shaFile(path string) (string, error) {
-	info, err := os.Lstat(path)
+
+// Adapted from CSQTTR v2.5.3 ServerCoreCache: trust only pinned
+// asset sizes and hashes. Verify the same bytes that will be used,
+// rather than opening a checked pathname a second time.
+// No download, upload or installation capability is introduced.
+const expectedInstallerSize int64 = 128287
+const expectedServerSize int64 = 9589352
+
+func readVerifiedAsset(path string, size int64, digest string) ([]byte, error) {
+	if size <= 0 || size > 100_000_000 {
+		return nil, errors.New("некорректный размер компонента")
+	}
+	// O_NOFOLLOW rejects a symlink at open time; O_NONBLOCK prevents a
+	// replaced FIFO from hanging before the regular-file check.
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("небезопасный файл: %s", filepath.Base(path))
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
+	f := os.NewFile(uintptr(fd), path)
 	defer f.Close()
-	h := sha256.New()
-	if _, err = io.Copy(h, f); err != nil {
-		return "", err
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	if !info.Mode().IsRegular() || info.Size() != size {
+		return nil, fmt.Errorf("неподтверждённый тип или размер %s", filepath.Base(path))
+	}
+	data, err := io.ReadAll(io.LimitReader(f, size+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) != size || fmt.Sprintf("%x", sha256.Sum256(data)) != digest {
+		return nil, fmt.Errorf("неподтверждённый SHA256 или размер %s", filepath.Base(path))
+	}
+	return data, nil
 }
-func checkAssets(folder string) error {
+
+func verifiedInstaller(folder string) ([]byte, error) {
 	st, err := os.Lstat(folder)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
-		return errors.New("server-assets не является обычным каталогом")
+		return nil, errors.New("server-assets не является обычным каталогом")
 	}
-	files := []struct{ name, sha string }{
-		{"deploy-csqtt-core-250.sh", expectedInstallerSHA},
-		{"csqtt-core8-linux-arm64", expectedServerSHA},
-	}
-	for _, item := range files {
-		got, err := shaFile(filepath.Join(folder, item.name))
-		if err != nil {
-			return err
-		}
-		if got != item.sha {
-			return fmt.Errorf("неподтверждённый SHA256 %s", item.name)
-		}
-	}
-	f, err := elf.Open(filepath.Join(folder, "csqtt-core8-linux-arm64"))
+	script, err := readVerifiedAsset(filepath.Join(folder, "deploy-csqtt-core-250.sh"), expectedInstallerSize, expectedInstallerSHA)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	server, err := readVerifiedAsset(filepath.Join(folder, "csqtt-core8-linux-arm64"), expectedServerSize, expectedServerSHA)
+	if err != nil {
+		return nil, err
+	}
+	f, err := elf.NewFile(bytes.NewReader(server))
+	if err != nil {
+		return nil, err
 	}
 	defer f.Close()
-	if f.Class != elf.ELFCLASS64 || f.Machine != elf.EM_AARCH64 {
-		return errors.New("серверный бинарник не соответствует Linux ARM64")
+	if f.Class != elf.ELFCLASS64 || f.Machine != elf.EM_AARCH64 || f.Data != elf.ELFDATA2LSB {
+		return nil, errors.New("серверный бинарник не соответствует Linux ARM64")
 	}
-	return nil
+	return script, nil
 }
+
 func run(reader io.Reader, writer io.Writer, assets string) error {
 	decoder := json.NewDecoder(io.LimitReader(reader, 16384))
 	var r Request
@@ -195,7 +209,8 @@ func run(reader io.Reader, writer io.Writer, assets string) error {
 	if err := validate(r); err != nil {
 		return err
 	}
-	if err := checkAssets(assets); err != nil {
+	script, err := verifiedInstaller(assets)
+	if err != nil {
 		return fmt.Errorf("пакет серверных компонентов не готов: %w", err)
 	}
 	// Remote read-only inventory uses the same SHA-pinned installer that
@@ -203,7 +218,7 @@ func run(reader io.Reader, writer io.Writer, assets string) error {
 	// file is uploaded and no mutating command is ever called here.
 	fmt.Fprintln(writer, "[deploy] Серверный сценарий CSQTT Core 2.5.0/2.5.3 проверен по SHA-256")
 	fmt.Fprintln(writer, "[deploy] Проверяем удалённое окружение (только чтение)…")
-	if err := remoteInventory(r, filepath.Join(assets, "deploy-csqtt-core-250.sh"), writer); err != nil {
+	if err := remoteInventory(r, script, writer); err != nil {
 		return fmt.Errorf("не удалось проверить окружение по SSH: %w", err)
 	}
 	fmt.Fprintln(writer, "[deploy] Инвентаризация получена. Установка на VPS НЕ запускалась")
@@ -332,16 +347,12 @@ func (b *boundedInventoryBuffer) Write(data []byte) (int, error) {
 }
 
 // Only bash -s inventory is ever sent. No remote files are copied or changed.
-func remoteInventory(r Request, installerPath string, writer io.Writer) error {
+func remoteInventory(r Request, script []byte, writer io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
-	return remoteInventoryWithContext(ctx, r, installerPath, writer)
+	return remoteInventoryWithContext(ctx, r, script, writer)
 }
-func remoteInventoryWithContext(ctx context.Context, r Request, installerPath string, writer io.Writer) error {
-	script, err := os.ReadFile(installerPath)
-	if err != nil {
-		return err
-	}
+func remoteInventoryWithContext(ctx context.Context, r Request, script []byte, writer io.Writer) error {
 	port := r.SSHPort
 	if port == 0 {
 		port = 22
@@ -383,7 +394,7 @@ func remoteInventoryWithContext(ctx context.Context, r Request, installerPath st
 		}
 		cmd.Env = append(os.Environ(), "SSH_ASKPASS="+path, "SSH_ASKPASS_REQUIRE=force", "DISPLAY=csqtt:0", "CSQTT_DEPLOY_SSH_PASSWORD="+r.Password)
 	}
-	if err = cmd.Run(); err != nil {
+	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return errors.New("SSH inventory превысила лимит ожидания 40 секунд")
 		}
