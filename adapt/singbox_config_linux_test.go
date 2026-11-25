@@ -8,9 +8,12 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1043,4 +1046,173 @@ func TestLegacyDirectExplicitToggleWins(t *testing.T) {
    if rules[len(rules)-1].(map[string]any)["outbound"]!=singBoxCSQTTTag{t.Fatal("following rule lost")}
   })
  }
+}
+
+// Verify real Sing-box category matching using manager-uploaded local source
+// and compiled binary Rule Sets. All actual sockets and payloads stay on loopback.
+func TestSingBoxRuleSetActualDomainTraffic(t *testing.T) {
+ bin:=strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+ if bin==""{t.Skip("requires pinned sing-box binary")}
+ dir:=t.TempDir()
+ manager:=NewSingBoxManager(bin,filepath.Join(dir,"config.json"),filepath.Join(dir,"singbox.log"))
+ t.Cleanup(func(){if err:=manager.Stop();err!=nil{t.Error(err)}})
+ source:=[]byte(`{"version":1,"rules":[{"domain_suffix":["category.test"]}]}`)
+ first,err:=manager.UploadRuleSet("source-category","category.json",source)
+ if err!=nil{t.Fatal(err)}
+ binarySource:=filepath.Join(dir,"binary-source.json")
+ if err:=os.WriteFile(binarySource,[]byte(`{"version":1,"rules":[{"domain":["overlap.category.test","binary-only.test"]}]}`),0600);err!=nil{t.Fatal(err)}
+ binaryPath:=filepath.Join(dir,"category.srs")
+ if out,err:=exec.Command(bin,"rule-set","compile","--output",binaryPath,binarySource).CombinedOutput();err!=nil{t.Fatalf("compile Rule Set: %v: %s",err,out)}
+ data,err:=os.ReadFile(binaryPath);if err!=nil{t.Fatal(err)}
+ second,err:=manager.UploadRuleSet("binary-category","category.srs",data);if err!=nil{t.Fatal(err)}
+ directSet,err:=manager.UploadRuleSet("direct-category","direct.json",[]byte(`{"version":1,"rules":[{"ip_cidr":["127.0.0.1/32"]}]}`));if err!=nil{t.Fatal(err)}
+ registry,err:=manager.ListRuleSets();if err!=nil||len(registry)!=3{t.Fatalf("registry=%v err=%v",registry,err)}
+ echo,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)}
+ t.Cleanup(func(){echo.Close()})
+ go func(){for{c,e:=echo.Accept();if e!=nil{return};go func(c net.Conn){defer c.Close();_,_=io.Copy(c,c)}(c)}}()
+ seen:=make(chan string,32)
+ capture:=func(label string)*Socks5Server{
+  t.Helper()
+  s:=NewSocks5Server(reserveSingBoxTestAddress(t))
+  s.dialTCPOverride=func(target string)(net.Conn,error){seen<-label+"|"+target;return net.DialTimeout("tcp",echo.Addr().String(),2*time.Second)}
+  if err:=s.Start();err!=nil{t.Fatal(err)}
+  t.Cleanup(s.Stop);return s
+ }
+ core:=capture("csqtt");external:=capture("external");fallback:=capture("final")
+ addr:=core.Status().Address
+ input:=singBoxConfigInput{ListenAddress:reserveSingBoxTestAddress(t),CSQTTAddress:addr,
+  FinalOutbound:"socks-final",RuleSets:[]singBoxRuleSet{first,second,directSet},
+  SOCKS5:[]singBoxSOCKS5Outbound{
+   {ID:"external",Server:"127.0.0.1",ServerPort:mustPort(t,external.Status().Address),Enabled:true},
+   {ID:"final",Server:"127.0.0.1",ServerPort:mustPort(t,fallback.Status().Address),Enabled:true}},
+  Rules:[]singBoxRouteRule{
+   {ID:singBoxDirectRuleID,RuleSets:[]string{directSet.Tag},Outbound:singBoxDirectTag,Enabled:false},
+   {ID:singBoxCSQTTRuleID,RuleSets:[]string{first.Tag},Outbound:singBoxCSQTTTag,Enabled:true},
+   {ID:"external-category",RuleSets:[]string{second.Tag},Outbound:"socks-external",Enabled:true}}}
+ if err:=manager.SaveConfig(input);err!=nil{t.Fatal(err)}
+ loaded,err:=manager.LoadConfig();if err!=nil{t.Fatal(err)}
+ if len(loaded.RuleSets)!=3||len(loaded.Rules)!=3||loaded.Rules[1].RuleSets[0]!=first.Tag||loaded.Rules[2].RuleSets[0]!=second.Tag{t.Fatal("Rule Set registration or reference lost after save/load")}
+ if err:=manager.DeleteRuleSet(first.Tag);err==nil{t.Fatal("referenced set could be deleted")}
+ if err:=manager.Start(context.Background());err!=nil{t.Fatal(err)}
+ check:=func(host,want string){
+  t.Helper()
+  var conn net.Conn;var e error
+  deadline:=time.Now().Add(8*time.Second)
+  for time.Now().Before(deadline){conn,e=net.DialTimeout("tcp",input.ListenAddress,250*time.Millisecond);if e==nil{break};time.Sleep(50*time.Millisecond)}
+  if conn==nil{t.Fatalf("inbound unavailable: %v",e)}
+  defer conn.Close();_=conn.SetDeadline(time.Now().Add(8*time.Second))
+  if _,e=conn.Write([]byte{5,1,0});e!=nil{t.Fatal(e)}
+  var greet [2]byte;if _,e=io.ReadFull(conn,greet[:]);e!=nil||greet!=[2]byte{5,0}{t.Fatalf("greeting %v %v",greet,e)}
+  target:=host+":443"
+  req:=append([]byte{5,1,0,3,byte(len(host))},[]byte(host)...);req=append(req,1,187)
+  if host=="127.0.0.1"{
+   port:=echo.Addr().(*net.TCPAddr).Port
+   req=[]byte{5,1,0,1,127,0,0,1,byte(port>>8),byte(port)}
+   target=echo.Addr().String()
+  }
+  if _,e=conn.Write(req);e!=nil{t.Fatal(e)}
+  var reply [10]byte;if _,e=io.ReadFull(conn,reply[:]);e!=nil||reply[1]!=0{t.Fatalf("CONNECT %s: %v %v",host,reply,e)}
+  payload:=[]byte("category-route-echo")
+  if _,e=conn.Write(payload);e!=nil{t.Fatal(e)}
+  got:=make([]byte,len(payload));if _,e=io.ReadFull(conn,got);e!=nil||!bytes.Equal(got,payload){t.Fatalf("echo %s: %q %v",host,got,e)}
+  if want!="direct"{
+   select{case selected:=<-seen:if selected!=want+"|"+target{t.Fatalf("route=%s want=%s",selected,want)};case <-time.After(3*time.Second):t.Fatal("no selected outbound")}
+  }
+  select{case extra:=<-seen:t.Fatalf("unexpected additional outbound %s",extra);default:}
+  t.Logf("%s -> %s (TCP echo PASS)",host,want)
+ }
+ t.Run("source_binary_overlap_and_final",func(t *testing.T){
+  check("source.category.test","csqtt")
+  check("binary-only.test","external")
+  check("overlap.category.test","csqtt")
+  check("unmatched.test","final")
+ })
+ t.Run("reordered_categories",func(t *testing.T){
+  input.Rules[1],input.Rules[2]=input.Rules[2],input.Rules[1]
+  if ok,e:=manager.ApplyConfig(input);e!=nil||!ok{t.Fatalf("apply reorder: %t %v",ok,e)}
+  check("overlap.category.test","external")
+  check("source.category.test","csqtt")
+ })
+ t.Run("disabled_categories",func(t *testing.T){
+  input.Rules[1].Enabled=false;input.Rules[2].Enabled=false
+  if ok,e:=manager.ApplyConfig(input);e!=nil||!ok{t.Fatalf("apply disabled rules: %t %v",ok,e)}
+  check("overlap.category.test","final")
+  check("source.category.test","final")
+  check("binary-only.test","final")
+  if core.Status().Address!=addr{t.Fatal("CSQTT fixture restarted after rule change")}
+ })
+ t.Run("direct_category_toggle",func(t *testing.T){
+  check("127.0.0.1","final")
+  input.Rules[0].Enabled=true
+  if ok,e:=manager.ApplyConfig(input);e!=nil||!ok{t.Fatalf("apply DIRECT category: %t %v",ok,e)}
+  check("127.0.0.1","direct")
+  check("unmatched.test","final")
+ })
+ if err:=manager.Stop();err!=nil{t.Fatal(err)}
+ input.Rules=nil;input.RuleSets=nil
+ if err:=manager.SaveConfig(input);err!=nil{t.Fatal(err)}
+ for _,tag:=range []string{first.Tag,second.Tag,directSet.Tag}{if err:=manager.DeleteRuleSet(tag);err!=nil{t.Fatal(err)}}
+ registry,err=manager.ListRuleSets();if err!=nil||len(registry)!=0{t.Fatalf("registry after deletion=%v err=%v",registry,err)}
+}
+
+// Test real HTTPS remote Rule Set download and cache recovery with a
+// disposable local TLS server. Trust is scoped to the test process.
+func TestSingBoxRemoteRuleSetActualHTTPSCache(t *testing.T) {
+ bin:=strings.TrimSpace(os.Getenv("CSQTT_SING_BOX_BINARY"))
+ if bin==""{t.Skip("requires pinned sing-box binary")}
+ dir:=t.TempDir()
+ requests:=make(chan string,16)
+ fixture:=httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  requests<-r.URL.Path
+  w.Header().Set("Content-Type","application/json")
+  _,_=io.WriteString(w,`{"version":1,"rules":[{"domain":["remote-category.test"]}]}`)
+ }))
+ t.Cleanup(fixture.Close)
+ cert:=filepath.Join(dir,"fixture-ca.pem")
+ if err:=os.WriteFile(cert,pem.EncodeToMemory(&pem.Block{Type:"CERTIFICATE",Bytes:fixture.Certificate().Raw}),0600);err!=nil{t.Fatal(err)}
+ t.Setenv("SSL_CERT_FILE",cert)
+ t.Setenv("SSL_CERT_DIR",dir)
+ manager:=NewSingBoxManager(bin,filepath.Join(dir,"config.json"),filepath.Join(dir,"singbox.log"))
+ t.Cleanup(func(){if err:=manager.Stop();err!=nil{t.Error(err)}})
+ echo,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)}
+ defer echo.Close()
+ go func(){for{c,e:=echo.Accept();if e!=nil{return};go func(c net.Conn){defer c.Close();_,_=io.Copy(c,c)}(c)}}()
+ seen:=make(chan string,8)
+ core:=NewSocks5Server(reserveSingBoxTestAddress(t))
+ core.dialTCPOverride=func(target string)(net.Conn,error){seen<-target;return net.DialTimeout("tcp",echo.Addr().String(),2*time.Second)}
+ if err:=core.Start();err!=nil{t.Fatal(err)};defer core.Stop()
+ input:=singBoxConfigInput{ListenAddress:reserveSingBoxTestAddress(t),CSQTTAddress:core.Status().Address,
+  RuleSets:[]singBoxRuleSet{{Type:"remote",Tag:"remote-category",Format:"source",URL:fixture.URL+"/category.json",UpdateInterval:"1d"}},
+  Rules:[]singBoxRouteRule{{ID:singBoxCSQTTRuleID,RuleSets:[]string{"remote-category"},Outbound:singBoxCSQTTTag,Enabled:true}}}
+ if err:=manager.SaveConfig(input);err!=nil{t.Fatal(err)}
+ loaded,err:=manager.LoadConfig();if err!=nil{t.Fatal(err)}
+ if loaded.RuleSetCachePath!=filepath.Join(dir,"sing-box-cache.db"){t.Fatal("cache path not persisted")}
+ check:=func(){
+  t.Helper()
+  var conn net.Conn;var e error
+  deadline:=time.Now().Add(10*time.Second)
+  for time.Now().Before(deadline){conn,e=net.DialTimeout("tcp",input.ListenAddress,250*time.Millisecond);if e==nil{break};time.Sleep(50*time.Millisecond)}
+  if conn==nil{logs,_:=os.ReadFile(filepath.Join(dir,"singbox.log"));t.Fatalf("inbound unavailable: %v; %s",e,logs)}
+  defer conn.Close();_=conn.SetDeadline(time.Now().Add(8*time.Second))
+  if _,e=conn.Write([]byte{5,1,0});e!=nil{t.Fatal(e)}
+  var greet [2]byte;if _,e=io.ReadFull(conn,greet[:]);e!=nil||greet!=[2]byte{5,0}{t.Fatalf("greeting %v %v",greet,e)}
+  host:="remote-category.test"
+  req:=append([]byte{5,1,0,3,byte(len(host))},[]byte(host)...);req=append(req,1,187)
+  if _,e=conn.Write(req);e!=nil{t.Fatal(e)}
+  var reply [10]byte;if _,e=io.ReadFull(conn,reply[:]);e!=nil||reply[1]!=0{t.Fatalf("CONNECT: %v %v",reply,e)}
+  payload:=[]byte("remote-category-echo")
+  if _,e=conn.Write(payload);e!=nil{t.Fatal(e)}
+  got:=make([]byte,len(payload));if _,e=io.ReadFull(conn,got);e!=nil||!bytes.Equal(got,payload){t.Fatalf("echo: %q %v",got,e)}
+  select{case selected:=<-seen:if selected!=host+":443"{t.Fatal(selected)};case <-time.After(3*time.Second):t.Fatal("category did not select CSQTT")}
+ }
+ if err:=manager.Start(context.Background());err!=nil{t.Fatal(err)}
+ check()
+ select{case path:=<-requests:if path!="/category.json"{t.Fatal(path)};case <-time.After(3*time.Second):t.Fatal("HTTPS Rule Set not downloaded")}
+ if err:=manager.Stop();err!=nil{t.Fatal(err)}
+ if info,err:=os.Stat(loaded.RuleSetCachePath);err!=nil||info.Size()==0{t.Fatalf("cache missing: %v",err)}
+ fixture.Close()
+ if err:=manager.Start(context.Background());err!=nil{t.Fatal(err)}
+ check()
+ if err:=manager.Stop();err!=nil{t.Fatal(err)}
+ t.Log("HTTPS remote Rule Set download, live domain routing and offline cached restart PASS")
 }
