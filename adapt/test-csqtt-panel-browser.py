@@ -200,6 +200,10 @@ def main():
                 else:
                     deploy_fixture["log"] = "[deploy] DeployManager запущен\n"
             body = {"deploying":deploy_fixture["phase"]=="running", "result":deploy_fixture["phase"], "hasLog":bool(deploy_fixture["log"]), "mode":deploy_fixture["mode"]}
+            if deploy_fixture["phase"]=="running":
+                body.update(progress=60.0,stage="Бинарник...")
+            if deploy_fixture.get("rollback"):
+                body["rollback"]=deploy_fixture["rollback"]
         elif path == "/deploy/log":
             body = deploy_fixture["log"]
         elif path == "/version":
@@ -1410,6 +1414,7 @@ def main():
             assert page.locator("#deployProgressTitle").inner_text()=="Установка CSQTT Core"
             assert "192.0.2.50" in page.locator("#deployProgressDescription").inner_text()
             assert page.locator("#deployProgressIndicator").get_attribute("data-active") == "true"
+            page.wait_for_function("""() => document.querySelector('#deployProgressOutcome').textContent.includes('Бинарник... · 60%')""", timeout=12000)
             page.wait_for_function("""() => document.querySelector('#deployProgressLog').textContent.includes('47002')""", timeout=12000)
             page.wait_for_function("""() => document.querySelector('#deployProgressPhase').textContent.includes('Установка завершена')""", timeout=12000)
             assert page.locator("#deployProgressIndicator").get_attribute("data-active") == "false"
@@ -1433,6 +1438,24 @@ def main():
             choose_theme(page,"light")
             page.locator("#deployProgressClose").click()
             assert page.locator("#deployProgressOverlay").is_hidden()
+            # Terminal outcomes from the upstream 2.5.3 result contract,
+            # exercised exclusively through the synthetic browser API.
+            for result, rollback, log, title, detail in (
+                ("error","restored","CSQTT_DEPLOY_ROLLED_BACK\n[deploy] завершено с ошибкой","Установка не завершена","Предыдущая установка восстановлена"),
+                ("error","failed","CSQTT_DEPLOY_ROLLBACK_FAILED\n[deploy] завершено с ошибкой","Ошибка восстановления","Требуется проверка VPS"),
+                ("uninstalled","","CSQTT_UNINSTALL_OK\n[deploy] завершено успешно","Удаление завершено","подтвердил завершение удаления"),
+            ):
+                deploy_fixture.update(phase=result,rollback=rollback,log=log)
+                page.locator("#refreshDeployStatus").click()
+                page.locator("#deployStatusOverlay").wait_for(state="visible")
+                page.wait_for_function("""() => document.querySelector('#deployStatusApi').textContent === 'Доступен'""")
+                page.locator("#deployStatusViewProgress").click()
+                page.locator("#deployProgressOverlay").wait_for(state="visible")
+                page.wait_for_function("(title) => document.querySelector('#deployProgressPhase').textContent === title",arg=title)
+                assert detail in page.locator("#deployProgressOutcome").inner_text()
+                assert page.locator("#deployProgressOutcome").get_attribute("data-kind")==("success" if result=="uninstalled" else "error")
+                page.locator("#deployProgressClose").click()
+            deploy_fixture.pop("rollback",None)
             # Experimental manager: successful SSH inventory MUST be neutral,
             # not claim install success or surface it as a failed installation.
             deploy_fixture["preflight"]=True

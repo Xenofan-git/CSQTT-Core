@@ -2260,35 +2260,87 @@ func main() {
 	_ = panelSrv.Shutdown(context.Background())
 }
 
-// deployProgressSnapshot reports only observed process state, not a speculative
-// percentage. Success requires both a verified install marker and exit code 0.
-// An exit code 0 without verification is "completed", not "success".
+// deployProgressSnapshot adapts the CSQTTR v2.5.3 DeployResultPolicy
+// (DeployOperations.kt) to the Linux controller. A completed process
+// and an exact operation-specific marker are both required. Unlike the
+// upstream UI, exit 30 alone is NOT evidence of restoration.
 func deployProgressSnapshot(busy bool, logText string) map[string]any {
 	result := "idle"
-	switch {
-	case busy:
-		result = "running"
-	case strings.Contains(logText, "[deploy] завершено с ошибкой") ||
+	markers := map[string]int{}
+	structuredError := false
+	var progress *float64
+	stage := ""
+	for _, raw := range strings.Split(logText, "\n") {
+		line := strings.TrimSpace(raw)
+		switch line {
+		case "CSQTT_DEPLOY_OK", "CSQTT_CORE_DEPLOY_OK", "CSQTT_UNINSTALL_OK", "CSQTT_CORE_UNINSTALL_OK",
+			"CSQTT_DEPLOY_ROLLED_BACK", "CSQTT_DEPLOY_ROLLBACK_FAILED", "CSQTT_INV|end":
+			markers[line]++
+		}
+		if strings.HasPrefix(line, "CSQTT_DEPLOY_ERROR|") {
+			structuredError = true
+		}
+		if strings.HasPrefix(line, "CSQTT_PROGRESS|") {
+			parts := strings.SplitN(line, "|", 3)
+			if len(parts) == 3 && len(parts[2]) > 0 && len(parts[2]) <= 360 {
+				// Parse only the decimal fraction emitted by the original installer.
+				valid := true
+				for _, ch := range parts[1] {
+					if (ch < '0' || ch > '9') && ch != '.' {
+						valid = false
+					}
+				}
+				fraction, err := strconv.ParseFloat(parts[1], 64)
+				if valid && err == nil && fraction >= 0 && fraction <= 1 {
+					percent := fraction * 100
+					progress = &percent
+					stage = strings.TrimSpace(parts[2])
+				}
+			}
+		}
+	}
+	terminalError := strings.Contains(logText, "[deploy] завершено с ошибкой") ||
 		strings.Contains(logText, "[deploy] не найден deploy-manager") ||
 		strings.Contains(logText, "[deploy] не удалось запустить") ||
 		strings.Contains(logText, "[deploy] ошибка") ||
-		strings.Contains(logText, "[deploy] не указан хост"):
+		strings.Contains(logText, "[deploy] не указан хост")
+	installs := markers["CSQTT_DEPLOY_OK"] + markers["CSQTT_CORE_DEPLOY_OK"]
+	removals := markers["CSQTT_UNINSTALL_OK"] + markers["CSQTT_CORE_UNINSTALL_OK"]
+	rollback := ""
+	// A marker without a terminal process result is not a verified rollback.
+	if !busy && terminalError {
+		if markers["CSQTT_DEPLOY_ROLLBACK_FAILED"] > 0 {
+			rollback = "failed"
+		} else if markers["CSQTT_DEPLOY_ROLLED_BACK"] == 1 && installs+removals == 0 {
+			rollback = "restored"
+		}
+	}
+	switch {
+	case busy:
+		result = "running"
+	case terminalError || structuredError || markers["CSQTT_DEPLOY_ROLLBACK_FAILED"] > 0 || markers["CSQTT_DEPLOY_ROLLED_BACK"] > 0:
 		result = "error"
 	case strings.Contains(logText, "[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась") &&
-		strings.Contains(logText, "CSQTT_INV|end") &&
-		strings.Contains(logText, "CSQTT_ISOLATION_REQUIRED"):
+		markers["CSQTT_INV|end"] == 1 && strings.Contains(logText, "CSQTT_ISOLATION_REQUIRED"):
 		result = "preflight"
 	case strings.Contains(logText, "[deploy] завершено успешно"):
 		result = "completed"
-		for _, line := range strings.Split(logText, "\n") {
-			marker := strings.TrimSpace(line)
-			if strings.HasPrefix(marker, "CSQTT_") && strings.HasSuffix(marker, "_DEPLOY_OK") {
-				result = "success"
-				break
-			}
+		if installs == 1 && removals == 0 {
+			result = "success"
+		}
+		if removals == 1 && installs == 0 {
+			result = "uninstalled"
 		}
 	case strings.TrimSpace(logText) != "":
 		result = "unknown"
 	}
-	return map[string]any{"deploying": busy, "result": result, "hasLog": strings.TrimSpace(logText) != ""}
+	snapshot := map[string]any{"deploying": busy, "result": result, "hasLog": strings.TrimSpace(logText) != ""}
+	if busy && progress != nil && stage != "" {
+		snapshot["progress"] = *progress
+		snapshot["stage"] = stage
+	}
+	if rollback != "" {
+		snapshot["rollback"] = rollback
+	}
+	return snapshot
 }
