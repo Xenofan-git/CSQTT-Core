@@ -41,3 +41,22 @@ SSH stdout/stderr are bounded to 64 KiB, SSH has a 40-second overall timeout, an
 Tests on Moscow VPS: Go Race Detector and go vet PASS; Go ARM64 test executable under qemu-aarch64 PASS (including 17 new malformed-inventory cases, two stopped-unit ownership cases, overflow, cancellation and a simulated hung SSH). A fresh **read-only** inventory was acquired by SSH directly from the dedicated Debian ARM64 guest and parsed by a separate test. Static Linux ARM64 helper built successfully at /tmp/csqtt-deploy-manager-readonly-validated-20261125-arm64 SHA256 277e98735d6cb87222c9a908a47c193a8917d6535dd5c6958c9aba681356c731. No actual install, uninstall or rollback occurred; those full-chain tests remain unverified because staging/install had been blocked earlier.
 
 Changes are restricted to adapt/deploy-manager-core/main.go and main_test.go in the isolated experimental branch. Production NanoPi, target VPS, original Android CSQTT, secrets and network routes are untouched. Keep the helper off production until full end-to-end release acceptance can be completed safely.
+
+## 2026-11-25 — Isolated ARM64 uninstall and baseline recovery
+
+Scope: dedicated Debian13 ARM64 QEMU guest csqtt-deploy-lab only, SSH localhost22239. No production-target or NanoPi changes. Previously installed Core8 v2.5.0 guest SHA256 8cd789e33428f96e183ae3da326dee907496f11536fbaf6cdab5da339262701d and ports UDP47000/TCP47002 active.
+
+Before uninstall verified root-only guest original baseline archive /var/tmp/csqtt-deploy-lab-pretest-20261125.tar.gz SHA256 1c47b7fec4c2d926d285662d07de9742f80788b77dff77a040b4513733953670. That archive lacks ExecStartPre network helper scripts; created and verified separate helper archive /var/tmp/csqtt-deploy-lab-preuninstall-helpers-20261125.tar.gz SHA256 a55a7c14029a0bd95bdf3b1665bec4f8b7c81695e3e2e6672c39479e36964eb4, containing network-up.sh and tun-recover.sh.
+
+Executed guest-only uninstall with CSQTT_CORE_ALLOW_MUTATION=isolated-lab-only in a controlled EXIT-trap restoration harness. Tool returned exit code 1 with no stdout, so the exact failing wrapper assertion is unknown and cannot be marked PASS. However, actual guest installer log dated 2026-11-25 10:53:06 UTC shows uninstall, stop of csqtt-core.service and explicit CSQTT removed / SQLite and configuration preserved. Harness subsequently restored old baseline binary, systemd unit, environment and network helpers.
+
+Independent guest readback after restoration:
+- Old server ELF SHA256 6c054d5a65205f7d23a7a6b55ce8d8d7128b0b8d3f3fe2db637d23450adae38e, exactly the original tar member.
+- Original systemd unit SHA256 c9448fd620115de377616bcdba8dba819dec220e21ddcb2839764313f0c18424, exactly the original tar member.
+- Network helpers network-up.sh SHA256 895f6d52334142290fae20cdb734c8694927123eae8266427ab3f9283b5f4c5b, tun-recover.sh SHA256 7c34b4542ac8f522ee2f575e41554cd203e19f3ebb63d12d425d8a9b2fc18c2a, both matching separate backup tar.
+- Original env SHA256 2f40b50d2f1bc7fec431b4df3bf1457ee7ec6e007cbd001d095c1698cf91fe30 matches baseline; no credential values were printed.
+- Guest csqtt-core.service active/running, boot-enabled, MainPID7046, NRestarts0, Result=success. TUN csqtt-core0 recreated, UDP47000/TCP47002 listening, default gateway remains 10.0.2.2 dev eth0. SSH preserved.
+- SQLite database mode0600, 53248 bytes, read-only PRAGMA quick_check=ok. HTTPS 47002 secret login path loaded privately from archived environment returned HTTP200 without printing the path.
+- Both guest backups remain SHA-intact. No production change or mutation.
+
+Assessment: real guest uninstall occurred; old server and essential helpers were restored and health-verified. Caution: the wrapping test exited 1, so not all its intermediate post-uninstall assertions are proven to have passed. Full automatic rollback-on-failure and API->DeployManager->SSH chain remain separate incomplete acceptance gates. No further destructive uninstall repeated just to clear this test-wrapper status.
