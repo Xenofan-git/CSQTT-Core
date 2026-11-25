@@ -1,9 +1,10 @@
 package main
 
-// Fail-closed CSQTT Core 2.5 DeployManager adapter. The old LaLune 2.1.9
+// Fail-closed CSQTT Core 2.5 DeployManager adapter. A legacy 2.1.9
 // installer must not run the CSQTT Core 2.5/2.5.3 server on production VPS.
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"debug/elf"
 	"encoding/hex"
@@ -17,6 +18,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const expectedInstallerSHA = "18b8fba447a0f6d931f4acea37612326a75aae567e499b4e52ec7d5f6bc0af68"
@@ -208,10 +210,134 @@ func run(reader io.Reader, writer io.Writer, assets string) error {
 	return ErrIsolationRequired
 }
 
-// remoteInventory passes the authenticated session's password only through
-// a child environment variable, never argv, logs, files, or a command string.
-// OpenSSH accept-new pins first-contact host keys and rejects changed keys.
+// validatedInventory parses a structured, strictly bounded read-only report.
+// A well-formed report does NOT authorize install/uninstall.
+func validatedInventory(text string) ([]string, error) {
+	if len(text) == 0 || len(text) > 65536 {
+		return nil, errors.New("пустой или чрезмерный ответ inventory")
+	}
+	seen := map[string]bool{}
+	result := []string{}
+	ended := false
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if line == "" {
+			continue
+		}
+		if len(line) > 512 || !strings.HasPrefix(line, "CSQTT_INV|") {
+			return nil, errors.New("неожиданная строка inventory")
+		}
+		for _, ch := range line {
+			if ch < 32 || ch > 126 {
+				return nil, errors.New("недопустимые символы в inventory")
+			}
+		}
+		if ended {
+			return nil, errors.New("лишние строки после CSQTT_INV end")
+		}
+		fields := strings.Split(line, "|")
+		if len(fields) < 2 {
+			return nil, errors.New("неполная строка inventory")
+		}
+		kind := fields[1]
+		if kind == "error" {
+			return nil, errors.New("удалённый сервер сообщил об ошибке inventory")
+		}
+		if kind == "end" {
+			if len(fields) != 2 {
+				return nil, errors.New("некорректный end inventory")
+			}
+			ended = true
+			result = append(result, line)
+			continue
+		}
+		attrs := map[string]string{}
+		for _, field := range fields[2:] {
+			k, v, ok := strings.Cut(field, "=")
+			if !ok || k == "" || v == "" {
+				return nil, errors.New("пустое поле inventory")
+			}
+			if _, found := attrs[k]; found {
+				return nil, errors.New("повтор поля inventory")
+			}
+			attrs[k] = v
+		}
+		key := kind
+		switch kind {
+		case "server":
+			if attrs["place"] != "core" || attrs["runtime"] != "systemd" {
+				return nil, errors.New("неожиданный тип серверной службы")
+			}
+			if attrs["state"] != "running" && attrs["state"] != "stopped" && attrs["state"] != "absent" {
+				return nil, errors.New("некорректное состояние службы")
+			}
+			if (attrs["state"] == "running" || attrs["state"] == "stopped") && attrs["owner"] != "core_candidate" {
+				return nil, errors.New("неподтверждённый владелец службы")
+			}
+			if attrs["state"] == "absent" && attrs["owner"] != "none" {
+				return nil, errors.New("неоднозначный владелец отсутствующей службы")
+			}
+		case "port":
+			proto, port := attrs["proto"], attrs["port"]
+			if !((proto == "udp" && port == "47000") || (proto == "tcp" && port == "47002")) {
+				return nil, errors.New("неожиданный протокол или порт")
+			}
+			key = kind + ":" + proto + ":" + port
+			if attrs["state"] == "free" && attrs["owner"] == "none" {
+			} else if attrs["state"] == "busy" && attrs["owner"] == "core_candidate" {
+			} else {
+				return nil, errors.New("порт занят чужим или неизвестным процессом")
+			}
+		case "interface":
+			if attrs["name"] != "csqtt-core0" || !(attrs["state"] == "present" || attrs["state"] == "absent") {
+				return nil, errors.New("неожиданный интерфейс")
+			}
+			// owner=unverified is informational; never authorizes modification.
+		case "database":
+			if attrs["name"] != "csqtt.db" || !(attrs["state"] == "present" || attrs["state"] == "absent") {
+				return nil, errors.New("неожиданная база данных")
+			}
+		default:
+			return nil, errors.New("неизвестная запись inventory")
+		}
+		if seen[key] {
+			return nil, errors.New("повтор или конфликт записей inventory")
+		}
+		seen[key] = true
+		result = append(result, line)
+	}
+	for _, key := range []string{"server", "port:udp:47000", "port:tcp:47002", "interface", "database"} {
+		if !seen[key] {
+			return nil, fmt.Errorf("неполный inventory: отсутствует %s", key)
+		}
+	}
+	if !ended {
+		return nil, errors.New("inventory не содержит завершающего маркера")
+	}
+	return result, nil
+}
+
+// boundedInventoryBuffer keeps at most 64 KiB of untrusted SSH output.
+type boundedInventoryBuffer struct {
+	bytes.Buffer
+	truncated bool
+}
+
+func (b *boundedInventoryBuffer) Write(data []byte) (int, error) {
+	if b.Len()+len(data) > 65536 {
+		b.truncated = true
+		return 0, errors.New("переполнение SSH inventory")
+	}
+	return b.Buffer.Write(data)
+}
+
+// Only bash -s inventory is ever sent. No remote files are copied or changed.
 func remoteInventory(r Request, installerPath string, writer io.Writer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	return remoteInventoryWithContext(ctx, r, installerPath, writer)
+}
+func remoteInventoryWithContext(ctx context.Context, r Request, installerPath string, writer io.Writer) error {
 	script, err := os.ReadFile(installerPath)
 	if err != nil {
 		return err
@@ -229,10 +355,13 @@ func remoteInventory(r Request, installerPath string, writer io.Writer) error {
 		args = append(args, "-o", "BatchMode=yes", "-i", r.KeyPath)
 	}
 	args = append(args, r.User+"@"+r.Host, "bash -s inventory")
-	cmd := exec.Command("ssh", args...)
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+	// A canceled SSH helper must not wait indefinitely for inherited pipe
+	// descriptors that could outlive the SSH process.
+	cmd.WaitDelay = 500 * time.Millisecond
 	cmd.Stdin = bytes.NewReader(script)
-	cmd.Stdout = writer
-	var stderr bytes.Buffer
+	var stdout, stderr boundedInventoryBuffer
+	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if r.UsePassword {
 		helper, err := os.CreateTemp("", "csqtt-askpass-*.sh")
@@ -255,9 +384,20 @@ func remoteInventory(r Request, installerPath string, writer io.Writer) error {
 		cmd.Env = append(os.Environ(), "SSH_ASKPASS="+path, "SSH_ASKPASS_REQUIRE=force", "DISPLAY=csqtt:0", "CSQTT_DEPLOY_SSH_PASSWORD="+r.Password)
 	}
 	if err = cmd.Run(); err != nil {
-		// Do not include subprocess output in any error: it can contain keys,
-		// terminal escapes or values echoed by an untrusted SSH server.
-		return fmt.Errorf("SSH-команда inventory завершилась ошибкой (%s)", cmd.ProcessState.String())
+		if ctx.Err() != nil {
+			return errors.New("SSH inventory превысила лимит ожидания 40 секунд")
+		}
+		return errors.New("ошибка SSH inventory (небезопасный вывод удалённого сервера скрыт)")
+	}
+	if stdout.truncated || stderr.truncated {
+		return errors.New("SSH inventory превысила максимальный размер")
+	}
+	report, err := validatedInventory(stdout.String())
+	if err != nil {
+		return err
+	}
+	for _, line := range report {
+		fmt.Fprintln(writer, line)
 	}
 	return nil
 }
