@@ -2643,7 +2643,74 @@ start_csqtt() {
     echo ""
 }
 
+# Read-only uninstall acceptance checks. Do not broaden the existing
+# isolated-lab mutation gate or infer ownership from a failed query.
+uninstall_precheck() {
+    local state report proto port
+    state="$(systemctl show --value -p LoadState csqtt-core.service 2>/dev/null)" || return 1
+    case "$state" in
+        loaded) csqtt_systemd_unit_is_managed || return 1 ;;
+        not-found) ;;
+        *) return 1 ;;
+    esac
+    for proto in udp tcp; do
+        case "$proto" in udp) port="$PEER_PORT" ;; tcp) port="$WEB_PORT" ;; esac
+        report="$(inventory_port "$proto" "$port")" || return 1
+        case "$report" in
+            "CSQTT_INV|port|proto=$proto|port=$port|state=free|owner=none"|"CSQTT_INV|port|proto=$proto|port=$port|state=busy|owner=core_candidate") ;;
+            *) return 1 ;;
+        esac
+    done
+}
+
+uninstall_runtime_paths_absent() {
+    local path
+    for path in "$@"; do
+        [ ! -e "$path" ] && [ ! -L "$path" ] || return 1
+    done
+}
+
+uninstall_postcheck() {
+    local state report links proto port
+    state="$(systemctl show --value -p LoadState csqtt-core.service 2>/dev/null)" || return 1
+    [ "$state" = not-found ] || return 1
+    for proto in udp tcp; do
+        case "$proto" in udp) port="$PEER_PORT" ;; tcp) port="$WEB_PORT" ;; esac
+        report="$(inventory_port "$proto" "$port")" || return 1
+        [ "$report" = "CSQTT_INV|port|proto=$proto|port=$port|state=free|owner=none" ] || return 1
+    done
+    # Query the whole link table so command failure is not interpreted as
+    # proof of absence. Match only the exact interface name.
+    links="$(ip -o link show 2>/dev/null)" || return 1
+    [ -n "$links" ] || return 1
+    local present
+    present="$(printf '%s\n' "$links" | awk -F ': ' -v name="$CSQTT_IFACE" '
+        { if (NF < 2 || $1 !~ /^[0-9]+$/ || $2 == "") invalid=1
+          split($2, parts, "@"); if (parts[1] == name) found=1 }
+        END { if (invalid) exit 2; print found ? "yes" : "no" }
+    ')" || return 1
+    [ "$present" = no ] || return 1
+    uninstall_runtime_paths_absent /usr/local/bin/csqtt-core /usr/local/bin/csqtt-core-cascade \
+        /etc/systemd/system/csqtt-core.service /run/csqtt-core /usr/local/lib/csqtt-core /var/lib/csqtt-core || return 1
+    [ ! -L "$CSQTT_CONFIG_DIR" ] || return 1
+    if [ "${1:-0}" = 1 ]; then
+        [ -f "$CSQTT_CONFIG_DIR/$CSQTT_DATABASE_FILE" ] && [ ! -L "$CSQTT_CONFIG_DIR/$CSQTT_DATABASE_FILE" ] || return 1
+    fi
+    return 0
+}
+
 do_uninstall() {
+    local had_database=0
+    if ! uninstall_precheck; then
+        printf '%s\n' 'CSQTT_DEPLOY_ERROR|preflight|Uninstall ownership could not be established' >&2
+        exit "$EXIT_PREFLIGHT_FAILED"
+    fi
+    if [ -L "$CSQTT_CONFIG_DIR" ] || [ -L "$CSQTT_CONFIG_DIR/$CSQTT_DATABASE_FILE" ]; then
+        printf '%s\n' 'CSQTT_DEPLOY_ERROR|preflight|Unsafe persistent state path' >&2
+        exit "$EXIT_PREFLIGHT_FAILED"
+    fi
+    if [ -f "$CSQTT_CONFIG_DIR/$CSQTT_DATABASE_FILE" ]; then had_database=1; fi
+    DEPLOY_PHASE="cutover"
     log_step "Удаление CSQTT..."
 
     remove_all_csqtt_docker_containers
@@ -2674,7 +2741,12 @@ do_uninstall() {
     secure_persistent_state
     rm -f "$CSQTT_SYSCTL_FILE" "$CSQTT_UDP_SYSCTL_FILE"
 
+    if ! uninstall_postcheck "$had_database"; then
+        printf '%s\n' 'CSQTT_DEPLOY_ERROR|cutover|Uninstall postconditions not verified' >&2
+        exit "$EXIT_CUTOVER_FAILED"
+    fi
     log_info "CSQTT удалён. SQLite state и конфигурация сохранены в ${CSQTT_CONFIG_DIR}"
+    printf '%s\n' 'CSQTT_UNINSTALL_OK'
 }
 
 
@@ -2693,7 +2765,7 @@ inventory_emit() {
 }
 
 inventory_port() {
-    local proto="$1" port="$2" listeners="" pids="" pid seen_core=0 seen_foreign=0 owner=""
+    local proto="$1" port="$2" listeners="" pids="" pid line seen_core=0 seen_foreign=0 owner=""
     case "$proto" in
         udp)
             if ! listeners="$(ss -H -lunp "sport = :$port" 2>/dev/null)"; then
@@ -2714,6 +2786,15 @@ inventory_port() {
         inventory_emit port "proto=$proto" "port=$port" state=free owner=none
         return 0
     fi
+    # Every socket row must identify its owner. A known PID in one row
+    # cannot establish ownership of another row with no visible PID.
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        if ! printf '%s\n' "$line" | grep -Eq 'pid=[0-9]+'; then
+            inventory_emit port "proto=$proto" "port=$port" state=busy owner=unknown
+            return 0
+        fi
+    done <<< "$listeners"
     if [ -z "$pids" ]; then
         inventory_emit port "proto=$proto" "port=$port" state=busy owner=unknown
         return 0
@@ -2864,6 +2945,7 @@ main() {
         uninstall|--uninstall|-u)
             DEPLOY_PHASE="validation"
             validate_port "CSQTT_PEER_PORT" "$PEER_PORT"
+            validate_port "CSQTT_WEB_PORT" "$WEB_PORT"
             do_uninstall
             ;;
         install|--install|-i)
