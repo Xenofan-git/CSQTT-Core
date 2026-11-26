@@ -41,6 +41,7 @@ type Request struct {
 	ManualPorts   bool
 	CorePort      int
 	WarpPort      int
+	ListenPort    int // Compatibility only; inventory uses fixed ports.
 	DockerInstall bool
 	Uninstall     bool
 }
@@ -200,11 +201,85 @@ func verifiedInstaller(folder string) ([]byte, error) {
 	return script, nil
 }
 
+// Decode exactly one bounded request; reject ambiguous keys before use.
+// The controller sends listenPort for compatibility, but inventory does
+// not use it. No credential values are included in errors.
+func decodeDeployRequest(reader io.Reader) (Request, error) {
+	var result Request
+	invalid := errors.New("некорректный или неоднозначный запрос Deploy")
+	const max = 16384
+	data, err := io.ReadAll(io.LimitReader(reader, max+1))
+	if err != nil || len(data) > max {
+		return result, invalid
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	start, err := decoder.Token()
+	if err != nil || start != json.Delim('{') {
+		return result, invalid
+	}
+	allowed := map[string]bool{"protocol": true, "host": true, "sshport": true, "user": true, "usepassword": true, "password": true, "keypath": true, "mainpassword": true, "webuser": true, "webpassword": true, "deviceid": true, "manualports": true, "coreport": true, "warpport": true, "listenport": true, "dockerinstall": true, "uninstall": true}
+	seen := map[string]bool{}
+	for decoder.More() {
+		token, err := decoder.Token()
+		key, ok := token.(string)
+		key = strings.ToLower(key)
+		if err != nil || !ok || !allowed[key] || seen[key] {
+			return result, invalid
+		}
+		seen[key] = true
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return result, invalid
+		}
+	}
+	end, err := decoder.Token()
+	if err != nil || end != json.Delim('}') {
+		return result, invalid
+	}
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return result, invalid
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return Request{}, invalid
+	}
+	return result, nil
+}
+
+// Canonicalize validated records to the same field order the panel
+// expects, without accepting unknown or missing fields.
+func canonicalInventoryRecord(kind string, attrs map[string]string) (string, error) {
+	order := map[string][]string{
+		"server":    {"place", "runtime", "state", "owner"},
+		"port":      {"proto", "port", "state", "owner"},
+		"interface": {"name", "state", "owner"},
+		"database":  {"state", "name"},
+	}[kind]
+	invalid := errors.New("неподдерживаемые поля inventory")
+	if len(order) == 0 || len(attrs) != len(order) {
+		return "", invalid
+	}
+	if kind == "interface" && attrs["owner"] != "unverified" {
+		return "", invalid
+	}
+	fields := []string{"CSQTT_INV", kind}
+	for _, key := range order {
+		value, ok := attrs[key]
+		if !ok || value == "" {
+			return "", invalid
+		}
+		fields = append(fields, key+"="+value)
+	}
+	return strings.Join(fields, "|"), nil
+}
+
 func run(reader io.Reader, writer io.Writer, assets string) error {
-	decoder := json.NewDecoder(io.LimitReader(reader, 16384))
-	var r Request
-	if err := decoder.Decode(&r); err != nil {
-		return fmt.Errorf("некорректный запрос Deploy: %w", err)
+	r, err := decodeDeployRequest(reader)
+	if err != nil {
+		return err
+	}
+	if r.Uninstall {
+		return errors.New("удаление недоступно в режиме только чтение")
 	}
 	if err := validate(r); err != nil {
 		return err
@@ -318,8 +393,12 @@ func validatedInventory(text string) ([]string, error) {
 		if seen[key] {
 			return nil, errors.New("повтор или конфликт записей inventory")
 		}
+		canonical, err := canonicalInventoryRecord(kind, attrs)
+		if err != nil {
+			return nil, err
+		}
 		seen[key] = true
-		result = append(result, line)
+		result = append(result, canonical)
 	}
 	for _, key := range []string{"server", "port:udp:47000", "port:tcp:47002", "interface", "database"} {
 		if !seen[key] {
