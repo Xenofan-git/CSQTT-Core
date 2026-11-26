@@ -491,6 +491,12 @@ func runRemoteStage(ctx context.Context, reader io.Reader, writer io.Writer, ass
 		return err
 	}
 	defer t.close()
+	archCtx, archCancel := context.WithTimeout(ctx, 10*time.Second)
+	err = t.requireRemoteARM64(archCtx)
+	archCancel()
+	if err != nil {
+		return err
+	}
 	preflight, cancel := context.WithTimeout(ctx, 40*time.Second)
 	err = t.inventory(preflight, installer, writer)
 	cancel()

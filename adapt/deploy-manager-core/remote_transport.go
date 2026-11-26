@@ -75,6 +75,19 @@ func (t *remoteTransport) command(ctx context.Context, subsystem bool, command s
 	return cmd
 }
 
+// CSQTTR 2.5.3 performDeploy checks uname -m before asset selection.
+// The Core distribution has only a pinned ARM64 server asset. This check
+// is read-only and uses the existing authenticated transport.
+func (t *remoteTransport) requireRemoteARM64(ctx context.Context) error {
+	cmd := t.command(ctx, false, "uname -m")
+	var stdout, stderr boundedInventoryBuffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil || stdout.truncated || stderr.truncated {
+		return errors.New("не удалось проверить архитектуру VPS по SSH")
+	}
+	return requireARM64Machine(stdout.String())
+}
+
 // Inventory uses the same strict endpoint/authentication settings as staging.
 func (t *remoteTransport) inventory(ctx context.Context, script []byte, writer io.Writer) error {
 	cmd := t.command(ctx, false, "bash -s inventory")

@@ -358,3 +358,35 @@ SSH/SFTP-проверки.
 - Подтверждённая приёмка прежде изменения production pins/пакетов.
 - Каждое следующее действие и его результат добавлять в этот файл и обе пары
   журналов по разделу8; доступность одного узла не подразумевает запись на другом.
+
+### 10.8. CSQTT_CORE_UPSTREAM_DEPLOY_PREPARE_20261126
+
+- Владелец: повторять модель и код оригинального CSQTTR 2.5.3 настолько,
+  насколько позволяют Linux ARM64 и существующие ограничения изоляции.
+  Начальный HEAD d1bed6392be154e4b41d87f5c884c5d23e68c92d; локальная
+  и удалённая ветка test/csqtt-deploy-authenticated-sftp-20261126 совпали.
+- Прочитаны оригинальные DeployOperations.kt: performDeploy,
+  performUninstall, serverArchitectureForMachine, systemdEnvironmentValue,
+  а также наш transport, update_config и pinned installer. Один read-only
+  запрос завершился ошибкой кавычки shell; исправленный запрос прошёл.
+- Оригинал проверяет uname -m перед выбором серверного ELF. Добавлен
+  requireRemoteARM64: read-only проверка по текущему OpenSSH-транспорту
+  с лимитом 10 секунд перед inventory и передачей в stage-only.
+  Принимаются только aarch64/arm64; AMD64 и ARMv7 отклоняются, поскольку
+  в нашей сборке закреплён только ARM64 ELF. Не подменять pinned assets.
+- Новый upstream_prepare.go переносит systemdEnvironmentValue оригинала
+  и локальную подготовку WEB env / main_password JSON по режиму:
+  Install создаёт настройки; Update сохраняет проверенный existing env,
+  overrides и DB (текущий pinned installer требует эти файлы, в отличие
+  от оригинала); Uninstall не формирует секреты. Reinstall не принят.
+  Это локальная логика, пока не подключённая к удалённому lifecycle.
+- Тесты upstream_prepare_test.go: четыре новые группы PASS на Moscow
+  Go1.27.3 race и ARM64 QEMU; go vet PASS. SSH architecture test использует
+  synthetic executable, не сетевой SSH. Реальная передача/установка не
+  запускалась. Старые тесты не повторялись. Offline runner требует новые
+  группы; bash -n PASS, git diff --check PASS.
+- Изменены main.go, remote_transport.go, upstream_prepare.go и его тест,
+  offline runner и AGENTS.md. Без изменения production pins, установщика,
+  controller/UI, сети и служб. Следующее: проверить соответствие остальных
+  операций оригиналу и отдельно принять удалённый lifecycle в разрешённой
+  среде. Не выдавать подготовку конфигурации за установку.

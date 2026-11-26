@@ -43,6 +43,8 @@ top = {e["Test"]: e["Action"] for e in events
        and e["Action"] in ("pass", "fail", "skip")}
 assert expected_skips == {n for n, result in top.items() if result == "skip"}, top
 required = {"TestRemoteSFTPBoundedProtocol", "TestRemoteStageRejectsBeforeConnection",
+            "Test253UpstreamMachineSelection", "Test253UpstreamRemoteArchitecture",
+            "Test253UpstreamEnvironmentEncoding", "Test253UpstreamDeployConfig",
             "Test253LifecycleOrderAndResult", "Test253LifecycleCancellation",
             "TestDecodeDeployRequestStrict", "TestCanonicalInventoryRecord",
             "TestInventoryOnlyRejectsUninstallBeforeAssets",
