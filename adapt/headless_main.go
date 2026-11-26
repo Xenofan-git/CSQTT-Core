@@ -2268,10 +2268,23 @@ func deployProgressSnapshot(busy bool, logText string) map[string]any {
 	result := "idle"
 	markers := map[string]int{}
 	structuredError := false
+	const preflightDone = "[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась"
+	const completed = "[deploy] завершено успешно"
+	var preflightReports, isolationReports, completedReports int
+	var inventory map[string]string
 	var progress *float64
 	stage := ""
 	for _, raw := range strings.Split(logText, "\n") {
 		line := strings.TrimSpace(raw)
+		if line == preflightDone {
+			preflightReports++
+		}
+		if line == "CSQTT_ISOLATION_REQUIRED" || strings.HasPrefix(line, "[deploy] CSQTT_ISOLATION_REQUIRED:") {
+			isolationReports++
+		}
+		if line == completed {
+			completedReports++
+		}
 		switch line {
 		case "CSQTT_DEPLOY_OK", "CSQTT_CORE_DEPLOY_OK", "CSQTT_UNINSTALL_OK", "CSQTT_CORE_UNINSTALL_OK",
 			"CSQTT_DEPLOY_ROLLED_BACK", "CSQTT_DEPLOY_ROLLBACK_FAILED", "CSQTT_INV|end":
@@ -2320,9 +2333,18 @@ func deployProgressSnapshot(busy bool, logText string) map[string]any {
 		result = "running"
 	case terminalError || structuredError || markers["CSQTT_DEPLOY_ROLLBACK_FAILED"] > 0 || markers["CSQTT_DEPLOY_ROLLED_BACK"] > 0:
 		result = "error"
-	case strings.Contains(logText, "[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась") &&
-		markers["CSQTT_INV|end"] == 1 && strings.Contains(logText, "CSQTT_ISOLATION_REQUIRED"):
-		result = "preflight"
+	case preflightReports > 0 || isolationReports > 0 || markers["CSQTT_INV|end"] > 0:
+		// Check-first: a terminal status and its full inventory are one
+		// observation. Missing or contradictory evidence remains unknown.
+		result = "unknown"
+		if preflightReports == 1 && isolationReports == 1 &&
+			markers["CSQTT_INV|end"] == 1 && installs+removals+completedReports == 0 &&
+			!strings.Contains(logText, completed) {
+			inventory = deployInventorySummary(logText)
+			if inventory != nil {
+				result = "preflight"
+			}
+		}
 	case strings.Contains(logText, "[deploy] завершено успешно"):
 		result = "completed"
 		if installs == 1 && removals == 0 {
@@ -2343,9 +2365,7 @@ func deployProgressSnapshot(busy bool, logText string) map[string]any {
 		snapshot["rollback"] = rollback
 	}
 	if result == "preflight" {
-		if summary := deployInventorySummary(logText); summary != nil {
-			snapshot["inventory"] = summary
-		}
+		snapshot["inventory"] = inventory
 	}
 	return snapshot
 }

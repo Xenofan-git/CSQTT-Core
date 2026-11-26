@@ -22,7 +22,7 @@ func TestDeployProgressSnapshotReportsObservedCompletion(t *testing.T) {
 		{false, "CSQTT_DEPLOY_ERROR|cutover|test failure\n[deploy] завершено с ошибкой: exit status 30", "error"},
 		{false, "CSQTT_DEPLOY_OK\n[deploy] завершено с ошибкой: exit status 30", "error"},
 		{false, "CSQTT_ISOLATION_REQUIRED\n[deploy] завершено с ошибкой: exit status 73", "error"},
-		{false, "CSQTT_INV|end\nCSQTT_ISOLATION_REQUIRED\n[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась", "preflight"},
+		{false, "CSQTT_INV|end\nCSQTT_ISOLATION_REQUIRED\n[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась", "unknown"},
 		{false, "CSQTT_ISOLATION_REQUIRED\n[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась", "unknown"},
 		{false, "CSQTT_INV|end\n[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась", "unknown"},
 		{false, "CSQTT_INV|end\nCSQTT_ISOLATION_REQUIRED\n[deploy] завершено с ошибкой: exit status 73", "error"},
@@ -93,13 +93,24 @@ func TestDeploy253InventorySummaryRequiresCompleteReport(t *testing.T) {
 	base := strings.Join(rows, "\n")
 	done := "\nCSQTT_ISOLATION_REQUIRED\n[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась"
 	got := deployProgressSnapshot(false, base+done)
+	if got["result"] != "preflight" {
+		t.Fatalf("complete report not accepted: %v", got)
+	}
+	actualDone := strings.Replace(done, "CSQTT_ISOLATION_REQUIRED", "[deploy] CSQTT_ISOLATION_REQUIRED: production-режим установщика не прошёл приёмку; изменять VPS запрещено", 1)
+	if x := deployProgressSnapshot(false, base+actualDone); x["result"] != "preflight" {
+		t.Fatalf("actual helper terminal format not accepted: %v", x)
+	}
 	inv, ok := got["inventory"].(map[string]string)
 	if !ok || inv["server"] != "running" || inv["interface"] != "present" || inv["database"] != "present" || inv["udp"] != "core_candidate" || inv["tcp"] != "free" || len(inv) != 5 {
 		t.Fatalf("unexpected inventory %v", got)
 	}
 	for _, row := range rows {
-		if x := deployInventorySummary(strings.Replace(base, row, "", 1)); x != nil {
+		raw := strings.Replace(base, row, "", 1)
+		if x := deployInventorySummary(raw); x != nil {
 			t.Errorf("incomplete inventory accepted: %q", row)
+		}
+		if x := deployProgressSnapshot(false, raw+done); x["result"] != "unknown" {
+			t.Errorf("incomplete inventory promoted to completed check: %v", x)
 		}
 	}
 	for _, raw := range []string{
@@ -114,6 +125,21 @@ func TestDeploy253InventorySummaryRequiresCompleteReport(t *testing.T) {
 	} {
 		if x := deployInventorySummary(raw); x != nil {
 			t.Errorf("invalid inventory accepted %q", raw)
+		}
+		if x := deployProgressSnapshot(false, raw+done); x["result"] != "unknown" {
+			t.Errorf("invalid inventory promoted to completed check: %v", x)
+		}
+	}
+	for _, raw := range []string{
+		base + done + "\nCSQTT_DEPLOY_OK",
+		base + done + "\nCSQTT_UNINSTALL_OK",
+		base + done + "\n[deploy] завершено успешно",
+		base + done + "\n" + done,
+		strings.Replace(base+done, "CSQTT_ISOLATION_REQUIRED", "prefix CSQTT_ISOLATION_REQUIRED suffix", 1),
+		strings.Replace(base+done, "[deploy] предварительная проверка завершена; установка на VPS НЕ запускалась", "prefix [deploy] предварительная проверка завершена; установка на VPS НЕ запускалась suffix", 1),
+	} {
+		if x := deployProgressSnapshot(false, raw); x["result"] != "unknown" {
+			t.Errorf("conflicting terminal evidence promoted to completed check: %v", x)
 		}
 	}
 	for _, x := range []map[string]any{

@@ -424,3 +424,34 @@ SSH/SFTP-проверки.
   Подтверждена адаптация read-only результата, а не полного execResult
   с real-time progress/remote mutation. Реальный install/update/uninstall
   и независимая lifecycle-приёмка остаются незавершёнными.
+
+### 10.10. CSQTT_CORE_UPSTREAM_CHECK_FIRST_COMPLETE_20261126
+
+- Запрос владельца: продолжать адаптацию CSQTTR 2.5.3. Проверены
+  local/remote HEAD 4d0a49681499892dc6cab82188cfd7ff8682b092,
+  upstream 84a2ce84dd4ac0716ceabd1b9a9ae455e6e86806.
+  Изучены ServerCheck.kt, performServerCheck, controller, UI, тесты.
+- Выявлено расхождение: deployProgressSnapshot мог выставлять preflight
+  при одном end и текстовом признаке завершения, даже если
+  deployInventorySummary отклонял неполный или противоречивый отчёт.
+  Новые regression assertions сначала FAIL на неизменённом controller.
+- В adapt/headless_main.go статус preflight требует одновременно полного
+  валидного inventory, единственного end, точного terminal notice и
+  единственного isolation marker, без конфликтующих install/uninstall/
+  success markers. Неоднозначные данные дают unknown, а ошибки — error.
+  Inventory выдаётся только вместе с подтверждённым preflight.
+  Production helper pin, installer, controller deployment permissions
+  и UI не изменялись.
+- В adapt/deploy_progress_linux_test.go добавлены проверки пропуска каждого
+  обязательного поля, дублей, неизвестных записей, конфликтующих markers,
+  подстрок вместо точных сообщений и формата действующего helper.
+- Targeted controller tests 3/3 AMD64 и 3/3 ARM64 QEMU PASS, go vet PASS.
+  Actual pinned ARM64 process contract 2.13s PASS на отдельном scratch
+  controller, неизменённый helper SHA277e98735d6cb87222c9a908a47c193a8917d6535dd5c6958c9aba681356c731,
+  synthetic SSH and credentials; никакого сетевого Deploy.
+  Логи /tmp/csqtt-check-first-20261126-{red,green,arm64,process}.log.
+  Полный CI, прочие тесты и сетевые SSH/SFTP проверки не повторялись.
+- Это устранение дефекта реального API предварительной проверки по модели
+  upstream, не реализация запуска установщика. Install/update/uninstall
+  через удалённый transport и приёмка всё ещё отсутствуют. Рабочие
+  службы, устройства и production configuration не изменялись.
