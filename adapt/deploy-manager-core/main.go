@@ -416,16 +416,20 @@ func validatedInventory(text string) ([]string, error) {
 
 // boundedInventoryBuffer keeps at most 64 KiB of untrusted SSH output.
 type boundedInventoryBuffer struct {
-	bytes.Buffer
+	buffer    bytes.Buffer
 	truncated bool
 }
 
+// Do not embed bytes.Buffer: its promoted ReadFrom would allow io.Copy
+// (including os/exec's stream copy) to bypass the bounded Write method.
+func (b *boundedInventoryBuffer) Len() int       { return b.buffer.Len() }
+func (b *boundedInventoryBuffer) String() string { return b.buffer.String() }
 func (b *boundedInventoryBuffer) Write(data []byte) (int, error) {
-	if b.Len()+len(data) > 65536 {
+	if len(data) > 65536-b.Len() {
 		b.truncated = true
 		return 0, errors.New("переполнение SSH inventory")
 	}
-	return b.Buffer.Write(data)
+	return b.buffer.Write(data)
 }
 
 // Only bash -s inventory is ever sent. No remote files are copied or changed.

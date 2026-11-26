@@ -111,14 +111,14 @@ func simulateDeployLifecycle(ctx context.Context, a lifecycleAction, s lifecycle
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
-	// Upstream uninstall requires no installation payload. Update
-	// stages only the candidate, never overrides existing config.
-	if a != lifecycleRemove {
-		if err := s.stage(ctx, a); err != nil {
-			return out, errors.New("staging failed")
-		}
-		out.stages = append(out.stages, lifecycleStaged)
+	// Original performUninstall also uploads the installer script.
+	// In this simulation all modes have a staging step; uninstall
+	// has no server binary or new credentials. No actual upload or
+	// installer execution is implemented by this contract.
+	if err := s.stage(ctx, a); err != nil {
+		return out, errors.New("staging failed")
 	}
+	out.stages = append(out.stages, lifecycleStaged)
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}

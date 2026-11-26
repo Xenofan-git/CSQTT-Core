@@ -390,3 +390,37 @@ SSH/SFTP-проверки.
   controller/UI, сети и служб. Следующее: проверить соответствие остальных
   операций оригиналу и отдельно принять удалённый lifecycle в разрешённой
   среде. Не выдавать подготовку конфигурации за установку.
+
+### 10.9. CSQTT_CORE_UPSTREAM_EXEC_RESULT_20261126
+
+- Запрос владельца: продолжить адаптацию оригинального CSQTTR 2.5.3.
+  Проверены clean local/remote HEAD cbb271926813d63a1ce9784280b19c2dec10166a,
+  upstream 84a2ce84dd4ac0716ceabd1b9a9ae455e6e86806 и текущие исходники.
+  Сопоставлены DeploySSHClient.execResult, критерии exit/markers и
+  последовательность performUninstall.
+- Новый upstream_exec_result.go адаптирует границу результата SSH для
+  существующих read-only операций uname -m и bash -s inventory.
+  Раздельные stdout/stderr, подтверждённый код завершения, неизвестный
+  результат при SSH exit255, сигнале, таймауте или превышении лимита.
+  Не принимает произвольную команду и не запускает установщик.
+  requireRemoteARM64 и inventory используют этот общий механизм.
+- Исправлена тестовая модель performUninstall: перед execute необходим
+  этап передачи скрипта, как в оригинале, без бинарника и новых паролей.
+  Добавлен сценарий отказа передачи скрипта удаления. Модель всё ещё
+  in-memory, реальное удаление не подключено.
+- Первичная компиляция обнаружила лишний import bytes, удалён.
+  Новый overflow-тест затем выявил настоящий дефект: embedded bytes.Buffer
+  продвигал ReadFrom, из-за чего os/exec io.Copy мог обходить bounded Write.
+  Буфер сделан закрытым полем с явными Len/String/Write; превышение 64 KiB
+  на каждый поток теперь отклоняется. Новые тесты покрывают exit0/20/255,
+  overflow, timeout, запрет неизвестного действия, отмену и недопустимость
+  использования stderr как доказательства inventory.
+- После исправления 8 затронутых групп Go race PASS на Moscow и 8 групп
+  ARM64 QEMU PASS; go vet, bash -n runner и git diff --check PASS.
+  Логи /tmp/csqtt-upstream-exec-20261126-{race,arm64}.log.
+  Новые группы включены в required offline CI. Остальные тесты и сетевые
+  испытания не повторялись. Полный CI не запускался.
+- Production pins, installer, UI, сеть и рабочие службы не менялись.
+  Подтверждена адаптация read-only результата, а не полного execResult
+  с real-time progress/remote mutation. Реальный install/update/uninstall
+  и независимая lifecycle-приёмка остаются незавершёнными.

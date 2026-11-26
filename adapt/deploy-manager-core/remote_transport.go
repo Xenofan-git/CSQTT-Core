@@ -3,7 +3,6 @@ package main
 // OpenSSH owns authentication and host-key verification. This small SFTP v3
 // client uses its subsystem channel, with bounded packets and no shell fallback.
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/binary"
@@ -76,31 +75,22 @@ func (t *remoteTransport) command(ctx context.Context, subsystem bool, command s
 }
 
 // CSQTTR 2.5.3 performDeploy checks uname -m before asset selection.
-// The Core distribution has only a pinned ARM64 server asset. This check
-// is read-only and uses the existing authenticated transport.
+// The Core distribution has only a pinned ARM64 server asset.
 func (t *remoteTransport) requireRemoteARM64(ctx context.Context) error {
-	cmd := t.command(ctx, false, "uname -m")
-	var stdout, stderr boundedInventoryBuffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil || stdout.truncated || stderr.truncated {
+	result, err := t.execReadOnlyResult(ctx, readOnlyMachine, nil)
+	if err != nil || result.exitStatus != 0 {
 		return errors.New("не удалось проверить архитектуру VPS по SSH")
 	}
-	return requireARM64Machine(stdout.String())
+	return requireARM64Machine(result.stdout)
 }
 
 // Inventory uses the same strict endpoint/authentication settings as staging.
 func (t *remoteTransport) inventory(ctx context.Context, script []byte, writer io.Writer) error {
-	cmd := t.command(ctx, false, "bash -s inventory")
-	cmd.Stdin = bytes.NewReader(script)
-	var stdout, stderr boundedInventoryBuffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
+	result, err := t.execReadOnlyResult(ctx, readOnlyInventory, script)
+	if err != nil || result.exitStatus != 0 {
 		return errors.New("SSH inventory failed (remote output hidden)")
 	}
-	if stdout.truncated || stderr.truncated {
-		return errors.New("SSH inventory too large")
-	}
-	records, err := validatedInventory(stdout.String())
+	records, err := validatedInventory(result.stdout)
 	if err != nil {
 		return err
 	}

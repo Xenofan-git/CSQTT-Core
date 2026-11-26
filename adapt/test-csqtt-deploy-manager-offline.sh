@@ -45,6 +45,7 @@ assert expected_skips == {n for n, result in top.items() if result == "skip"}, t
 required = {"TestRemoteSFTPBoundedProtocol", "TestRemoteStageRejectsBeforeConnection",
             "Test253UpstreamMachineSelection", "Test253UpstreamRemoteArchitecture",
             "Test253UpstreamEnvironmentEncoding", "Test253UpstreamDeployConfig",
+            "Test253ReadOnlyExecResult", "Test253ReadOnlyExecInventoryStreams",
             "Test253LifecycleOrderAndResult", "Test253LifecycleCancellation",
             "TestDecodeDeployRequestStrict", "TestCanonicalInventoryRecord",
             "TestInventoryOnlyRejectsUninstallBeforeAssets",
