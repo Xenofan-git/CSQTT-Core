@@ -10,7 +10,7 @@ if command -v sftp >/dev/null && test -x /usr/lib/openssh/sftp-server; then
 else
     export CSQTT_LOCAL_SFTP_EXPECTED=0
 fi
-unset CSQTT_DEPLOY_FIXTURE_ASSETS CSQTT_DEPLOY_VM_INVENTORY_FILE CSQTT_DEPLOY_PROCESS_FIXTURE CSQTT_DEPLOY_CANONICAL_FIXTURE CSQTT_LOCAL_AUTH_SFTP_FIXTURE
+unset CSQTT_DEPLOY_FIXTURE_ASSETS CSQTT_DEPLOY_VM_INVENTORY_FILE CSQTT_DEPLOY_PROCESS_FIXTURE CSQTT_DEPLOY_CANONICAL_FIXTURE CSQTT_LOCAL_AUTH_SFTP_FIXTURE CSQTT_REMOTE_TRANSPORT_HOST CSQTT_REMOTE_TRANSPORT_KEY
 # Catch any unintended SSH invocation outside a test's own synthetic executable.
 cat > "$scratch/ssh" <<'EOF'
 #!/bin/sh
@@ -33,6 +33,8 @@ expected_skips = {
     "TestRecordedARM64GuestInventory",
     "Test253PinnedAssetSnapshot",
     "Test253AuthenticatedSFTPFixture",
+    "TestRemoteTransportRealEndpoint",
+    "TestRemoteTransportLostSessionCleanup",
 }
 if os.environ["CSQTT_LOCAL_SFTP_EXPECTED"] == "0":
     expected_skips.add("Test253LocalSFTPStaging")
@@ -40,7 +42,8 @@ top = {e["Test"]: e["Action"] for e in events
        if e.get("Test") and "/" not in e["Test"]
        and e["Action"] in ("pass", "fail", "skip")}
 assert expected_skips == {n for n, result in top.items() if result == "skip"}, top
-required = {"Test253LifecycleOrderAndResult", "Test253LifecycleCancellation",
+required = {"TestRemoteSFTPBoundedProtocol", "TestRemoteStageRejectsBeforeConnection",
+            "Test253LifecycleOrderAndResult", "Test253LifecycleCancellation",
             "TestDecodeDeployRequestStrict", "TestCanonicalInventoryRecord",
             "TestInventoryOnlyRejectsUninstallBeforeAssets",
             "Test253PreservedUpdateConfig", "Test253UpdateEnvironmentSubset",

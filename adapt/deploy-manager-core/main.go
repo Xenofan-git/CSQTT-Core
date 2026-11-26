@@ -13,9 +13,7 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -175,30 +173,35 @@ func readVerifiedAsset(path string, size int64, digest string) ([]byte, error) {
 }
 
 func verifiedInstaller(folder string) ([]byte, error) {
+	script, _, err := verifiedAssets(folder)
+	return script, err
+}
+
+func verifiedAssets(folder string) ([]byte, []byte, error) {
 	st, err := os.Lstat(folder)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("server-assets не является обычным каталогом")
+		return nil, nil, errors.New("server-assets не является обычным каталогом")
 	}
 	script, err := readVerifiedAsset(filepath.Join(folder, "deploy-csqtt-core-250.sh"), expectedInstallerSize, expectedInstallerSHA)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	server, err := readVerifiedAsset(filepath.Join(folder, "csqtt-core8-linux-arm64"), expectedServerSize, expectedServerSHA)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	f, err := elf.NewFile(bytes.NewReader(server))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer f.Close()
 	if f.Class != elf.ELFCLASS64 || f.Machine != elf.EM_AARCH64 || f.Data != elf.ELFDATA2LSB {
-		return nil, errors.New("серверный бинарник не соответствует Linux ARM64")
+		return nil, nil, errors.New("серверный бинарник не соответствует Linux ARM64")
 	}
-	return script, nil
+	return script, server, nil
 }
 
 // Decode exactly one bounded request; reject ambiguous keys before use.
@@ -432,72 +435,32 @@ func remoteInventory(r Request, script []byte, writer io.Writer) error {
 	return remoteInventoryWithContext(ctx, r, script, writer)
 }
 func remoteInventoryWithContext(ctx context.Context, r Request, script []byte, writer io.Writer) error {
-	port := r.SSHPort
-	if port == 0 {
-		port = 22
-	}
-	args := []string{"-T", "-o", "ConnectTimeout=12", "-o", "ConnectionAttempts=1",
-		"-o", "StrictHostKeyChecking=accept-new", "-o", "NumberOfPasswordPrompts=1",
-		"-p", strconv.Itoa(port)}
-	if r.UsePassword {
-		args = append(args, "-o", "PreferredAuthentications=password,keyboard-interactive", "-o", "PubkeyAuthentication=no")
-	} else {
-		args = append(args, "-o", "BatchMode=yes", "-i", r.KeyPath)
-	}
-	args = append(args, r.User+"@"+r.Host, "bash -s inventory")
-	cmd := exec.CommandContext(ctx, "ssh", args...)
-	// A canceled SSH helper must not wait indefinitely for inherited pipe
-	// descriptors that could outlive the SSH process.
-	cmd.WaitDelay = 500 * time.Millisecond
-	cmd.Stdin = bytes.NewReader(script)
-	var stdout, stderr boundedInventoryBuffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if r.UsePassword {
-		helper, err := os.CreateTemp("", "csqtt-askpass-*.sh")
-		if err != nil {
-			return err
-		}
-		path := helper.Name()
-		defer os.Remove(path)
-		if err = helper.Chmod(0700); err != nil {
-			helper.Close()
-			return err
-		}
-		if _, err = helper.WriteString("#!/bin/sh\nprintf '%s' \"$CSQTT_DEPLOY_SSH_PASSWORD\"\n"); err != nil {
-			helper.Close()
-			return err
-		}
-		if err = helper.Close(); err != nil {
-			return err
-		}
-		cmd.Env = append(os.Environ(), "SSH_ASKPASS="+path, "SSH_ASKPASS_REQUIRE=force", "DISPLAY=csqtt:0", "CSQTT_DEPLOY_SSH_PASSWORD="+r.Password)
-	}
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return errors.New("SSH inventory превысила лимит ожидания 40 секунд")
-		}
-		return errors.New("ошибка SSH inventory (небезопасный вывод удалённого сервера скрыт)")
-	}
-	if stdout.truncated || stderr.truncated {
-		return errors.New("SSH inventory превысила максимальный размер")
-	}
-	report, err := validatedInventory(stdout.String())
+	t, err := newRemoteTransport(r)
 	if err != nil {
 		return err
 	}
-	for _, line := range report {
-		fmt.Fprintln(writer, line)
-	}
-	return nil
+	defer t.close()
+	return t.inventory(ctx, script, writer)
 }
 
 func main() {
-	if len(os.Args) != 3 || os.Args[1] != "--assets" {
-		fmt.Fprintln(os.Stderr, "[deploy] использование: deploy-manager --assets /path/to/server-assets (JSON через stdin)")
+	args := os.Args[1:]
+	stageOnly := len(args) > 0 && args[0] == "--stage-only"
+	if stageOnly {
+		args = args[1:]
+	}
+	if len(args) != 2 || args[0] != "--assets" {
+		fmt.Fprintln(os.Stderr, "[deploy] использование: deploy-manager [--stage-only] --assets /path/to/server-assets (JSON через stdin)")
 		os.Exit(2)
 	}
-	err := run(os.Stdin, os.Stdout, os.Args[2])
+	var err error
+	if stageOnly {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		err = runRemoteStage(ctx, os.Stdin, os.Stdout, args[1])
+	} else {
+		err = run(os.Stdin, os.Stdout, args[1])
+	}
 	if err != nil {
 		if errors.Is(err, ErrIsolationRequired) {
 			fmt.Fprintln(os.Stderr, "[deploy] CSQTT_ISOLATION_REQUIRED: production-режим установщика не прошёл приёмку; изменять VPS запрещено")
@@ -506,4 +469,44 @@ func main() {
 		fmt.Fprintln(os.Stderr, "[deploy] ошибка:", err)
 		os.Exit(2)
 	}
+}
+
+func runRemoteStage(ctx context.Context, reader io.Reader, writer io.Writer, assets string) error {
+	r, err := decodeDeployRequest(reader)
+	if err != nil {
+		return err
+	}
+	if r.Uninstall {
+		return errors.New("передача пакета не выполняет удаление")
+	}
+	if err = validate(r); err != nil {
+		return err
+	}
+	installer, server, err := verifiedAssets(assets)
+	if err != nil {
+		return errors.New("серверный пакет не прошёл проверку SHA-256/ARM64")
+	}
+	t, err := newRemoteTransport(r)
+	if err != nil {
+		return err
+	}
+	defer t.close()
+	preflight, cancel := context.WithTimeout(ctx, 40*time.Second)
+	err = t.inventory(preflight, installer, writer)
+	cancel()
+	if err != nil {
+		return err
+	}
+	if _, err = fmt.Fprintln(writer, "[deploy] Передаём проверенный пакет по SFTP; установка не запускается"); err != nil {
+		return err
+	}
+	if err = stageRemoteAssets(ctx, t, installer, server); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(writer, "CSQTT_STAGE_VERIFIED_AND_CLEANED")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(writer, "[deploy] SHA-256 обоих удалённых файлов подтверждён; временный каталог удалён. Установка не выполнялась")
+	return err
 }

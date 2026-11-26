@@ -10,9 +10,9 @@ import (
 )
 
 // A transport-neutral contract for a single staged fixture. The interface
-// has no server addresses, commands or credentials. Only the test suite
-// implements it, using a local SFTP subprocess. The runtime entry point
-// remains inventory-only.
+// has no server addresses, commands or credentials. It is implemented by
+// the remote OpenSSH/SFTP adapter and by isolated test fixtures. The manager
+// exposes remote staging via --stage-only without running an installer.
 const stagingCleanupTimeout = 5 * time.Second
 
 type stagingPeer interface {
