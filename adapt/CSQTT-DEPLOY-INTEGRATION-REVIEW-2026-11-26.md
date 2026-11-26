@@ -67,3 +67,37 @@ and independent lifecycle postcheck still need integration.
 совпадает с опубликованным; повторная проверка исходников из-за документации
 не требуется. Коммит содержит [skip ci], чтобы не повторять пройденные
 локальные SSH/SFTP-проверки вопреки указанию пользователя.
+
+## 2026-11-26 — Уточнение источника модели и кода по указанию владельца
+
+Пользователь подтвердил: модель и код берём из оригинального CSQTTR 2.5.3.
+GitHub tag v2.5.3 повторно проверен и указывает на
+84a2ce84dd4ac0716ceabd1b9a9ae455e6e86806.
+
+Проверены первоисточники:
+- https://github.com/Afteroid/csqttr/blob/84a2ce84dd4ac0716ceabd1b9a9ae455e6e86806/app/src/main/java/com/csqtt/client/ui/legacy/DeployOperations.kt
+- https://github.com/Afteroid/csqttr/blob/84a2ce84dd4ac0716ceabd1b9a9ae455e6e86806/app/src/main/java/com/csqtt/client/ui/legacy/SshTransportConnection.kt
+- https://github.com/Afteroid/csqttr/blob/84a2ce84dd4ac0716ceabd1b9a9ae455e6e86806/app/src/main/java/com/csqtt/client/ui/legacy/deploy/ServerCheck.kt
+
+Сопоставление текущего адаптера с оригиналом:
+- Оригинальный DeploySSHClient.uploadInternal использует SSHJ SFTP put/lstat,
+  далее SCP/stream fallback и ограниченные повторы. Новый remote_transport.go
+  реализует SFTP packets самостоятельно и SHA readback; это собственный
+  транспортный прототип, не буквальный перенос оригинального кода.
+- performDeploy проверяет архитектуру VPS, подготавливает/проверяет assets,
+  передаёт установщик и сервер; при Install передаёт WEB env и password
+  overrides, при Update не подменяет сохранённую конфигурацию.
+- execResult запускает удалённую команду и собирает вывод/exit status;
+  performDeploy проверяет exit0 и маркер CSQTT_DEPLOY_OK.
+  performUninstall имеет отдельный путь и маркер CSQTT_UNINSTALL_OK.
+- Наш stage-only передаёт/проверяет/удаляет пару файлов, но не выполняет
+  оригинальный install/update/uninstall. Его успешные тесты не закрывают
+  перенос lifecycle. Предыдущую запись о транспорте трактовать в этих границах.
+
+Следующий код должен переносить исходную модель и функции с явными
+платформенными отличиями Linux ARM64, портами47000/47002 и изоляцией CSQTT Core.
+Использование Go вместо Kotlin требует адаптации библиотечного backend;
+это не основание придумывать другую последовательность Deploy. Исходный
+SFTP wire-прототип пока не заменён и не объявляется оригинальной реализацией.
+В этом уточнении меняются только документация/постоянные инструкции.
+Новых тестов, CI, изменения исходного runtime или развёртывания нет.

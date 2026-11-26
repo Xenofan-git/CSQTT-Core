@@ -101,3 +101,21 @@
 - Предыдущая прямая лабораторная установка и проверка rollback не доказывают работу полного пути из веб-панели. Реальный авторизованный VK/TURN full-chain также не принят.
 - Следующие задачи согласовывать по актуальному состоянию: полноценный Deploy и отдельная изолированная приёмка, затем VK/TURN и окончательная Linux ARM64 приёмка. Не заявлять завершение по симуляциям; уважать ограничения доступного окружения.
 - Отчёты: `adapt/CSQTT-DEPLOY-INTEGRATION-REVIEW-2026-11-26.md`, `adapt/CSQTT-DEPLOY-REQUEST-CONTRACT-2026-11-26.md`, `adapt/CSQTT-DEPLOY-EVIDENCE-2026-11-25.md`, `adapt/CSQTT-DEPLOY-MANAGER-LAB-TEST-2026-11-25.md`.
+
+### Источник модели и кода Deploy — уточнение владельца 2026-11-26
+
+Модель и код Deploy брать из оригинального Afteroid/csqttr v2.5.3,
+commit 84a2ce84dd4ac0716ceabd1b9a9ae455e6e86806:
+ServerCheck.kt, DeployOperations.kt (DeploySSHClient.upload/execResult,
+performServerCheck/performDeploy/performUninstall), SshTransportConnection.kt,
+ServerCoreCache.kt. Адаптировать эту последовательность и семантику к Go/Linux
+ARM64 и отдельному namespace CSQTT Core; для каждого существенного переноса
+указывать исходную функцию и причины отличий. Это уточняет реализацию раздела 5.
+
+Оригинал использует готовый SSHJ SSH/SFTP backend. Собственный SFTP wire-клиент,
+добавленный в b29c8c9, является нашей экспериментальной реализацией транспорта,
+а не кодом оригинального Deploy. Его сетевые тесты не подтверждают перенос
+performDeploy/performUninstall. При продолжении сверять и приводить реализацию
+к исходной модели; не развивать отдельную заменяющую модель установки.
+Платформенные отличия, существующие pins, проверка целостности/владения,
+сохранение update-конфигурации и ограничения production сохраняются.
