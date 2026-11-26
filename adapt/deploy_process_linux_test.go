@@ -38,6 +38,12 @@ sum=$(/usr/bin/sha256sum)
 [ "${sum%% *}" = '18b8fba447a0f6d931f4acea37612326a75aae567e499b4e52ec7d5f6bc0af68' ] || exit 93
 /bin/sleep 0.3
 if [ "$CSQTT_FIXTURE_MODE" = invalid ]; then printf '%s\n' 'CSQTT_INV|end'; exit 0; fi
+if [ "$CSQTT_FIXTURE_MODE" = reordered ]; then
+ printf '%s\n' 'CSQTT_INV|server|owner=none|state=absent|runtime=systemd|place=core' 'CSQTT_INV|interface|owner=unverified|state=absent|name=csqtt-core0' 'CSQTT_INV|database|name=csqtt.db|state=absent' 'CSQTT_INV|port|owner=none|state=free|port=47000|proto=udp' 'CSQTT_INV|port|owner=none|state=free|port=47002|proto=tcp' 'CSQTT_INV|end'; exit 0
+fi
+if [ "$CSQTT_FIXTURE_MODE" = bad_owner ]; then
+ printf '%s\n' 'CSQTT_INV|server|place=core|runtime=systemd|state=absent|owner=none' 'CSQTT_INV|interface|name=csqtt-core0|state=absent|owner=core_candidate' 'CSQTT_INV|database|state=absent|name=csqtt.db' 'CSQTT_INV|port|proto=udp|port=47000|state=free|owner=none' 'CSQTT_INV|port|proto=tcp|port=47002|state=free|owner=none' 'CSQTT_INV|end'; exit 0
+fi
 printf '%s\n' 'CSQTT_INV|server|place=core|runtime=systemd|state=absent|owner=none' 'CSQTT_INV|interface|name=csqtt-core0|state=absent|owner=unverified' 'CSQTT_INV|database|state=absent|name=csqtt.db' 'CSQTT_INV|port|proto=udp|port=47000|state=free|owner=none' 'CSQTT_INV|port|proto=tcp|port=47002|state=free|owner=none' 'CSQTT_INV|end'
 `
  if err:=os.WriteFile(filepath.Join(dir,"ssh"),[]byte(mock),0700);err!=nil{t.Fatal(err)}
@@ -91,6 +97,23 @@ printf '%s\n' 'CSQTT_INV|server|place=core|runtime=systemd|state=absent|owner=no
  waitResult("error")
  calls,err=os.ReadFile(filepath.Join(dir,"calls"));if err!=nil{t.Fatal(err)}
  if strings.Count(string(calls),"bash -s inventory")!=2{t.Fatal("invalid test did not invoke exactly one helper")}
+ // This extra contract is for the new candidate only, in a temporary
+ // isolated test build. The older approved inventory helper is unchanged.
+ if os.Getenv("CSQTT_DEPLOY_CANONICAL_FIXTURE")=="1" {
+  t.Setenv("CSQTT_FIXTURE_MODE","reordered")
+  post(payload,true)
+  waitResult("preflight")
+  inv,ok:=status()["inventory"].(map[string]any)
+  if !ok||len(inv)!=5||inv["server"]!="absent"||inv["udp"]!="free"||inv["tcp"]!="free"||inv["interface"]!="absent"||inv["database"]!="absent"{
+   t.Fatalf("canonical report did not reach API: %v",inv)
+  }
+  t.Setenv("CSQTT_FIXTURE_MODE","bad_owner")
+  post(payload,true)
+  waitResult("error")
+  if _,ok:=status()["inventory"];ok{t.Fatal("untrusted owner reached inventory summary")}
+  calls,err=os.ReadFile(filepath.Join(dir,"calls"));if err!=nil{t.Fatal(err)}
+  if strings.Count(string(calls),"bash -s inventory")!=4{t.Fatal("unexpected candidate helper call count")}
+ }
  post(`{"protocol":"CSQTT","host":"192.0.2.77","sshPort":22,"user":"root","usePassword":true,"uninstall":true}`,false)
  waitResult("error")
  after,err:=os.ReadFile(filepath.Join(dir,"calls"));if err!=nil||string(after)!=string(calls){t.Fatal("uninstall invoked helper")}
