@@ -57,3 +57,13 @@ explicitly skips these two opt-in network tests; this update was syntax checked,
 not a claim of a fresh complete CI run. New source is compiled, but not shipped
 to NanoPi or pinned by the controller. Real install/update/uninstall execution
 and independent lifecycle postcheck still need integration.
+
+### Уточнение базы изменения
+Код транспорта опубликован коммитом b29c8c9e9add41cc52ba6e8de758bbdf83792537.
+Его непосредственный родитель — b0be4c7 (добавление AGENTS.md), появившийся
+в рабочей ветке во время выполнения задачи; ff7f598 — исходная точка аудита.
+Промежуточный коммит изменяет только AGENTS.md, сохранён без изменений.
+Инструкции прочитаны после обнаружения. Проверенный исходный код транспорта
+совпадает с опубликованным; повторная проверка исходников из-за документации
+не требуется. Коммит содержит [skip ci], чтобы не повторять пройденные
+локальные SSH/SFTP-проверки вопреки указанию пользователя.
