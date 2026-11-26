@@ -16,14 +16,18 @@ import (
 // All paths below are relative to a private, local t.TempDir.
 // OpenSSH -D starts the SFTP subsystem directly, not via SSH or TCP.
 type localSFTPPeer struct {
-	dir       string
-	sftp      string
-	server    string
-	fault     string
-	committed bool
+	dir           string
+	sftp          string
+	server        string
+	fault         string
+	committed     bool
+	batchOverride func(context.Context, string) error
 }
 
 func (p *localSFTPPeer) batch(ctx context.Context, commands string) error {
+	if p.batchOverride != nil {
+		return p.batchOverride(ctx, commands)
+	}
 	cmd := exec.CommandContext(ctx, p.sftp, "-q", "-b", "-", "-D", p.server)
 	cmd.Dir = p.dir
 	cmd.Stdin = strings.NewReader(commands + "\nquit\n")
