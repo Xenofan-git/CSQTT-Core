@@ -792,3 +792,18 @@ SSH/SFTP-проверки.
   parameters). No live deployment or server execution performed.
   Architecture catalogue recognizes all three, approved payload
   and live install path remain ARM64-only. No production changes.
+
+### 10.25. 2026-11-27 — CSQTT_DEPLOY_CONTROLLER_REGRESSION
+
+- Continued routine local controller testing. Verified relevant controller
+  source/tests unchanged since 838141fbd7c2441f09aa87d5880c828fffe61902.
+  Existing ARM64 controller test binary under candidate-2 run with QEMU-user.
+- 3/3 progress, exact result marker and complete inventory report groups
+  passed; 6/6 local synthetic credentials/API authorization and preservation
+  groups passed (temporary config/home, synthetic credentials, httptest).
+  Total 9 PASS, 0 FAIL for this selected run. Logs
+  /tmp/csqtt-controller-progress-regression-20261127.log and
+  /tmp/csqtt-controller-api-regression-20261127.log.
+- No actual panel update, browser run, real remote installation or full
+  controller-to-installer process acceptance in this step. Existing live
+  services, deployment gates and pins unchanged. No production credentials used.
