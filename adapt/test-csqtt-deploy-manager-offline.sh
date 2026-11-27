@@ -51,6 +51,8 @@ required = {"TestRemoteSFTPBoundedProtocol", "TestRemoteStageRejectsBeforeConnec
             "TestInventoryOnlyRejectsUninstallBeforeAssets",
             "Test253PreservedUpdateConfig", "Test253UpdateEnvironmentSubset",
             "Test253AssetBytesIntegrity", "TestInventoryValidationFailsClosed",
+            "Test253ServerArchitectureCatalogue", "Test253ServerArchitectureAssetTrust",
+            "Test253ServerArchitectureELF",
             "Test253StagingCleanupFailure"}
 if os.environ["CSQTT_LOCAL_SFTP_EXPECTED"] == "1":
     required.add("Test253LocalSFTPStaging")

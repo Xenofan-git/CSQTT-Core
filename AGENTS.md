@@ -535,3 +535,30 @@ SSH/SFTP-проверки.
   создание сетей/VM, изменение проверок, install/update/uninstall.
 - Изменяется только документация. Реальная приёмка остаётся открытой.
   Полный offline runner уже PASS в 10.12, без необходимости не повторялся.
+
+### 10.14. 2026-11-27 — CSQTT_CORE_SERVER_ARCHITECTURE_CATALOGUE
+
+- Владелец потребовал поддержки всех трёх серверных архитектур оригинала.
+  Проверены clean HEAD f89fe662914c0c52853a07e0d8e77807ba0fb38d и
+  upstream 84a2ce84dd4ac0716ceabd1b9a9ae455e6e86806, DeployOperations.kt
+  181–201, текущие asset pins, lifecycle и build scripts.
+- Добавлены server_architecture.go и тесты: AMD64/ARM64/ARMv7, все
+  upstream aliases, сопоставление имён Core8, ELF class/e_machine/endianness,
+  отклонение неоднозначного вывода, неизвестной архитектуры и чужого ELF.
+  Существующий requireARM64Machine и verifiedAssets используют общий
+  каталог, но сохраняют ARM64-only execution gate и точный исходный pin.
+  AMD64/ARMv7 не считаются утверждёнными пакетами; формат ELF сам по себе
+  не доказывает происхождение, ABI или работоспособность сервера.
+- 5 целевых групп race PASS, 5 групп ARM64 QEMU PASS, go vet, bash -n,
+  git diff --check PASS. ELF fixtures являются инертными заголовками.
+  Логи /tmp/csqtt-architecture-catalogue-20261127{,-arm64}.log.
+  Новые три группы включены в required offline runner.
+- На Moscow найдены Rust x86_64/aarch64 targets и gcc, но ARMv7 target
+  и arm-linux-gnueabihf-gcc не обнаружены. Новых серверных ядер не собрано,
+  не передано и не запущено. Сохранены прежние installer/helper pins,
+  ownership, scope, сеть и службы. Изменённый helper ещё не собран
+  в эксплуатационный пакет и не прошёл live acceptance.
+- Следующий этап: воспроизводимые серверные сборки из тех же адаптированных
+  Core8-исходников, отдельная проверка ABI/зависимостей и SHA каждого
+  бинарника, затем согласованная интеграция пакетов с installer/lifecycle.
+  Поддержка исполнения всех трёх архитектур пока не завершена.

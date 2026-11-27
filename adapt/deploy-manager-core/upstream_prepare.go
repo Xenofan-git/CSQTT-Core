@@ -12,15 +12,15 @@ import (
 // Only the already pinned Linux ARM64 server is shipped by this project;
 // upstream's additional AMD64/ARMv7 assets are not silently substituted.
 func requireARM64Machine(output string) error {
-	machine := strings.ToLower(strings.TrimSpace(output))
-	switch machine {
-	case "aarch64", "arm64":
-		return nil
-	case "x86_64", "amd64", "armv7l", "armv7", "armhf":
-		return errors.New("архитектура VPS не соответствует проверенному ARM64-пакету")
-	default:
-		return errors.New("не удалось подтвердить архитектуру ARM64 на VPS")
+	arch, err := resolveServerArchitecture(output)
+	if err != nil {
+		return err
 	}
+	// Existing lifecycle is ARM64-only pending separate acceptance.
+	if arch != serverARM64 {
+		return errors.New("архитектура VPS не соответствует проверенному ARM64-пакету")
+	}
+	return nil
 }
 
 func systemdEnvironmentValue253(value string) string {

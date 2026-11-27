@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"debug/elf"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -193,17 +192,16 @@ func verifiedAssets(folder string) ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	server, err := readVerifiedAsset(filepath.Join(folder, "csqtt-core8-linux-arm64"), expectedServerSize, expectedServerSHA)
+	format, size, digest, err := approvedServerAsset(serverARM64)
 	if err != nil {
 		return nil, nil, err
 	}
-	f, err := elf.NewFile(bytes.NewReader(server))
+	server, err := readVerifiedAsset(filepath.Join(folder, format.name), size, digest)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer f.Close()
-	if f.Class != elf.ELFCLASS64 || f.Machine != elf.EM_AARCH64 || f.Data != elf.ELFDATA2LSB {
-		return nil, nil, errors.New("серверный бинарник не соответствует Linux ARM64")
+	if err := verifyServerELF(server, serverARM64); err != nil {
+		return nil, nil, err
 	}
 	return script, server, nil
 }
