@@ -636,3 +636,23 @@ SSH/SFTP-проверки.
 - Свободно 3.4 GiB на Moscow. Следующий этап: отдельные проверки
   совместимости и приёмка кандидатов, затем интеграция в пакет.
   Действующие ARM64-only gates и pins сохранены.
+
+### 10.18. 2026-11-27 — CSQTT_CORE_THREE_ARCH_STATIC_ABI
+
+- Moscow clean HEAD/remote 202111fef3045cc779ecf252e4945ac91602e9de.
+  Rechecked sizes, SHA256, ELF headers, interpreters and dependencies of all
+  three exact candidates; added read-only adapt/audit-core8-server-abi.py.
+  Audit checks exact reviewed candidate size/hash, class/machine/endianness,
+  interpreter, dynamic dependency set, absence of RPATH/RUNPATH/TEXTREL,
+  ARMv7 EABI hard-float, v7/VFP/NEON attributes and per-library version
+  requirements against version definitions in matching local build sysroots.
+- Actual static audit: AMD64 27, ARM64 16, ARMv7 24 required library
+  version nodes present. JSONL /tmp/csqtt-three-architecture-abi-20261127.jsonl.
+  Negative checks 5/5 (wrong architecture/size, truncated input, symlink,
+  missing provider, provider wrong architecture). No candidate executed.
+  ARMv7 requires ARMv7-A hard-float/NEON-capable environment; AMD64 and
+  ARMv7 candidates require GLIBC_2.39. Version-node check is not full
+  symbol relocation or execution proof; not a claim of universal Debian/Ubuntu
+  compatibility. No production pins, execution gates, installer or services
+  changed. No real remote deployment or live acceptance. Next: separate
+  authorized runtime acceptance and package integration after acceptance.
