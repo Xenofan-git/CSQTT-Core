@@ -591,3 +591,29 @@ SSH/SFTP-проверки.
   Пакеты не установлены, сборка ARMv7 ещё не начата. Рабочие службы
   не изменены. Следующий этап — подготовить ARMv7 toolchain, проверить
   сборку и затем отдельно провести приёмку новых серверных архитектур.
+
+### 10.16. 2026-11-27 — CSQTT_CORE_ARMV7_TOOLCHAIN_BUILD_START
+
+- Проверены clean HEAD/remote 84a0aa93c7a2a8e2c46ca9a39ec425244925d1b1,
+  исходные SHA ARM64/AMD64, ресурсы Moscow (4.2 GiB disk available,
+  1689 MiB RAM available). apt-get -s: 19 new packages, 0 upgrades/removals.
+- По запросу владельца установлен только cross-toolchain через apt-get
+  --no-install-recommends install gcc-arm-linux-gnueabihf
+  g++-arm-linux-gnueabihf libc6-dev-armhf-cross; exit 0, GCC/G++ 14.2.0,
+  журнал /tmp/csqtt-armv7-toolchain-20261127.log.
+- rustup target add armv7-unknown-linux-gnueabihf --toolchain 1.97.1:
+  PASS; установлены все три Rust target. Скомпилирован инертный C ABI
+  probe (sizeof(void*) == 4), readelf ELF32 little-endian ARM,
+  EABI5 hard-float, qemu-arm -L /usr/arm-linux-gnueabihf PASS;
+  временный probe удалён. Это проверка toolchain, не runtime CSQTT.
+- FINAL source hashes повторно совпали. В отдельном target
+  /srv/development/isolated-checkouts/.csqtt-core8-armv7-candidate-20261127/target
+  начата offline locked release ARMv7 сборка Rust1.97.1, jobs1,
+  arm-linux-gnueabihf gcc/g++/ar, timeout900s. Повторный вызов отказался
+  запускать второй Cargo; подтверждён PID 1349337, правильный cwd и
+  build.log с продвижением компиляции зависимостей. На момент проверки
+  в 14:09:56 MSK финального ELF ещё нет. Статус не считать успешной сборкой.
+- Не изменены pins, установщик, рабочие приложения, VM или маршруты.
+  Свободно около 3.7 GiB на момент проверки. Следующий этап:
+  проверить фактический exit, ELF ABI/зависимости/SHA; не включать
+  непроверенный артефакт в production.
