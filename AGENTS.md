@@ -773,3 +773,22 @@ SSH/SFTP-проверки.
   network configured. Netboot media needs package source to complete
   OS installation; not a completed guest or accepted deployment target.
   Existing CSQTT lab/tunnel unchanged PID1057321/1338051 active.
+
+### 10.24. 2026-11-27 — CSQTT_DEPLOY_MANAGER_REGRESSION
+
+- Owner requested routine DeployManager verification. Moscow HEAD
+  33eb440676f347f68165d04bd9e6c1cf62c85320 matched origin, clean.
+  Verified pinned local assets in /tmp/csqtt-deploy-manager-core-assets-ci-20261125
+  (installer SHA18b8fba... and ARM64 SHA8cd789e...).
+- Actual Go1.27.3 native test -race -count=1 -timeout=100s -v:
+  35 top-level PASS, 0 FAIL, 3 SKIP, exit0; package time3.926s.
+  Local authenticated SFTP fixture used ephemeral keys and stdio,
+  no network listener. Lifecycle install/update/remove/rollback,
+  cancellation, malformed results and architecture tests passed
+  using mocks/inert fixtures. go vet PASS.
+  Log /tmp/csqtt-deploy-manager-regression-20261127.log.
+- Skipped recorded ARM64 inventory fixture, real remote transport and
+  remote lost-session cleanup tests (no corresponding environment
+  parameters). No live deployment or server execution performed.
+  Architecture catalogue recognizes all three, approved payload
+  and live install path remain ARM64-only. No production changes.
