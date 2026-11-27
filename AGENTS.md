@@ -487,3 +487,30 @@ SSH/SFTP-проверки.
 - 2026-11-27, IMPLEMENTATION-PUBLISHED: commit838141fbd7c2441f09aa87d5880c828fffe61902 создан из22 целевых файлов (1691 insertions/158 deletions); git diff --cached --check PASS, фактический файл deploy-manager имеет ожидаемый SHA03d312495b9382d1c61966ae14276d947b346d83e8514a62671546ccd3ff4bc1. Push origin HEAD:refs/heads/test/csqtt-deploy-authenticated-sftp-20261126 выполнен, git ls-remote подтвердил тот же SHA, рабочее дерево после code commit было чистым. Main, release, runtime и сеть рабочих узлов не менялись. Новый CI не запускался ([skip ci]); сохранённые результаты адресных VPS-проверок относятся к содержимому этого коммита. Следующий связанный шаг — итоговая синхронизация журналов и отдельный documentation commit.
 
 - 2026-11-27, FINAL-JOURNAL-SYNC: итоговый блок CSQTT_CORE_DEPLOY_LIFECYCLE_FINAL_838141F (SHA256 6f4855002b76fe2ba869ffc21c81e986e70c753cd7c2f15725ea672f1d4f0e41) дописан в оба журнала Amsterdam и оба журнала NanoPi; содержимое каждого прочитано обратно и сверено. До записи сохранены .bak-lifecycle-838141f-final; NanoPi hostname/model повторно подтверждены. Истории узлов сохранены отдельно. Отдельные amsterdam-master зеркала обновлены побайтно: SUMMARY SHA92069a23cf742bb425f8ca128a5369d18c442ebdec078f744097eb1d024c96b8, JOURNAL SHA2f9c7b04b7f68720af111721fde46fa0ccf5b21667df5d954019f2cd48906c3e совпадают с Amsterdam на момент этой записи. Через GitHub API после push подтверждено отсутствие нового workflow run: единственный старый run45796135833 SUCCESS относится к ff7f598. В отчёт добавлены опубликованный implementation SHA и результаты синхронизации. Закрывающий documentation commit и его remote SHA фиксируются финальным коротким блоком всех четырёх журналов с обновлением зеркал; рекурсивные коммиты только ради собственного SHA не требуются правилом раздела8. Реальные install/update/uninstall нового helper остаются непроверенными; стенд требует собственного допустимого IP и чистого снимка.
+
+### 10.12. 2026-11-27 — CSQTT_CORE_FINAL_OFFLINE_AUDIT_20261127
+
+- Владелец поручил продолжить самостоятельно после публикации Codex.
+  Подтверждены чистое дерево и совпадение HEAD/remote c12bda06185fa6370c7e14da7493fe414e7a9d4d
+  рабочей ветки test/csqtt-deploy-authenticated-sftp-20261126.
+- Прочитаны автономный runner и его workflow, перечень тестов и условия
+  fixture. На Moscow выполнен весь существующий offline runner с Go1.27.3,
+  без внешних fixtures и с выключенными lifecycle scope variables.
+  Результат: 29 групп PASS, 0 FAIL, 7 штатных SKIP; race, vet, Linux ARM64
+  compile PASS. Лог /tmp/csqtt-final-offline-audit-20261127.V6x2qr.log.
+  Это первый полный offline прогон финального кандидата, а не live acceptance.
+  GitHub Actions нового SHA не запускался; local compile не заменяет
+  native ARM64 CI или реальный remote lifecycle.
+- Read-only проверка ресурсов: около 1084 MiB доступной RAM, 3.1 GiB
+  свободного диска, /tmp 806 MiB свободно. Служба существующего QEMU lab
+  активна, SSH по-прежнему слушает только 127.0.0.1:22239. Tailnet inventory
+  содержит три рабочих узла, отдельный lab peer не подтверждён. Новый
+  разрешённый endpoint и чистый снимок не предоставлены. Не создавались
+  новые VM/сети, не менялись маршруты, firewall, существующая лабораторная
+  или рабочая установка. Не утверждается, что памяти/диска заведомо
+  достаточно для ещё одного гостя.
+- Изменения только документации, не production pin или исходный код.
+  Следующий необходимый этап — отдельная штатно авторизованная VM с
+  подтверждённой адресацией и чистым baseline; настоящий install/update/
+  uninstall/rollback остаётся непроверенным. Не повторять локальные тесты
+  вместо этой приёмки. Журналы синхронизировать по разделу8.
