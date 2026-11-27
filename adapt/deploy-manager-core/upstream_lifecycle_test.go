@@ -139,3 +139,87 @@ func Test253InstallerExecStreamingBoundary(t *testing.T) {
 		t.Fatal("unsafe path allowed")
 	}
 }
+
+// A removal needs the pinned installer, not a replacement server payload.
+// The fake SSH stops at the architecture query: no network or installer runs.
+func Test253UninstallWithoutReplacementPayload(t *testing.T) {
+	source := os.Getenv("CSQTT_DEPLOY_LIFECYCLE_FIXTURE_ASSETS")
+	if source == "" {
+		t.Skip("set CSQTT_DEPLOY_LIFECYCLE_FIXTURE_ASSETS to pinned candidate assets")
+	}
+	candidate, err := readVerifiedAsset(filepath.Join(source, "deploy-csqtt-core-lifecycle.sh"), lifecycleInstallerSize, lifecycleInstallerSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := os.ReadFile(filepath.Join(source, "deploy-csqtt-core-250.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "called")
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte("#!/bin/sh\nprintf called >> \"$CSQTT_TEST_SSH_CALLED\"\nexit 99\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	t.Setenv("CSQTT_TEST_SSH_CALLED", marker)
+	t.Setenv("CSQTT_CORE_ALLOW_MUTATION", "isolated-lab-only")
+	t.Setenv("CSQTT_CORE_DEPLOY_LAB_TARGET", "192.0.2.77:22")
+	t.Setenv("CSQTT_CORE_DEPLOY_LAB_MACHINE_ID", strings.Repeat("a", 32))
+	for _, tc := range []struct {
+		name, action                  string
+		baseline, corrupt, reachesSSH bool
+	}{
+		{"uninstall-missing-server", "uninstall", true, false, true},
+		{"uninstall-script-only", "uninstall", false, false, true},
+		{"install-missing-server", "install", true, false, false},
+		{"update-missing-server", "update", true, false, false},
+		{"uninstall-corrupt-script", "uninstall", true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Remove(marker)
+			dir := t.TempDir()
+			body := append([]byte(nil), candidate...)
+			if tc.corrupt {
+				body[0] ^= 1
+			}
+			if err := os.WriteFile(filepath.Join(dir, "deploy-csqtt-core-lifecycle.sh"), body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if tc.baseline {
+				if err := os.WriteFile(filepath.Join(dir, "deploy-csqtt-core-250.sh"), baseline, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			r := Request{Protocol: "CSQTT", Host: "192.0.2.77", User: "root", KeyPath: "/inert-fixture", Action: tc.action,
+				MainPassword: "fixturemain", WebUser: "fixtureuser", WebPassword: "fixtureweb", DeviceID: "fixture"}
+			data, _ := json.Marshal(r)
+			var output bytes.Buffer
+			err := runRemoteLifecycle(context.Background(), bytes.NewReader(data), &output, dir)
+			if err == nil {
+				t.Fatal("fixture or invalid assets unexpectedly succeeded")
+			}
+			_, statErr := os.Stat(marker)
+			if (statErr == nil) != tc.reachesSSH {
+				t.Fatalf("SSH reached=%v, want=%v: %v", statErr == nil, tc.reachesSSH, err)
+			}
+			if strings.Contains(output.String(), "CSQTT_UNINSTALL_OK") || strings.Contains(output.String(), "CSQTT_DEPLOY_OK") {
+				t.Fatal("unconfirmed operation reported success")
+			}
+		})
+	}
+}
+
+func Test253LifecycleProgressRejectsNonFinite(t *testing.T) {
+	for _, value := range []string{"NaN", "+Inf", "-Inf", "-0.1", "1.1", "bad"} {
+		var out bytes.Buffer
+		publishLifecycleProgress(&out, "CSQTT_PROGRESS|"+value+"|remote")
+		if out.Len() != 0 {
+			t.Errorf("invalid progress %q published: %s", value, out.String())
+		}
+	}
+	var out bytes.Buffer
+	publishLifecycleProgress(&out, "CSQTT_PROGRESS|0.5|remote")
+	if !strings.HasPrefix(out.String(), "CSQTT_PROGRESS|0.500|") {
+		t.Fatal("valid progress lost")
+	}
+}

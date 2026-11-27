@@ -64,7 +64,7 @@ func deployManagerName() string {
 // the controller's saved SSH and application credentials in this experiment.
 // Any change to the helper requires updating and re-reviewing this pin.
 // Separate experimental pin; it is usable only with an operator-bound lab scope.
-const verifiedARM64LifecycleManagerSHA = "03d312495b9382d1c61966ae14276d947b346d83e8514a62671546ccd3ff4bc1"
+const verifiedARM64LifecycleManagerSHA = "285c8882a122ab146a1a89df488d1336ac9529b13856c5cc8ec028fb4fcb3d64"
 
 func lifecycleScopeConfigured() bool {
 	return os.Getenv("CSQTT_CORE_ALLOW_MUTATION") == "isolated-lab-only" &&

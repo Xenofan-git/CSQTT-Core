@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -167,7 +168,7 @@ func publishLifecycleProgress(w io.Writer, line string) {
 		return
 	}
 	p, err := strconv.ParseFloat(parts[1], 64)
-	if err != nil || p < 0 || p > 1 {
+	if err != nil || math.IsNaN(p) || p < 0 || p > 1 {
 		return
 	}
 	label := "Работа установщика"
@@ -236,9 +237,14 @@ func runRemoteLifecycle(ctx context.Context, reader io.Reader, writer io.Writer,
 	if err != nil {
 		return err
 	}
-	_, server, err := verifiedAssets(assets)
-	if err != nil {
-		return err
+	// CSQTTR performUninstall needs only the verified removal script.
+	// Do not require a replacement server ELF or install-only baseline.
+	var server []byte
+	if action != lifecycleRemove {
+		_, server, err = verifiedAssets(assets)
+		if err != nil {
+			return err
+		}
 	}
 	installer, err := readVerifiedAsset(filepath.Join(assets, "deploy-csqtt-core-lifecycle.sh"), lifecycleInstallerSize, lifecycleInstallerSHA)
 	if err != nil {

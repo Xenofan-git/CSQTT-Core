@@ -41,6 +41,10 @@ else:
  assert not (workspace/"deploy-overrides.json").exists()
 with open(os.environ["CSQTT_FIXTURE_WORKSPACES"],"a") as f:f.write(str(workspace)+"\n")
 # This branch deliberately NEVER calls bash or the uploaded installer.
+if state.get("transport_lost"):
+  print("CSQTT_PROGRESS|0.6|fixture")
+  if state.get("ambiguous_success"): print("CSQTT_DEPLOY_OK")
+  raise SystemExit(255)
 if state.get("rollback"):
  print("CSQTT_DEPLOY_ROLLED_BACK");raise SystemExit(30)
 if action=="uninstall":
@@ -73,7 +77,7 @@ def main():
             CSQTT_FIXTURE_SERVER_SHA="8cd789e33428f96e183ae3da326dee907496f11536fbaf6cdab5da339262701d")
         request=dict(protocol="CSQTT",host="192.0.2.77",user="root",keyPath="/inert-fixture-key",
                      mainPassword="fixturemain",webUser="fixtureuser",webPassword="fixtureweb",deviceId="fixture")
-        def run(action,success=True,rollback=False):
+        def run(action,success=True,rollback=False,unknown=False):
             data=dict(request,action=action)
             api=len(sys.argv)>2
             command=["qemu-aarch64",str(bundle/"deploy-manager"),"--isolated-lifecycle","--assets",str(bundle/"server-assets")]
@@ -82,6 +86,13 @@ def main():
                 env.update(CSQTT_DEPLOY_LIFECYCLE_PROCESS_FIXTURE="1",CSQTT_LIFECYCLE_REQUEST=json.dumps(data),
                     CSQTT_LIFECYCLE_EXPECTED_RESULT=("uninstalled" if action=="uninstall" else "success") if success else "error",
                     CSQTT_LIFECYCLE_EXPECT_ROLLBACK="1" if rollback else "")
+            if action == "uninstall" and not api:
+                removal_assets = root / "removal-assets"
+                removal_assets.mkdir()
+                shutil.copyfile(bundle/"server-assets/deploy-csqtt-core-lifecycle.sh",
+                                removal_assets/"deploy-csqtt-core-lifecycle.sh")
+                command[-1] = str(removal_assets)
+            previous = workspaces.read_text().splitlines() if workspaces.exists() else []
             result=subprocess.run(command,
                 input=json.dumps(data),text=True,env=env,capture_output=True,timeout=90)
             marker="CSQTT_UNINSTALL_OK" if action=="uninstall" else "CSQTT_DEPLOY_OK"
@@ -93,9 +104,19 @@ def main():
             else:
                 assert result.returncode!=0 and marker not in result.stdout,(result.stdout,result.stderr)
                 assert ("CSQTT_DEPLOY_ROLLED_BACK" in result.stdout)==rollback
-            for item in workspaces.read_text().splitlines():
-                assert not pathlib.Path(item).exists(),"staging leak: "+item
-            print("SIMULATED_LIFECYCLE_PASS",action,"success" if success else "verified rollback" if rollback else "preservation failure rejected")
+            executed = workspaces.read_text().splitlines()
+            assert len(executed) == len(previous)+1, "remote command was repeated"
+            for item in executed:
+                stage = pathlib.Path(item)
+                if unknown and item == executed[-1]:
+                    assert stage.is_dir(), "unknown running operation staging removed"
+                    assert re.fullmatch(r"/tmp/csqtt-deploy-[a-f0-9]{32}", item)
+                    assert hashlib.sha256((stage/"deploy-csqtt-core-lifecycle.sh").read_bytes()).hexdigest()==env["CSQTT_FIXTURE_INSTALLER_SHA"]
+                    # Fixture-owned inert files only; no remote installer exists here.
+                    shutil.rmtree(stage)
+                else:
+                    assert not stage.exists(),"staging leak: "+item
+            print("SIMULATED_LIFECYCLE_PASS",action,"unknown/no-retry/staging-retained" if unknown else "success" if success else "verified rollback" if rollback else "preservation failure rejected")
         run("install")
         installed=json.loads(states.read_text())
         run("update")
@@ -103,6 +124,10 @@ def main():
         run("update",success=False)
         states.write_text(json.dumps(dict(installed,rollback=True)))
         run("update",success=False,rollback=True)
+        states.write_text(json.dumps(dict(installed, transport_lost=True)))
+        run("update", success=False, unknown=True)
+        states.write_text(json.dumps(dict(installed, transport_lost=True, ambiguous_success=True)))
+        run("update", success=False, unknown=True)
         states.write_text(json.dumps(installed))
         run("uninstall")
         print("No real SSH, service installation or network mutation was performed.")

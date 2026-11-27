@@ -1,0 +1,172 @@
+{
+  "base_commit": "5420d649cde69fcc8ea7d7d4ee1696b0470ec02a",
+  "upstream_commit": "84a2ce84dd4ac0716ceabd1b9a9ae455e6e86806",
+  "neutral_guest": {
+    "architecture": "arm64",
+    "automatic_core_rollback": "NOT TESTED",
+    "checks": [
+      {
+        "case": "neutral_dpkg_install",
+        "status": "PASS"
+      },
+      {
+        "case": "neutral_dpkg_update_config_sqlite",
+        "status": "PASS"
+      },
+      {
+        "case": "neutral_dpkg_corrupt_package_refused",
+        "status": "PASS"
+      },
+      {
+        "case": "neutral_dpkg_remove_keeps_config_sqlite",
+        "status": "PASS"
+      },
+      {
+        "case": "neutral_dpkg_purge",
+        "status": "PASS"
+      },
+      {
+        "case": "neutral_fixture_temporary_cleanup",
+        "status": "PASS"
+      }
+    ],
+    "core_install_update_remove": "NOT TESTED",
+    "hostname": "csqtt-neutral-arm64",
+    "machine": "aarch64",
+    "network_interfaces": [
+      "lo"
+    ],
+    "package_sha256": {
+      "csqtt-neutral-lab-fixture_1.0_arm64.deb": "1011bb67c8f479b33b089770fc90244c5e9f421975833be325af144edbbe4830",
+      "csqtt-neutral-lab-fixture_2.0_arm64.deb": "4e22e2f9d9a70d0a11fd8f57963d7164c7c59fd1c42f4e4296cb8ad709c93bfb"
+    },
+    "scope": "real offline QEMU guest dpkg/SQLite only; not CSQTT or DeployManager",
+    "ssh_interruption": "NOT TESTED",
+    "machine_id_sha256": "88fa21ee28c9c9d735b999ee3716456b132e9200693dc11040423bd57a9dc858"
+  },
+  "neutral_manifest": {
+    "base_sha256": "2021d78771e0e9a656b1dad9f54b4223151324fc64a8bf3299d5ff61520378c8",
+    "guest_test_sha256": "12d80205c1e37507adb7082f9f58de5890c392064bc326075af025cd93328447",
+    "isolation": "No NIC, forwarding, shared host filesystem or production credentials; fresh COW disk and UEFI",
+    "rollback": "Stop only this VM and discard/recreate its new overlay; immutable base and existing guests unchanged"
+  },
+  "build": {
+    "helper_sha256": "cbcf09bc03e3d1189253ab7ec34cf53f2e2be5e2813623e999096790c0280914",
+    "tests_pattern": "^(Test253UninstallWithoutReplacementPayload|Test253LifecycleScopeAndRequests|Test253LifecycleRejectsBeforeSSH|Test253LifecyclePostPreservation|Test253AssetBytesIntegrity|Test253PinnedAssetSnapshot|TestDeployManagerVerifiesPinnedScriptAndArm64Server)$",
+    "output": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127",
+    "final_helper_sha256": "285c8882a122ab146a1a89df488d1336ac9529b13856c5cc8ec028fb4fcb3d64",
+    "final_bundle": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/candidate-final"
+  },
+  "logs": [
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/api-final-process.log",
+      "bytes": 437,
+      "sha256": "98d88e5d6bc53fd1f66554448fc4c1f51c7793a59aef1d1a0503d493f3d286d1"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/api-lifecycle-process.log",
+      "bytes": 437,
+      "sha256": "98d88e5d6bc53fd1f66554448fc4c1f51c7793a59aef1d1a0503d493f3d286d1"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/bridge-pin-race.log",
+      "bytes": 665,
+      "sha256": "283fd0d4944cdb493a409274fa6aa7337fc78e12d6aafabe6ce5d4df0a653ae4"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/candidate-build.log",
+      "bytes": 316,
+      "sha256": "fb5c122e70ebda87b0005a64b26271c1d994930ce8ace75c9cef72f53fbe4bbc"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/candidate-final-build.log",
+      "bytes": 322,
+      "sha256": "363c9abaf35dc04f77d0bd9d727fafbd93e48dd9792d7aa9ccc1ae3af1593b37"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/controller-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/controller-final-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/diff-check.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/lifecycle-process.log",
+      "bytes": 437,
+      "sha256": "98d88e5d6bc53fd1f66554448fc4c1f51c7793a59aef1d1a0503d493f3d286d1"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/manager-arm64-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/manager-final-test-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/manager-vet-final.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/manager-vet.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/neutral-guest-host-refusal.log",
+      "bytes": 35,
+      "sha256": "0758bd07de092e3500910ce492ef24596c460f2d26b165084239961b8199081b"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/progress-final-arm64.log",
+      "bytes": 115,
+      "sha256": "b556535738b9d7686fc054ccfa29108506b5677d8e4221f2c63e1050d5970c75"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/progress-nan-green.log",
+      "bytes": 231,
+      "sha256": "b99fc6611ffbfcac55918cbdb44505e5bef6c5f9b4d66700efb8394136b134a6"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/progress-nan-red.log",
+      "bytes": 357,
+      "sha256": "8d7e98b4f27356df739acbc42af995eb7a50900350d268a53216373bea9b68f6"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/uninstall-and-integrity-race.log",
+      "bytes": 1625,
+      "sha256": "bfc285b8af673c9ab938f29ec22a90fb916b5e1e64f09ab24e6e3a9b2ac54d7b"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/uninstall-arm64-execution.log",
+      "bytes": 931,
+      "sha256": "2a6969eb7f2ed018bf4d5ffcf44c68b1ddfe8e6a4c25b89c552602b83f1cf349"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-acceptance-evidence-20261127/arm64-cli.json",
+      "bytes": 2828,
+      "sha256": "eea1ed7e5e591069e31d4caebb2192df6c23a6a8b1a4b8c8a64f61f2c85b7359"
+    },
+    {
+      "path": "/srv/development/isolated-checkouts/csqtt-neutral-arm64-lab-20261127/console.log",
+      "bytes": 76197,
+      "sha256": "f127aeda341d37056afa60502109dad868c062840940bd0b8a432427534c8116"
+    },
+    {
+      "path": "/tmp/csqtt-uninstall-no-payload-red-20261127.log",
+      "bytes": 1236,
+      "sha256": "96dcc9698b5af94f8b0cd80466633f6d6f74f003cc1190d9f723add2548a2ba3"
+    }
+  ]
+}
