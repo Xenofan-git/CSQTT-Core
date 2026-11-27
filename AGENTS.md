@@ -807,3 +807,25 @@ SSH/SFTP-проверки.
 - No actual panel update, browser run, real remote installation or full
   controller-to-installer process acceptance in this step. Existing live
   services, deployment gates and pins unchanged. No production credentials used.
+
+### 10.26. 2026-11-27 — CSQTT_DEPLOY_REMAINING_OFFLINE_CHECKS
+
+- Relevant browser/controller sources unchanged since previously tested
+  lifecycle code 838141f. Static panel contract PASS: 66 fixed buttons,
+  7 tabs, 38 API paths. Reused recorded ARM64 inventory report
+  /tmp/csqtt-deploy-vm-readonly-inventory-20261125.txt: previously skipped
+  TestRecordedARM64GuestInventory passed Go race test, exit0.
+- Added read-only browser regression adapt/test-csqtt-deploy-ui-status-offline.py.
+  Chromium1194, all HTTP routes intercepted; ordinary UI clicks open
+  historical status/progress, no POST or live controller. Four scenarios PASS:
+  completed without confirmed installation -> neutral; running then unknown
+  terminal status -> unknown/error UI; transient HTTP503 -> recovery without
+  false success; persistent HTTP503 -> unknown outcome. Zero mutating HTTP
+  requests assertion PASS. Initial temporary test erroneously called
+  private JS function; corrected test to use UI buttons; production unchanged.
+- Logs /tmp/csqtt-recorded-inventory-regression-20261127.log and
+  /tmp/csqtt-deploy-ui-status-regression-20261127.log. Cumulative recent
+  Go test groups 46 PASS (37 manager +9 controller), 0 FAIL, two remote
+  tests still unrun. Browser scenarios counted separately. No actual
+  remote deployment, live connection or panel update. Existing earlier
+  full mock lifecycle/browser evidence not counted as new.
