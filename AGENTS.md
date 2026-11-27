@@ -617,3 +617,22 @@ SSH/SFTP-проверки.
   Свободно около 3.7 GiB на момент проверки. Следующий этап:
   проверить фактический exit, ELF ABI/зависимости/SHA; не включать
   непроверенный артефакт в production.
+
+### 10.17. 2026-11-27 — CSQTT_CORE_ARMV7_BUILD_CANDIDATE
+
+- Проверен build.log в .csqtt-core8-armv7-candidate-20261127:
+  offline locked release Rust1.97.1 завершён за 8m18s, last-build-exit=0.
+  В 14:12:32 MSK ещё шла компиляция зависимостей; в 14:27:22 подтверждён
+  готовый ELF. Размер 7876704 bytes, SHA256
+  718fdcd3a899205e9ec66041203939c16e9101ece7134d2c0b65f28e239a1cc4.
+  ELF32 little-endian ARM EABI5 hard-float, dynamic PIE,
+  interpreter /lib/ld-linux-armhf.so.3, NEEDED libstdc++.so.6,
+  libc.so.6, libgcc_s.so.1, libm.so.6.
+- Повторно проверены FINAL tree hashes и SHA всех трёх бинарников.
+  Сборки AMD64/ARM64/ARMv7 существуют; наличие ELF и успешная сборка
+  не означают runtime acceptance. ARMv7 и AMD64 остаются кандидатами,
+  не добавлены в approvedServerAsset. Не выполнялись установка,
+  передача, запуск сервера или изменение рабочих служб/сетей.
+- Свободно 3.4 GiB на Moscow. Следующий этап: отдельные проверки
+  совместимости и приёмка кандидатов, затем интеграция в пакет.
+  Действующие ARM64-only gates и pins сохранены.
