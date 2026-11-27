@@ -682,3 +682,41 @@ SSH/SFTP-проверки.
   promotion. No operational changes to existing services, pins or guards.
   Next: authorized isolated runtime acceptance; no claim that three
   full VM targets are available. Do not remove existing gates.
+
+### 10.20. 2026-11-27 — CSQTT_CORE_MULTIARCH_LAB_PREP
+
+- По запросу владельца подготовлены отдельные заготовки стендов на Moscow,
+  без изменения существующих CSQTT/HydraRoute VM. Исходный HEAD/remote
+  26f5debf33d510e8d773057ab0a5db983d35780a; clean. Изначально 3.4 GiB
+  disk free, 1816 MiB RAM available, /dev/kvm отсутствует. QEMU ARM
+  уже был установлен, x86 отсутствовал. apt simulation: 3 new packages,
+  zero upgrades/removals; установлен qemu-system-x86 10.0.13 с seabios
+  и ipxe-qemu; журнал /tmp/csqtt-qemu-x86-prep-20261127.log. Все три
+  эмулятора QEMU 10.0.13 доступны. Existing lab PIDs 1057321/1338051
+  сохранились; unrelated QEMU PID1230655 не затронут. Старый локальный
+  HTTP47084 недоступен (HTTP000); не восстанавливался в этом этапе.
+- Отдельный каталог /srv/development/isolated-checkouts/csqtt-multiarch-lab-prep-20261127
+  с amd64/arm64/armv7. Загружены из Debian trixie APT (download only)
+  debian-installer-13-netboot-{amd64,arm64,armhf}, version 20250803+deb13u8,
+  сверены SHA256 из APT metadata:
+  amd64 00ff9a603bb4938411510a69e261c4ce4dda2ec7709f6f8e40457cceb8104c70;
+  arm64 7c182987f0288aa6fd7c605b17c043ce19738b0a7af2ebd6192a91833f32cf36;
+  armhf a1ab085e369bcf1959a0963788708bc7b3f0fe5f881e4c5a8fd9dca23091ecb0.
+  APT warning unsandboxed download due private root dir; SHA checks PASS.
+  Извлечены только text installer kernel/initrd.gz; первый strip-components=9
+  оставил подкаталог amd64 и проверка отказала; исправлено перемещением двух
+  файлов в boot и strip-components=10 для остальных. Все файлы проверены.
+- Созданы три новых sparse QCOW2 empty.qcow2 3 GiB virtual /196 KiB
+  initial allocated, qemu-img check PASS 3/3. QMP preflight 3/3 with
+  machine q35/max, virt/cortex-a57, virt/cortex-a15 respectively,
+  TCG 512 MiB/1 vCPU, -S paused, no NIC, read-only disk, official
+  installer kernel/initrd, query-status and quit. No guest boot, OS
+  installation, network forwarding, SSH credentials, service or payload
+  staged. Logs each arch/qmp-preflight.log; exact file hashes/size/state
+  saved PREP-INVENTORY.json. No old VM disk reused or overwritten.
+- Free disk 2.9 GiB after prep (~474 MiB media + disk stubs), insufficient
+  to assume three populated 3 GiB disks fit. Plan sequential use, preserve
+  sufficient host free space. Full labs require clean OS with separate
+  authorized identity/connection, acceptance and sufficient storage.
+  QMP proof is configuration only, not boot or runtime/Deploy acceptance.
+  Existing mutation scope, ARM64-only execution gate and pins unchanged.
