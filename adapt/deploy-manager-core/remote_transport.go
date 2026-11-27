@@ -309,7 +309,7 @@ type remoteStagingPeer struct {
 }
 
 func (s *remoteSFTP) peer(name string) (*remoteStagingPeer, error) {
-	if s.dir == "" || (name != "deploy-csqtt-core-250.sh" && name != "csqtt-core8-linux-arm64") {
+	if s.dir == "" || (name != "deploy-csqtt-core-250.sh" && name != "csqtt-core8-linux-arm64" && name != "deploy-csqtt-core-lifecycle.sh" && name != "csqtt-core.env" && name != "deploy-overrides.json") {
 		return nil, errors.New("invalid remote asset")
 	}
 	p := &remoteStagingPeer{s: s, temporary: s.dir + "/" + name + ".part", final: s.dir + "/" + name}

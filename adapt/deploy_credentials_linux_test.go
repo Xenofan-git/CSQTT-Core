@@ -165,3 +165,21 @@ func TestDeployCredentialsAPIRequiresAuthLANAndRedactsSecrets(t *testing.T) {
 		t.Fatal("delete did not revoke metadata")
 	}
 }
+
+func TestUpdateDoesNotLoadApplicationCredentials(t *testing.T) {
+	for _, action := range []string{"update", "uninstall"} {
+		data, err := enrichDeployRequest(json.RawMessage(`{"protocol":"CSQTT","host":"192.0.2.77","usePassword":false,"action":"` + action + `"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"mainPassword", "webUser", "webPassword"} {
+			if _, ok := fields[key]; ok {
+				t.Fatal("preservation mode injected new application credentials")
+			}
+		}
+	}
+}

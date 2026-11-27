@@ -80,11 +80,31 @@ func TestCSQTTDeployBridgeRejectsUnsafeHelperFiles(t *testing.T) {
 }
 
 func TestCSQTTDeployBridgeRejectsUninstallInInventoryMode(t *testing.T) {
- if DeployProtocol(`{"protocol":"CSQTT","host":"192.0.2.77","uninstall":true}`) {
-  t.Fatal("inventory-only bridge accepted uninstall")
- }
- busy,logText:=DeploySnapshot()
- if busy || !strings.Contains(logText,"удаление недоступно") {
-  t.Fatalf("unexpected terminal state: busy=%t log=%q",busy,logText)
- }
+	if DeployProtocol(`{"protocol":"CSQTT","host":"192.0.2.77","uninstall":true}`) {
+		t.Fatal("inventory-only bridge accepted uninstall")
+	}
+	busy, logText := DeploySnapshot()
+	if busy || !strings.Contains(logText, "удаление недоступно") {
+		t.Fatalf("unexpected terminal state: busy=%t log=%q", busy, logText)
+	}
+}
+
+func TestDeployActionCompatibility(t *testing.T) {
+	if _, err := deployRequestForMode(`{"action":"install","host":"192.0.2.77","Host":"192.0.2.78"}`, false); err == nil {
+		t.Fatal("duplicate fields normalized away")
+	}
+
+	raw := `{"protocol":"CSQTT","host":"192.0.2.77","action":"install","password":"fixture-secret"}`
+	forwarded, err := deployRequestForMode(raw, false)
+	if err != nil || strings.Contains(forwarded, "action") || !strings.Contains(forwarded, "fixture-secret") {
+		t.Fatal("inventory wire compatibility")
+	}
+	for _, action := range []string{"update", "uninstall", "purge"} {
+		if _, err := deployRequestForMode(strings.Replace(raw, "install", action, 1), false); err == nil {
+			t.Fatal("unsupported inventory action")
+		}
+	}
+	if got, err := deployRequestForMode(strings.Replace(raw, "install", "update", 1), true); err != nil || !strings.Contains(got, "update") {
+		t.Fatal("update not forwarded")
+	}
 }

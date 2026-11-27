@@ -465,7 +465,7 @@ func enrichDeployRequest(raw json.RawMessage) (json.RawMessage, error) {
 			return nil, err
 		}
 	}
-	if uninstall {
+	if uninstall || read("action") == "update" || read("action") == "uninstall" {
 		return json.Marshal(body)
 	}
 	count := 0
@@ -2345,12 +2345,12 @@ func deployProgressSnapshot(busy bool, logText string) map[string]any {
 				result = "preflight"
 			}
 		}
-	case strings.Contains(logText, "[deploy] завершено успешно"):
-		result = "completed"
-		if installs == 1 && removals == 0 {
+	case completedReports > 0:
+		result = "unknown"
+		if completedReports == 1 && installs == 1 && removals == 0 {
 			result = "success"
 		}
-		if removals == 1 && installs == 0 {
+		if completedReports == 1 && removals == 1 && installs == 0 {
 			result = "uninstalled"
 		}
 	case strings.TrimSpace(logText) != "":

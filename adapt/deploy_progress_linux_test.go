@@ -13,10 +13,12 @@ func TestDeployProgressSnapshotReportsObservedCompletion(t *testing.T) {
 		log, want string
 	}{
 		{false, "", "idle"},
+		{false, "CSQTT_DEPLOY_OK\n[deploy] завершено успешно\n[deploy] завершено успешно", "unknown"},
+		{false, "CSQTT_DEPLOY_OK\nprefix [deploy] завершено успешно", "unknown"},
 		{true, "[deploy] DeployManager запущен", "running"},
 		{false, "[deploy] не найден deploy-manager рядом с приложением", "error"},
 		{false, "[deploy] завершено с ошибкой: exit status 1", "error"},
-		{false, "[deploy] завершено успешно", "completed"},
+		{false, "[deploy] завершено успешно", "unknown"},
 		{false, "CSQTT_CORE_DEPLOY_OK\n[deploy] завершено успешно", "success"},
 		{false, "CSQTT_DEPLOY_OK\n[deploy] завершено успешно", "success"},
 		{false, "CSQTT_DEPLOY_ERROR|cutover|test failure\n[deploy] завершено с ошибкой: exit status 30", "error"},
@@ -40,10 +42,10 @@ func TestDeployProgressSnapshotReportsObservedCompletion(t *testing.T) {
 
 func TestDeploy253ExactOperationMarkersAndObservedProgress(t *testing.T) {
 	cases := []struct{ log, want, rollback string }{
-		{"prefix CSQTT_DEPLOY_OK suffix\n[deploy] завершено успешно", "completed", ""},
-		{"CSQTT_OTHER_DEPLOY_OK\n[deploy] завершено успешно", "completed", ""},
-		{"CSQTT_DEPLOY_OK\nCSQTT_DEPLOY_OK\n[deploy] завершено успешно", "completed", ""},
-		{"CSQTT_DEPLOY_OK\nCSQTT_UNINSTALL_OK\n[deploy] завершено успешно", "completed", ""},
+		{"prefix CSQTT_DEPLOY_OK suffix\n[deploy] завершено успешно", "unknown", ""},
+		{"CSQTT_OTHER_DEPLOY_OK\n[deploy] завершено успешно", "unknown", ""},
+		{"CSQTT_DEPLOY_OK\nCSQTT_DEPLOY_OK\n[deploy] завершено успешно", "unknown", ""},
+		{"CSQTT_DEPLOY_OK\nCSQTT_UNINSTALL_OK\n[deploy] завершено успешно", "unknown", ""},
 		{"CSQTT_UNINSTALL_OK\n[deploy] завершено успешно", "uninstalled", ""},
 		{"CSQTT_CORE_UNINSTALL_OK\n[deploy] завершено успешно", "uninstalled", ""},
 		{"CSQTT_UNINSTALL_OK\n[deploy] завершено с ошибкой: exit status 1", "error", ""},

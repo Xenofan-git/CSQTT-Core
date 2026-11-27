@@ -8,20 +8,25 @@ package libs
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 )
 
 // DeployRequest — данные, приходящие из UI (вкладка "Деплой").
 type DeployRequest struct {
+	Action        string `json:"action,omitempty"`
 	Protocol      string `json:"protocol"`
 	Host          string `json:"host"`
 	SSHPort       int    `json:"sshPort"`
@@ -58,6 +63,21 @@ func deployManagerName() string {
 // Only the individually reviewed ARM64 inventory-only manager can receive
 // the controller's saved SSH and application credentials in this experiment.
 // Any change to the helper requires updating and re-reviewing this pin.
+// Separate experimental pin; it is usable only with an operator-bound lab scope.
+const verifiedARM64LifecycleManagerSHA = "03d312495b9382d1c61966ae14276d947b346d83e8514a62671546ccd3ff4bc1"
+
+func lifecycleScopeConfigured() bool {
+	return os.Getenv("CSQTT_CORE_ALLOW_MUTATION") == "isolated-lab-only" &&
+		regexp.MustCompile("^[0-9.]+:[0-9]{1,5}$").MatchString(os.Getenv("CSQTT_CORE_DEPLOY_LAB_TARGET")) &&
+		regexp.MustCompile("^[a-f0-9]{32}$").MatchString(os.Getenv("CSQTT_CORE_DEPLOY_LAB_MACHINE_ID"))
+}
+func isVerifiedLifecycleManager(path string) bool {
+	if !lifecycleScopeConfigured() {
+		return false
+	}
+	return managerDigestMatches(path, verifiedARM64LifecycleManagerSHA)
+}
+
 const verifiedARM64InventoryManagerSHA = "277e98735d6cb87222c9a908a47c193a8917d6535dd5c6958c9aba681356c731"
 
 // validDeployManagerExecutable refuses untrusted file types and writable
@@ -84,6 +104,10 @@ func validDeployManagerExecutable(path string) bool {
 // isVerifiedInventoryManager never executes an unreviewed binary. This
 // experimental capability is intentionally limited to Linux ARM64 only.
 func isVerifiedInventoryManager(path string) bool {
+	return managerDigestMatches(path, verifiedARM64InventoryManagerSHA)
+}
+
+func managerDigestMatches(path, digest string) bool {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "arm64" ||
 		!validDeployManagerExecutable(path) {
 		return false
@@ -97,7 +121,7 @@ func isVerifiedInventoryManager(path string) bool {
 	if _, err = io.Copy(hasher, fp); err != nil {
 		return false
 	}
-	return hex.EncodeToString(hasher.Sum(nil)) == verifiedARM64InventoryManagerSHA
+	return hex.EncodeToString(hasher.Sum(nil)) == digest
 }
 
 // resolveDeployManagerPath accepts only a SHA-pinned, non-writable helper
@@ -110,7 +134,7 @@ func resolveDeployManagerPath() string {
 	}
 	dir := filepath.Dir(exe)
 	for _, c := range []string{filepath.Join(dir, name), filepath.Join(dir, "bin", name)} {
-		if isVerifiedInventoryManager(c) {
+		if isVerifiedInventoryManager(c) || isVerifiedLifecycleManager(c) {
 			return c
 		}
 	}
@@ -159,7 +183,7 @@ func DeployProtocol(reqJSON string) bool {
 		return false
 	}
 	// Inventory-only is a distinct capability, not a destructive operation.
-	if req.Uninstall {
+	if (req.Uninstall || req.Action == "uninstall" || req.Action == "update") && DeployMode() != "install" {
 		deployAppend("[deploy] ошибка: удаление недоступно в режиме только чтение")
 		return false
 	}
@@ -169,8 +193,27 @@ func DeployProtocol(reqJSON string) bool {
 		return false
 	}
 	assetPath := filepath.Join(filepath.Dir(binPath), "server-assets")
-	cmd := exec.Command(binPath, "--assets", assetPath)
-	cmd.Stdin = strings.NewReader(reqJSON)
+	lifecycle := isVerifiedLifecycleManager(binPath)
+	args := []string{"--assets", assetPath}
+	timeout := time.Minute
+	if lifecycle {
+		args = append([]string{"--isolated-lifecycle"}, args...)
+		timeout = 31 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	cmd := exec.CommandContext(ctx, binPath, args...)
+	cmd.WaitDelay = time.Second
+	defer func() {
+		if !started {
+			cancel()
+		}
+	}()
+	forwarded, err := deployRequestForMode(reqJSON, lifecycle)
+	if err != nil {
+		deployAppend("[deploy] ошибка: неверная операция")
+		return false
+	}
+	cmd.Stdin = strings.NewReader(forwarded)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		deployAppend("[deploy] ошибка запуска stdout")
@@ -186,7 +229,11 @@ func DeployProtocol(reqJSON string) bool {
 		return false
 	}
 	started = true
-	deployAppend("[deploy] Проверка окружения CSQTT Core на " + req.Host + " (только чтение)")
+	if lifecycle {
+		deployAppend("[deploy] Операция CSQTT Core в разрешённой лабораторной среде")
+	} else {
+		deployAppend("[deploy] Проверка окружения CSQTT Core на " + req.Host + " (только чтение)")
+	}
 	redact := func(line string) string {
 		for _, v := range []string{req.Password, req.MainPassword, req.WebPassword} {
 			if v != "" {
@@ -196,6 +243,7 @@ func DeployProtocol(reqJSON string) bool {
 		return line
 	}
 	go func() {
+		defer cancel()
 		var wg sync.WaitGroup
 		read := func(reader io.Reader) {
 			defer wg.Done()
@@ -206,6 +254,8 @@ func DeployProtocol(reqJSON string) bool {
 			}
 			if scan.Err() != nil {
 				deployAppend("[deploy] ошибка чтения журнала DeployManager")
+				_ = cmd.Process.Kill()
+				_, _ = io.Copy(io.Discard, reader)
 			}
 		}
 		wg.Add(2)
@@ -217,7 +267,7 @@ func DeployProtocol(reqJSON string) bool {
 			// Exit 73 is explicitly reserved for successful read-only
 			// inspection, followed by a denied mutation. It is never an
 			// installation success. Require the actual inventory end record.
-			if exitErr, ok := err.(*exec.ExitError); ok &&
+			if exitErr, ok := err.(*exec.ExitError); ok && !lifecycle &&
 				exitErr.ExitCode() == 73 &&
 				strings.Contains(DeployLog(), "CSQTT_INV|end") &&
 				strings.Contains(DeployLog(), "CSQTT_ISOLATION_REQUIRED") {
@@ -225,6 +275,8 @@ func DeployProtocol(reqJSON string) bool {
 			} else {
 				deployAppend("[deploy] завершено с ошибкой: " + err.Error())
 			}
+		} else if lifecycle && ctx.Err() == nil {
+			deployAppend("[deploy] завершено успешно")
 		} else {
 			// The pinned inventory-only manager must return exit 73. An
 			// unexpected zero exit is not a verified operation.
@@ -241,7 +293,11 @@ func DeployProtocol(reqJSON string) bool {
 // manager. Presence of a helper does NOT mean remote mutation was approved.
 // Future release candidates must change this only after a full acceptance.
 func DeployMode() string {
-	if resolveDeployManagerPath() == "" {
+	path := resolveDeployManagerPath()
+	if path != "" && isVerifiedLifecycleManager(path) {
+		return "install"
+	}
+	if path == "" {
 		return "unavailable"
 	}
 	return "inventory-only"
@@ -288,4 +344,52 @@ func itoa(n int) string {
 		b[i] = '-'
 	}
 	return string(b[i:])
+}
+
+// Keep the old pinned helper wire format for read-only requests. The
+// experimental action field must never break an existing inventory check.
+func deployRequestForMode(raw string, lifecycle bool) (string, error) {
+	var request DeployRequest
+	if err := json.Unmarshal([]byte(raw), &request); err != nil {
+		return "", err
+	}
+	if request.Action != "" && request.Action != "install" && request.Action != "update" && request.Action != "uninstall" {
+		return "", errors.New("invalid deploy action")
+	}
+	if lifecycle {
+		return raw, nil
+	}
+	if request.Action == "update" || request.Action == "uninstall" || request.Uninstall {
+		return "", errors.New("operation requires lifecycle capability")
+	}
+	if request.Action == "" {
+		return raw, nil
+	}
+	fields := map[string]json.RawMessage{}
+	seen := map[string]bool{}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return "", errors.New("invalid request")
+	}
+	for decoder.More() {
+		token, err := decoder.Token()
+		key, ok := token.(string)
+		folded := strings.ToLower(key)
+		if err != nil || !ok || seen[folded] {
+			return "", errors.New("ambiguous request")
+		}
+		seen[folded] = true
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return "", err
+		}
+		if folded != "action" {
+			fields[key] = value
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return "", err
+	}
+	data, err := json.Marshal(fields)
+	return string(data), err
 }

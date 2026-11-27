@@ -1413,7 +1413,7 @@ def main():
             page.locator("#deployConfirmOverlay").wait_for(state="visible")
             page.locator("#deployConfirmAccept").click()
             page.locator("#deployProgressOverlay").wait_for(state="visible")
-            assert page.locator("#deployProgressTitle").inner_text()=="Установка CSQTT Core"
+            assert page.locator("#deployProgressTitle").inner_text()=="Операция CSQTT Core"
             assert "192.0.2.50" in page.locator("#deployProgressDescription").inner_text()
             assert page.locator("#deployProgressIndicator").get_attribute("data-active") == "true"
             page.wait_for_function("""() => document.querySelector('#deployProgressOutcome').textContent.includes('Бинарник... · 60%')""", timeout=12000)
@@ -1440,6 +1440,25 @@ def main():
             choose_theme(page,"light")
             page.locator("#deployProgressClose").click()
             assert page.locator("#deployProgressOverlay").is_hidden()
+            # Update follows the same real panel/API path without collecting new
+            # application credentials. The browser transport remains a fixture.
+            saved_application_auth = dict(deploy_auth_saved)
+            deploy_auth_saved.clear()
+            page.locator("#deployAction").select_option("update")
+            assert page.locator("#startDeploy").inner_text()=="Обновить"
+            page.locator("#startDeploy").click()
+            page.locator("#deployConfirmOverlay").wait_for(state="visible")
+            assert page.locator("#deployConfirmTitle").inner_text()=="Подтверждение обновления"
+            assert "SQLite" in page.locator("#deployConfirmDescription").inner_text()
+            page.locator("#deployConfirmAccept").click()
+            page.locator("#deployProgressOverlay").wait_for(state="visible")
+            page.wait_for_function("() => document.querySelector('#deployProgressOutcome').dataset.kind === 'success'", timeout=12000)
+            update_payload = json.loads([body for method,path,body in calls if method=="POST" and path=="/deploy"][-1])
+            assert update_payload["action"]=="update", update_payload
+            assert not any(update_payload.get(key) for key in ("mainPassword","webPassword","webUser")), update_payload
+            page.locator("#deployProgressClose").click()
+            page.locator("#deployAction").select_option("install")
+            deploy_auth_saved.update(saved_application_auth)
             # Terminal outcomes from the upstream 2.5.3 result contract,
             # exercised exclusively through the synthetic browser API.
             for result, rollback, log, title, detail in (

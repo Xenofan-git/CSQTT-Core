@@ -25,6 +25,7 @@ const expectedServerSHA = "8cd789e33428f96e183ae3da326dee907496f11536fbaf6cdab5d
 var ErrIsolationRequired = errors.New("CSQTT_ISOLATION_REQUIRED")
 
 type Request struct {
+	Action        string
 	Protocol      string
 	Host          string
 	SSHPort       int
@@ -100,6 +101,9 @@ func validTarget(host string) error {
 	return nil
 }
 func validate(r Request) error {
+	if _, err := requestedLifecycleAction(r); err != nil {
+		return err
+	}
 	if !strings.EqualFold(r.Protocol, "CSQTT") {
 		return errors.New("поддерживается только CSQTT Core, не другие протоколы")
 	}
@@ -128,7 +132,7 @@ func validate(r Request) error {
 	} else if len(r.KeyPath) == 0 || !filepath.IsAbs(r.KeyPath) {
 		return errors.New("требуется абсолютный путь к SSH-ключу")
 	}
-	if !r.Uninstall {
+	if !r.Uninstall && r.Action != "uninstall" && r.Action != "update" {
 		if !alphanumeric(r.MainPassword) || !alphanumeric(r.WebUser) || !alphanumeric(r.WebPassword) || !validDevice(r.DeviceID) {
 			return errors.New("неполная авторизация: сохраните пароль туннеля, логин/пароль WEB и ID устройства")
 		}
@@ -220,7 +224,7 @@ func decodeDeployRequest(reader io.Reader) (Request, error) {
 	if err != nil || start != json.Delim('{') {
 		return result, invalid
 	}
-	allowed := map[string]bool{"protocol": true, "host": true, "sshport": true, "user": true, "usepassword": true, "password": true, "keypath": true, "mainpassword": true, "webuser": true, "webpassword": true, "deviceid": true, "manualports": true, "coreport": true, "warpport": true, "listenport": true, "dockerinstall": true, "uninstall": true}
+	allowed := map[string]bool{"action": true, "protocol": true, "host": true, "sshport": true, "user": true, "usepassword": true, "password": true, "keypath": true, "mainpassword": true, "webuser": true, "webpassword": true, "deviceid": true, "manualports": true, "coreport": true, "warpport": true, "listenport": true, "dockerinstall": true, "uninstall": true}
 	seen := map[string]bool{}
 	for decoder.More() {
 		token, err := decoder.Token()
@@ -450,15 +454,20 @@ func remoteInventoryWithContext(ctx context.Context, r Request, script []byte, w
 func main() {
 	args := os.Args[1:]
 	stageOnly := len(args) > 0 && args[0] == "--stage-only"
-	if stageOnly {
+	lifecycle := len(args) > 0 && args[0] == "--isolated-lifecycle"
+	if stageOnly || lifecycle {
 		args = args[1:]
 	}
 	if len(args) != 2 || args[0] != "--assets" {
-		fmt.Fprintln(os.Stderr, "[deploy] использование: deploy-manager [--stage-only] --assets /path/to/server-assets (JSON через stdin)")
+		fmt.Fprintln(os.Stderr, "[deploy] использование: deploy-manager [--stage-only | --isolated-lifecycle] --assets /path/to/server-assets (JSON через stdin)")
 		os.Exit(2)
 	}
 	var err error
-	if stageOnly {
+	if lifecycle {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		err = runRemoteLifecycle(ctx, os.Stdin, os.Stdout, args[1])
+	} else if stageOnly {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		err = runRemoteStage(ctx, os.Stdin, os.Stdout, args[1])
