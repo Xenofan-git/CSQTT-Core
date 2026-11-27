@@ -656,3 +656,29 @@ SSH/SFTP-проверки.
   compatibility. No production pins, execution gates, installer or services
   changed. No real remote deployment or live acceptance. Next: separate
   authorized runtime acceptance and package integration after acceptance.
+
+### 10.19. 2026-11-27 — CSQTT_CORE_MULTIARCH_LOCAL_CLI
+
+- Moscow lab inventory: free disk 3.4 GiB, available RAM 1819 MiB.
+  qemu-system-aarch64/arm and qemu-aarch64/arm present;
+  qemu-system-x86_64 and /dev/kvm absent. Existing ARM64 deploy VM and
+  tunnel active; two QEMU processes (CSQTT and unrelated VM) untouched.
+  No clean, separately authorized three-architecture deployment lab established.
+- Rechecked FINAL source tree and SHA256 of all three candidates; PASS.
+  Existing offline Go architecture/integrity/remote-architecture fixture
+  test groups 6/6 PASS. Mutation scope variables unset.
+- Reviewed exact Rust main.rs CLI branches: --help and --protocol-revision
+  return before root check and service startup. Local namespace probe:
+  no routes, CapEff/CapBnd zero, NoNewPrivs=1. Tested only these two flags
+  using timeout15s, separate user/network namespace, stripped capabilities,
+  clean environment; no server mode, no transfer or service changes.
+- Actual AMD64 native and ARMv7 QEMU-user CLI PASS: CSQTT-WIRE-3,
+  help shows UDP47000, HTTPS47002, /etc/csqtt-core. ARM64 CLI attempt
+  exited 1 with no result; pinned package mode0600 observed, exact cause
+  unconfirmed. Did not modify permissions or retry via another route.
+  Previous ARM64 evidence remains distinct from this attempt.
+- CLI values are not listening-port or data-plane evidence. No real
+  install/update/uninstall, remote acceptance, live VK traffic, or production
+  promotion. No operational changes to existing services, pins or guards.
+  Next: authorized isolated runtime acceptance; no claim that three
+  full VM targets are available. Do not remove existing gates.
