@@ -562,3 +562,32 @@ SSH/SFTP-проверки.
   Core8-исходников, отдельная проверка ABI/зависимостей и SHA каждого
   бинарника, затем согласованная интеграция пакетов с installer/lifecycle.
   Поддержка исполнения всех трёх архитектур пока не завершена.
+
+### 10.15. 2026-11-27 — CSQTT_CORE_AMD64_BUILD_CANDIDATE
+
+- На Moscow проверены исходники .csqtt-core-unified-253-final-with-47005-20261122
+  через FINAL/tree_digest из derive-csqtt-core-unified-linux-253.py:
+  все три дерева совпали, rust-server SHA 2c03df9581e87fe9e1e9ab0baaa7549dadaa8d2c32f5f62cb180193de2cb605a.
+  Rust/Cargo 1.97.1, offline locked metadata PASS.
+- Отдельный target: /srv/development/isolated-checkouts/.csqtt-core8-amd64-candidate-20261127/target.
+  Сборка cargo +1.97.1 build --locked --offline --release --target
+  x86_64-unknown-linux-gnu --jobs 1; первые два лимита 160/300 секунд
+  не хватили, второй exit 124. Кэш сохранён; при обнаружении работающего
+  Cargo не запускали конкурирующий процесс. Финальный повтор с лимитом 900
+  секунд завершился, журнал build.log: Finished release in 2m17s.
+- Готовый ELF target/x86_64-unknown-linux-gnu/release/csqtt:
+  11378352 bytes, ELF64 little-endian x86-64 PIE, SHA256
+  56435cc0e443b2e909064cdcf5add390369fa0e317be51d74c60119f336c1f31.
+  readelf: libstdc++.so.6, libc.so.6, libgcc_s.so.1, libm.so.6;
+  GLIBC_2.39, CXXABI_1.3.7, GCC_4.2.0. Amsterdam glibc 2.43,
+  CXXABI до 1.3.17, GCC до 14.0.0: предварительная статическая
+  проверка совместимости, не live runtime. Порты 47000/47002 без
+  слушателей в host namespace на момент проверки.
+- Источник и прежний ARM64 pin 8cd789e33428f96e183ae3da326dee907496f11536fbaf6cdab5da339262701d
+  повторно проверены без изменений. AMD64 не запускался, не передавался,
+  не добавлен в approvedServerAsset. Нет live acceptance или production promotion.
+- ARMv7: QEMU-arm присутствует, Rust target отсутствует, apt-cache и
+  apt-get -s подтвердили наличие gcc/g++ arm-linux-gnueabihf и armhf sysroot.
+  Пакеты не установлены, сборка ARMv7 ещё не начата. Рабочие службы
+  не изменены. Следующий этап — подготовить ARMv7 toolchain, проверить
+  сборку и затем отдельно провести приёмку новых серверных архитектур.
