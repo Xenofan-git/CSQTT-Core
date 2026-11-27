@@ -781,7 +781,7 @@ SSH/SFTP-проверки.
   Verified pinned local assets in /tmp/csqtt-deploy-manager-core-assets-ci-20261125
   (installer SHA18b8fba... and ARM64 SHA8cd789e...).
 - Actual Go1.27.3 native test -race -count=1 -timeout=100s -v:
-  35 top-level PASS, 0 FAIL, 3 SKIP, exit0; package time3.926s.
+  36 top-level PASS, 0 FAIL, 3 SKIP, exit0; package time3.926s.
   Local authenticated SFTP fixture used ephemeral keys and stdio,
   no network listener. Lifecycle install/update/remove/rollback,
   cancellation, malformed results and architecture tests passed
