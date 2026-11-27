@@ -829,3 +829,25 @@ SSH/SFTP-проверки.
   tests still unrun. Browser scenarios counted separately. No actual
   remote deployment, live connection or panel update. Existing earlier
   full mock lifecycle/browser evidence not counted as new.
+
+### 10.27. 2026-11-27 — CSQTT_DEPLOY_REMOTE_EVIDENCE_REVIEW
+
+- Reconciled two opt-in network groups skipped in recent local regression
+  with historical evidence in AGENTS section 10.3 and
+  adapt/CSQTT-DEPLOY-INTEGRATION-REVIEW-2026-11-26.md. Recorded prior
+  TestRemoteTransportRealEndpoint PASS24.93s, 266240 inert bytes,
+  rename/readback and two-object staging; TestRemoteTransportLostSessionCleanup
+  PASS6.38s, reconnect for cleanup and verified directory absence.
+  Historical network was Termux ARM64 to Moscow, no actual installation.
+- Compared b29c8c9e9add41cc52ba6e8de758bbdf83792537 to 7f2e0d3:
+  remote_transport_test.go/staging_contract.go unchanged; remote_transport.go
+  changes limited to requireRemoteARM64, inventory read-only result handling,
+  and peer filename allowlist. Core SFTP transfer/cleanup code unchanged.
+  Historical evidence not promoted to fresh HEAD network acceptance.
+  Current host/key opt-in environment variables absent; no new remote SFTP
+  test, credentials, deployment or guard changes. Current /tmp strict
+  staging-directory count zero. AMD64 installer still running at locale
+  prompt; no installed OS. Tailnet three existing hosts online.
+- Recent regression remains 46 PASS, two network groups not rerun.
+  Prior network evidence accounted for separately. Full live lifecycle
+  and multiarchitecture package acceptance remain open.
