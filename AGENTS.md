@@ -757,3 +757,19 @@ SSH/SFTP-проверки.
   active, прежние PID1057321/1338051. Повторная компиляция потребует
   восстановления промежуточного Cargo cache; новых испытаний или
   установки гостевых ОС не проводилось.
+
+### 10.23. 2026-11-27 — CSQTT_AMD64_DEBIAN_INSTALLER_BOOT
+
+- Owner requested actual Debian installer startup. Moscow disk free
+  4.5 GiB, RAM available 1604 MiB. Verified exact installer kernel/initrd
+  SHA256 from prep and new empty QCOW2. Launched generic Debian 13 AMD64
+  installer in separate QEMU TCG VM (q35/max, 512 MiB, 1 vCPU, no NIC,
+  no host port forwarding, private Unix console/QMP sockets, dedicated
+  writable 3 GiB disk). PID1355668, QMP query-status running=true.
+  Serial log confirms kernel startup and Run /init as init process.
+- Directory /srv/development/isolated-checkouts/csqtt-multiarch-lab-prep-20261127/amd64,
+  installer-console.log, installer.pid, installer-qmp.sock and
+  installer-console.sock. No CSQTT payload, SSH credentials, or guest
+  network configured. Netboot media needs package source to complete
+  OS installation; not a completed guest or accepted deployment target.
+  Existing CSQTT lab/tunnel unchanged PID1057321/1338051 active.
