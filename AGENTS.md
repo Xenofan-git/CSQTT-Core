@@ -720,3 +720,22 @@ SSH/SFTP-проверки.
   authorized identity/connection, acceptance and sufficient storage.
   QMP proof is configuration only, not boot or runtime/Deploy acceptance.
   Existing mutation scope, ARM64-only execution gate and pins unchanged.
+
+### 10.21. 2026-11-27 — CSQTT_CORE_OLD_BACKUPS_CLEANUP
+
+- По запросу владельца проверены старые резервные копии CSQTT на Moscow.
+  Измерены размеры, даты, типы, точные пути; не читались секреты.
+  Удалены только явно устаревшие backup dirs
+  /srv/development/migrated-root/csqтt-backup-20261006 (69287 logical bytes)
+  и /srv/development/migrated-root/lalune-csqtt-backup-20261007 (10336176 bytes).
+  Проверены отсутствие symlinks/mountpoints, точные realpath, затем
+  rm -rf --one-file-system с двумя явными путями и readback отсутствия.
+  Доступно до 3011092480, после 3021520896 bytes, прирост 10428416 bytes.
+- Снимок snapshot-pre-upgrade-20261117 (994 MiB) сохранён: точка
+  восстановления существующей VM, более новая равноценная копия не
+  подтверждена. Исходники, актуальные сборки, компиляторные кэши,
+  журналы, остальные проекты и диски VM не удалены. CSQTT lab/tunnel
+  активны с прежними PID1057321/1338051. Свободно ~2.9 GiB.
+  Установка Debian в новые VM не начата; очистка старых backup dirs
+  практически не решает дефицит диска. Следующий безопасный вариант —
+  отдельно проверить воспроизводимые промежуточные build caches.
